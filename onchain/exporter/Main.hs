@@ -21,6 +21,7 @@ import System.Environment (getArgs, lookupEnv)
 import Prelude
 
 import NitroMintingPolicy qualified
+import NftMintingPolicy qualified
 
 data ScriptsFFI = ScriptsFFI
     { js :: String
@@ -56,5 +57,6 @@ main = do
     let ScriptsFFI{js} =
             mkScriptsFFI
                 [ ("rawNitroMintingPolicy", NitroMintingPolicy.script)
+                , ("adminNftMintingPolicy", NftMintingPolicy.script)
                 ]
     writeFile (out <> "/ScriptsFFI.js") js
