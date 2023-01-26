@@ -54,9 +54,10 @@ main = do
         argOut <- listToMaybe <$> getArgs
         envOut <- lookupEnv "out"
         pure $ maybe "." id $ argOut <|> envOut
-    let ScriptsFFI{js} =
+    let ScriptsFFI{js,purs} =
             mkScriptsFFI
                 [ ("rawNitroMintingPolicy", NitroMintingPolicy.script)
                 , ("adminNftMintingPolicy", NftMintingPolicy.script)
                 ]
     writeFile (out <> "/ScriptsFFI.js") js
+    writeFile (out <> "/ScriptsFFI.purs") purs

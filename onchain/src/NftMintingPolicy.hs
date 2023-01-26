@@ -1,21 +1,23 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -w #-}
-module NftMintingPolicy (policy, script) where
+
+module NftMintingPolicy (policy, script, sampletxoref) where
 
 import PlutusTx.Prelude
 
-import Ledger (PaymentPubKeyHash (unPaymentPubKeyHash), TokenName, TxOutRef)
-import Plutus.V2.Ledger.Api (Script, ScriptContext (scriptContextTxInfo), fromCompiledCode, getPubKeyHash, ToData (toBuiltinData), TxInfo, txInfoInputs, txInInfoOutRef, txInfoMint, CurrencySymbol (CurrencySymbol))
-import Plutus.V2.Ledger.Contexts (txSignedBy, ownCurrencySymbol)
-import PlutusTx (unsafeFromBuiltinData)
-import PlutusTx qualified (compile, applyCode, liftCode)
-import qualified Ledger as Scripts
+import Ledger (PaymentPubKeyHash (unPaymentPubKeyHash), TokenName, TxId (TxId), TxOutRef (TxOutRef))
+import Ledger qualified as Scripts
 import Plutus.V1.Ledger.Value (flattenValue)
+import Plutus.V2.Ledger.Api (CurrencySymbol (CurrencySymbol), Script, ScriptContext (scriptContextTxInfo), ToData (toBuiltinData), TokenName (TokenName), TxInfo, fromCompiledCode, getPubKeyHash, txInInfoOutRef, txInfoInputs, txInfoMint)
+import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, txSignedBy)
+import PlutusTx (unsafeFromBuiltinData)
+import PlutusTx qualified (applyCode, compile, liftCode)
 
 {-# INLINEABLE mkPolicy #-}
-mkPolicy :: (TxOutRef,TokenName) -> () -> ScriptContext -> Bool
-mkPolicy (txoref,tk) _red ctx = traceIfFalse badInput  hasUtxo   &&
-                              traceIfFalse badAmount mintedOne
+mkPolicy :: TxOutRef -> () -> ScriptContext -> Bool
+mkPolicy txoref _red ctx =
+    traceIfFalse badInput hasUtxo
+        && traceIfFalse badAmount mintedOne
   where
     info :: TxInfo
     info = scriptContextTxInfo ctx
@@ -27,31 +29,39 @@ mkPolicy (txoref,tk) _red ctx = traceIfFalse badInput  hasUtxo   &&
     hasUtxo = any ((== txoref) . txInInfoOutRef) $ txInfoInputs info
 
     mintedOne :: Bool
-    mintedOne = case filter (\(cs',_,_) -> cs' == cs) $ flattenValue (txInfoMint info) of
-      [(cs',tk',amt)] -> cs' == cs && tk' == tk && amt == 1
-      _               -> False
+    mintedOne = case filter (\(cs', _, _) -> cs' == cs) $ flattenValue (txInfoMint info) of
+        [(cs', _, amt)] -> cs' == cs && amt == 1
+        _ -> False
 
     badInput = "parameter TxOutRef not consumed in inputs"
     badAmount = "amount minted is not 1 token of given token name and own currency symbol"
 
-{-# INLINEABLE mkPolicy' #-} 
+{-# INLINEABLE mkPolicy' #-}
 mkPolicy' :: BuiltinData -> BuiltinData -> BuiltinData -> ()
 mkPolicy' params redeemer context =
-  let
-    result = mkPolicy
-      (unsafeFromBuiltinData params)
-      (unsafeFromBuiltinData redeemer)
-      (unsafeFromBuiltinData context)
-  in
-    if result then () else traceError "Failed verification"
-
+    let
+        result =
+            mkPolicy
+                (unsafeFromBuiltinData params)
+                (unsafeFromBuiltinData redeemer)
+                (unsafeFromBuiltinData context)
+     in
+        if result then () else traceError "Failed verification"
 
 script :: Scripts.Script
-script = Scripts.fromCompiledCode $$(PlutusTx.compile [|| mkPolicy' ||])
+script = Scripts.fromCompiledCode $$(PlutusTx.compile [||mkPolicy'||])
 
-policy :: (TxOutRef, TokenName) -> Scripts.MintingPolicy
-policy params = Scripts.mkMintingPolicyScript $ 
-  $$(PlutusTx.compile [|| mkPolicy' ||])
-  `PlutusTx.applyCode`
-  PlutusTx.liftCode (toBuiltinData params)
+policy :: TxOutRef -> Scripts.MintingPolicy
+policy params =
+    Scripts.mkMintingPolicyScript $
+        $$(PlutusTx.compile [||mkPolicy'||])
+            `PlutusTx.applyCode` PlutusTx.liftCode (toBuiltinData params)
 
+someTxId = "48e447c56696f2a380c1696e8ecffe597f1ccb99787046087e68207fbb57165a"
+someTxIndex = 1
+
+sampletxoref :: (TxOutRef, TokenName)
+sampletxoref = (txoref, tk)
+  where
+    txoref = TxOutRef (TxId someTxId) someTxIndex
+    tk = TokenName "CardanoRacersAdminNFT"

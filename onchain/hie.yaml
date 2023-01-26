@@ -1,0 +1,6 @@
+ cradle:
+  cabal:
+    - path: "./src"
+      component: "lib:cardano-racers-onchain"
+    - path: "./exporter"
+      component: "exe:exporter"
