@@ -7,7 +7,7 @@ import PlutusTx.Prelude
 
 import Ledger (PaymentPubKeyHash (unPaymentPubKeyHash), TokenName, TxId (TxId), TxOutRef (TxOutRef))
 import Ledger qualified as Scripts
-import Plutus.V1.Ledger.Value (flattenValue)
+import Ledger.Value (flattenValue)
 import Plutus.V2.Ledger.Api (CurrencySymbol (CurrencySymbol), Script, ScriptContext (scriptContextTxInfo), ToData (toBuiltinData), TokenName (TokenName), TxInfo, fromCompiledCode, getPubKeyHash, txInInfoOutRef, txInfoInputs, txInfoMint)
 import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, txSignedBy)
 import PlutusTx (unsafeFromBuiltinData)
@@ -34,7 +34,7 @@ mkPolicy txoref _red ctx =
         _ -> False
 
     badInput = "parameter TxOutRef not consumed in inputs"
-    badAmount = "amount minted is not 1 token of given token name and own currency symbol"
+    badAmount = "amount minted is not 1"
 
 {-# INLINEABLE mkPolicy' #-}
 mkPolicy' :: BuiltinData -> BuiltinData -> BuiltinData -> ()
