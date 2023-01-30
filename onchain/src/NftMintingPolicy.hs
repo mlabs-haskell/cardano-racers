@@ -56,12 +56,3 @@ policy params =
     Scripts.mkMintingPolicyScript $
         $$(PlutusTx.compile [||mkPolicy'||])
             `PlutusTx.applyCode` PlutusTx.liftCode (toBuiltinData params)
-
-someTxId = "48e447c56696f2a380c1696e8ecffe597f1ccb99787046087e68207fbb57165a"
-someTxIndex = 1
-
-sampletxoref :: (TxOutRef, TokenName)
-sampletxoref = (txoref, tk)
-  where
-    txoref = TxOutRef (TxId someTxId) someTxIndex
-    tk = TokenName "CardanoRacersAdminNFT"
