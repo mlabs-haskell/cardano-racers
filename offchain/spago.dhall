@@ -13,12 +13,10 @@ You can edit this file as you like.
   , "exceptions"
   , "mote"
   , "ordered-collections"
-  , "partial"
   , "posix-types"
   , "prelude"
   , "profunctor"
   , "spec"
-  , "transformers"
   , "tuples"
   , "uint"
   ]
