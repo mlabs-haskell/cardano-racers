@@ -142,7 +142,6 @@ adminNftSuite = group "AdminNft" do
       , BigInt.fromInt 2_000_000_000
       ]
 
-
 config :: PlutipConfig
 config =
   { host: "127.0.0.1"
