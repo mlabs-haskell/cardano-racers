@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -w #-}
 
-module NftMintingPolicy (policy, script, sampletxoref) where
+module NftMintingPolicy (policy, script) where
 
 import PlutusTx.Prelude
 
@@ -26,7 +26,7 @@ mkPolicy txoref _red ctx =
     cs = ownCurrencySymbol ctx
 
     hasUtxo :: Bool
-    hasUtxo = any ((== txoref) . txInInfoOutRef) $ txInfoInputs info
+    hasUtxo = elem txoref . map txInInfoOutRef $ txInfoInputs info
 
     mintedOne :: Bool
     mintedOne = case filter (\(cs', _, _) -> cs' == cs) $ flattenValue (txInfoMint info) of

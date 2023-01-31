@@ -4,52 +4,34 @@ module Test.Scaffold.Main (main) where
 
 import Contract.Prelude
 
-import AdminNft (mintAdminNft) as AdminNft
+import AdminNft (mintAdminNft, mkNftMintingPolicy) as AdminNft
 import CardanoRacers.ScriptsFFI (adminNftMintingPolicy)
 import Contract.Address (Address, getWalletAddresses)
 import Contract.Config (emptyHooks)
-import Contract.Monad (Contract, liftContractM, liftedM)
+import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
 import Contract.PlutusData (toData)
+import Contract.Prim.ByteArray (byteArrayFromAscii)
+import Contract.ScriptLookups (ScriptLookups, mintingPolicy, mkUnbalancedTx, unspentOutputs) as Lookups
 import Contract.Scripts (applyArgs)
 import Contract.Test.Mote (TestPlanM, interpretWithConfig)
-import Contract.Test.Plutip
-  ( InitialUTxOs
-  , PlutipConfig
-  , PlutipTest
-  , testPlutipContracts
-  , withKeyWallet
-  , withWallets
-  )
-import Contract.Test.Utils
-  ( ContractAssertionFailure(UnexpectedTokenDelta)
-  , ContractWrapAssertion
-  , ExpectedActual(ExpectedActual)
-  , Labeled
-  , assertContract
-  , checkBalanceDeltaAtAddress
-  , exitCode
-  , interruptOnSignal
-  , label
-  , runContractAssertionM
-  , withAssertions
-  )
+import Contract.Test.Plutip (InitialUTxOs, PlutipConfig, PlutipTest, testPlutipContracts, withKeyWallet, withWallets)
+import Contract.Test.Utils (ContractAssertionFailure(UnexpectedTokenDelta), ContractWrapAssertion, ExpectedActual(ExpectedActual), Labeled, assertContract, checkBalanceDeltaAtAddress, exitCode, interruptOnSignal, label, runContractAssertionM, withAssertions)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
+import Contract.Transaction (balanceTx)
+import Contract.Transaction (submitTxFromConstraints, awaitTxConfirmed) as Tx
+import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletUtxos)
-import Contract.Value (CurrencySymbol, TokenName, valueOf)
+import Contract.Value (CurrencySymbol, TokenName)
+import Contract.Value (mkTokenName, scriptCurrencySymbol, singleton, valueOf) as Value
 import Data.Array (head) as Array
-import Data.BigInt (BigInt, fromInt)
+import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (toUnfoldable)
 import Data.Posix.Signal (Signal(SIGINT))
 import Data.Time.Duration (Seconds(Seconds))
 import Data.UInt (fromInt) as UInt
-import Effect.Aff
-  ( Milliseconds(Milliseconds)
-  , cancelWith
-  , effectCanceler
-  , launchAff
-  )
-import Mote (test)
+import Effect.Aff (Milliseconds(Milliseconds), cancelWith, effectCanceler, launchAff)
+import Mote (group, test)
 import Scaffold (contract) as Scaffold
 import Test.Spec.Assertions (shouldSatisfy)
 import Test.Spec.Runner (defaultConfig)
@@ -74,15 +56,13 @@ suite = do
     withWallets distribution \w ->
       withKeyWallet w do
         Scaffold.contract
+  adminNftSuite
 
-  test "NFTScript apply TxOutRef" do
-    let
-      distribution :: InitialUTxOs
-      distribution =
-        [ BigInt.fromInt 5_000_000
-        , BigInt.fromInt 2_000_000_000
-        ]
-    withWallets distribution \w ->
+
+adminNftSuite :: TestPlanM PlutipTest Unit
+adminNftSuite = group "AdminNft" do
+  test "apply TxOutRef to script" do
+    withWallets singleWalletDistribution \w ->
       withKeyWallet w do
         utxos <- liftedM "Could not get wallet utxos" $ getWalletUtxos
         (txi /\ _) <- liftContractM "Could not find some utxo" $ Array.head $
@@ -94,12 +74,6 @@ suite = do
         shouldSatisfy appliedScriptE isRight
   test "Mints NFT" do
     let
-      distribution :: InitialUTxOs
-      distribution =
-        [ BigInt.fromInt 5_000_000
-        , BigInt.fromInt 2_000_000_000
-        ]
-
       assertNftMint
         :: forall (r :: Row Type)
          . Labeled Address
@@ -113,10 +87,10 @@ suite = do
 
                 actual :: BigInt
                 actual =
-                  valueOf valueAfter cs tn - valueOf valueBefore cs tn
+                  Value.valueOf valueAfter cs tn - Value.valueOf valueBefore cs tn
 
                 expected :: BigInt
-                expected = fromInt 1
+                expected = BigInt.fromInt 1
 
                 unexpectedTokenDelta :: ContractAssertionFailure
                 unexpectedTokenDelta =
@@ -124,14 +98,13 @@ suite = do
 
               assertContract unexpectedTokenDelta (expected == actual)
               pure nftAssetClass
-
       withAssertionsMono
         :: forall (r :: Row Type)
          . ContractWrapAssertion r (CurrencySymbol /\ TokenName)
         -> Contract r (CurrencySymbol /\ TokenName)
         -> Contract r (CurrencySymbol /\ TokenName)
       withAssertionsMono = withAssertions
-    withWallets distribution \w ->
+    withWallets singleWalletDistribution \w ->
       withKeyWallet w do
         addr <- liftedM "Could not get wallet addresses" $ map Array.head
           getWalletAddresses
@@ -141,6 +114,34 @@ suite = do
         void $ withAssertionsMono (assertNftMint $ label addr "Receiver") $
           AdminNft.mintAdminNft txi
         pure unit
+  test "NFT minting policy fails to mint more than 1 token" $
+    withWallets singleWalletDistribution \w ->
+      withKeyWallet w do
+        utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
+        (txi /\ _) <- liftContractM "Could not find some utxo" $ (Array.head <<< toUnfoldable) $ utxos
+        tkname <- liftContractM "Cannot make token name" <<< (Value.mkTokenName <=< byteArrayFromAscii) $ "Token"
+        policy <- AdminNft.mkNftMintingPolicy txi
+        cs <- liftContractM "couldn't get currency symbol" $ Value.scriptCurrencySymbol policy
+        let
+          constraints :: Constraints.TxConstraints Void Void
+          constraints =
+            Constraints.mustMintValue (Value.singleton cs tkname $ BigInt.fromInt 2)
+              <> Constraints.mustSpendPubKeyOutput txi
+          lookups :: Lookups.ScriptLookups Void
+          lookups =
+            Lookups.mintingPolicy policy
+              <> Lookups.unspentOutputs utxos
+
+        unBalTx <- liftedE $ Lookups.mkUnbalancedTx lookups constraints
+        res <- balanceTx unBalTx
+        res `shouldSatisfy` isLeft
+  where 
+    singleWalletDistribution :: InitialUTxOs
+    singleWalletDistribution = 
+      [ BigInt.fromInt 5_000_000
+      , BigInt.fromInt 2_000_000_000
+      ]
+
 
 config :: PlutipConfig
 config =
