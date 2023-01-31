@@ -16,8 +16,8 @@ import PlutusTx qualified (applyCode, compile, liftCode)
 {-# INLINEABLE mkPolicy #-}
 mkPolicy :: TxOutRef -> () -> ScriptContext -> Bool
 mkPolicy txoref _red ctx =
-    traceIfFalse badInput hasUtxo
-        && traceIfFalse badAmount mintedOne
+  traceIfFalse badInput hasUtxo
+    && traceIfFalse badAmount mintedOne
   where
     info :: TxInfo
     info = scriptContextTxInfo ctx
@@ -39,20 +39,20 @@ mkPolicy txoref _red ctx =
 {-# INLINEABLE mkPolicy' #-}
 mkPolicy' :: BuiltinData -> BuiltinData -> BuiltinData -> ()
 mkPolicy' params redeemer context =
-    let
-        result =
-            mkPolicy
-                (unsafeFromBuiltinData params)
-                (unsafeFromBuiltinData redeemer)
-                (unsafeFromBuiltinData context)
-     in
-        if result then () else traceError "Failed verification"
+  let
+    result =
+      mkPolicy
+        (unsafeFromBuiltinData params)
+        (unsafeFromBuiltinData redeemer)
+        (unsafeFromBuiltinData context)
+   in
+    if result then () else traceError "Failed verification"
 
 script :: Scripts.Script
 script = Scripts.fromCompiledCode $$(PlutusTx.compile [||mkPolicy'||])
 
 policy :: TxOutRef -> Scripts.MintingPolicy
 policy params =
-    Scripts.mkMintingPolicyScript $
-        $$(PlutusTx.compile [||mkPolicy'||])
-            `PlutusTx.applyCode` PlutusTx.liftCode (toBuiltinData params)
+  Scripts.mkMintingPolicyScript $
+    $$(PlutusTx.compile [||mkPolicy'||])
+      `PlutusTx.applyCode` PlutusTx.liftCode (toBuiltinData params)
