@@ -4,7 +4,7 @@ module Test.Scaffold.Main (main) where
 
 import Contract.Prelude
 
-import AdminNft (contract) as AdminNft
+import AdminNft (mintAdminNft) as AdminNft
 import CardanoRacers.ScriptsFFI (adminNftMintingPolicy)
 import Contract.Address (Address, getWalletAddresses)
 import Contract.Config (emptyHooks)
@@ -36,7 +36,7 @@ import Contract.Test.Utils
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Utxos (getWalletUtxos)
 import Contract.Value (CurrencySymbol, TokenName, valueOf)
-import Data.Array (head)
+import Data.Array (head) as Array
 import Data.BigInt (BigInt, fromInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (toUnfoldable)
@@ -85,7 +85,7 @@ suite = do
     withWallets distribution \w ->
       withKeyWallet w do
         utxos <- liftedM "Could not get wallet utxos" $ getWalletUtxos
-        (txi /\ _) <- liftContractM "Could not find some utxo" $ head $
+        (txi /\ _) <- liftContractM "Could not find some utxo" $ Array.head $
           toUnfoldable utxos
         v2script <- liftContractM "Error decoding alwaysSucceeds" do
           envelope <- decodeTextEnvelope adminNftMintingPolicy
@@ -133,10 +133,13 @@ suite = do
       withAssertionsMono = withAssertions
     withWallets distribution \w ->
       withKeyWallet w do
-        addr <- liftedM "Could not get wallet addresses" $ map head
+        addr <- liftedM "Could not get wallet addresses" $ map Array.head
           getWalletAddresses
-        void $ withAssertionsMono (assertNftMint $ label addr "Receiver")
-          AdminNft.contract
+        (txi /\ _) <- liftedM "Could not find some utxo"
+          $ ((_ >>= Array.head) <<< map toUnfoldable)
+          <$> getWalletUtxos
+        void $ withAssertionsMono (assertNftMint $ label addr "Receiver") $
+          AdminNft.mintAdminNft txi
         pure unit
 
 config :: PlutipConfig

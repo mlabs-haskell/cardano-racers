@@ -4,13 +4,11 @@ module Scaffold (contract) where
 
 import Contract.Prelude
 
-import AdminNft (contract) as AdminNft
-import Contract.Address (ownPaymentPubKeyHash)
+import Contract.Address (ownPaymentPubKeysHashes)
 import Contract.Log (logInfo')
 import Contract.Monad (Contract)
 
 contract :: Contract () Unit
 contract = do
   logInfo' "Welcome to CTL! Your wallet's payment PubKey hash is:"
-  logInfo' <<< show =<< ownPaymentPubKeyHash
--- void $ AdminNft.contract
+  logInfo' <<< show =<< ownPaymentPubKeysHashes

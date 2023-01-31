@@ -1,11 +1,11 @@
 -- | This module contains a contract that mints an nft using a utxo from user
 -- | wallet and CardanoRacersAdminNFT as the token name
-module AdminNft (contract) where
+module AdminNft (mintAdminNft) where
 
 import Contract.Prelude
 
 import CardanoRacers.ScriptsFFI (adminNftMintingPolicy)
-import Contract.Monad (Contract, liftContractM, liftedM)
+import Contract.Monad (Contract, liftContractM, liftedE, liftedM, wrapContract)
 import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
@@ -17,7 +17,6 @@ import Contract.Transaction
   , submitTxFromConstraints
   )
 import Contract.TxConstraints as Constraints
-import Contract.Utxos (getWalletUtxos)
 import Contract.Value
   ( CurrencySymbol
   , TokenName
@@ -25,20 +24,25 @@ import Contract.Value
   , scriptCurrencySymbol
   )
 import Contract.Value (singleton) as Value
-import Data.Array (head, singleton) as Array
-import Data.Map (toUnfoldable)
+import Ctl.Internal.Plutus.Conversion (toPlutusTxOutputWithRefScript)
+import Ctl.Internal.QueryM.Kupo (getUtxoByOref)
+import Data.Array (singleton) as Array
+import Data.Map (singleton)
 import Data.Profunctor.Choice (left)
 import Data.Tuple.Nested ((/\))
 import Effect.Exception (error)
 
-contract :: Contract () (Tuple CurrencySymbol TokenName)
-contract = do
-  utxos <- liftedM "Could not get wallet utxos" $ getWalletUtxos
+mintAdminNft :: TransactionInput -> Contract () (Tuple CurrencySymbol TokenName)
+mintAdminNft txi = do
+  txo <- liftedM "Could not get utxos" $ liftedE $ wrapContract $ getUtxoByOref
+    txi
+  ptxo <- liftContractM "Could not convert to plutus txo" $
+    toPlutusTxOutputWithRefScript txo
 
   tkname <- liftContractM "Couldn't convert to hex" $
     (mkTokenName <=< byteArrayFromAscii) "CardanoRacersAdminNFT"
-  (txi /\ _) <- liftContractM "Could not find some utxo" $ Array.head $
-    toUnfoldable utxos
+  -- (txi /\ _) <- liftContractM "Could not find some utxo" $ Array.head $
+  --   toUnfoldable utxos
 
   mp <- mkNftMintingPolicy txi
   cs <- liftContractM "couldn't get currency symbol" $ scriptCurrencySymbol mp
@@ -52,7 +56,7 @@ contract = do
     lookups :: Lookups.ScriptLookups Void
     lookups =
       Lookups.mintingPolicy mp
-        <> Lookups.unspentOutputs utxos
+        <> Lookups.unspentOutputs (singleton txi ptxo)
 
   txId <- submitTxFromConstraints lookups constraints
   awaitTxConfirmed txId
