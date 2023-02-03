@@ -17,7 +17,6 @@ You can edit this file as you like.
   , "prelude"
   , "profunctor"
   , "spec"
-  , "tuples"
   , "uint"
   ]
 , packages = ./packages.dhall

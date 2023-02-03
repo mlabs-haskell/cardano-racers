@@ -4,23 +4,49 @@ module Test.Scaffold.Main (main) where
 
 import Contract.Prelude
 
-import AdminNft (mintAdminNft, mkNftMintingPolicy) as AdminNft
+import AdminNft (mintNft, mkNftMintingPolicy) as AdminNft
 import CardanoRacers.ScriptsFFI (adminNftMintingPolicy)
 import Contract.Address (Address, getWalletAddresses)
-import Contract.Config (emptyHooks)
+import Contract.Config (LogLevel(..), emptyHooks)
+import Contract.Log (logInfo')
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
 import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
-import Contract.ScriptLookups (ScriptLookups, mintingPolicy, mkUnbalancedTx, unspentOutputs) as Lookups
+import Contract.ScriptLookups
+  ( ScriptLookups
+  , mintingPolicy
+  , mkUnbalancedTx
+  , unspentOutputs
+  ) as Lookups
 import Contract.Scripts (applyArgs)
 import Contract.Test.Mote (TestPlanM, interpretWithConfig)
-import Contract.Test.Plutip (InitialUTxOs, PlutipConfig, PlutipTest, testPlutipContracts, withKeyWallet, withWallets)
-import Contract.Test.Utils (ContractAssertionFailure(UnexpectedTokenDelta), ContractWrapAssertion, ExpectedActual(ExpectedActual), Labeled, assertContract, checkBalanceDeltaAtAddress, exitCode, interruptOnSignal, label, runContractAssertionM, withAssertions)
+import Contract.Test.Plutip
+  ( InitialUTxOs
+  , PlutipConfig
+  , PlutipTest
+  , runPlutipContract
+  , testPlutipContracts
+  , withKeyWallet
+  , withWallets
+  )
+import Contract.Test.Utils
+  ( ContractAssertionFailure(UnexpectedTokenDelta)
+  , ContractWrapAssertion
+  , ExpectedActual(ExpectedActual)
+  , Labeled
+  , assertContract
+  , checkBalanceDeltaAtAddress
+  , exitCode
+  , interruptOnSignal
+  , label
+  , runContractAssertionM
+  , withAssertions
+  )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
+import Contract.Transaction (awaitTxConfirmed, submitTxFromConstraints) as Tx
 import Contract.Transaction (balanceTx)
-import Contract.Transaction (submitTxFromConstraints, awaitTxConfirmed) as Tx
 import Contract.TxConstraints as Constraints
-import Contract.Utxos (getWalletUtxos)
+import Contract.Utxos (getWalletBalance, getWalletUtxos)
 import Contract.Value (CurrencySymbol, TokenName)
 import Contract.Value (mkTokenName, scriptCurrencySymbol, singleton, valueOf) as Value
 import Data.Array (head) as Array
@@ -30,19 +56,64 @@ import Data.Map (toUnfoldable)
 import Data.Posix.Signal (Signal(SIGINT))
 import Data.Time.Duration (Seconds(Seconds))
 import Data.UInt (fromInt) as UInt
-import Effect.Aff (Milliseconds(Milliseconds), cancelWith, effectCanceler, launchAff)
+import Effect.Aff
+  ( Milliseconds(Milliseconds)
+  , cancelWith
+  , effectCanceler
+  , launchAff
+  )
 import Mote (group, test)
+import NitroMint (NitroScriptParams(..), mintNitroContract)
 import Scaffold (contract) as Scaffold
 import Test.Spec.Assertions (shouldSatisfy)
 import Test.Spec.Runner (defaultConfig)
 
 -- Run with `npm run test`
+-- main :: Effect Unit
+-- main = interruptOnSignal SIGINT =<< launchAff do
+--   flip cancelWith (effectCanceler (exitCode 1)) do
+--     interpretWithConfig
+--       defaultConfig { timeout = Just $ Milliseconds 70_000.0, exit = true } $
+--       testPlutipContracts config suite
+
 main :: Effect Unit
 main = interruptOnSignal SIGINT =<< launchAff do
-  flip cancelWith (effectCanceler (exitCode 1)) do
-    interpretWithConfig
-      defaultConfig { timeout = Just $ Milliseconds 70_000.0, exit = true } $
-      testPlutipContracts config suite
+  let
+    distr :: InitialUTxOs
+    distr =
+      [ BigInt.fromInt 5_000_000
+      , BigInt.fromInt 8_000_000
+      , BigInt.fromInt 8_000_000
+      , BigInt.fromInt 8_000_000
+      , BigInt.fromInt 2_000_000_000
+      ]
+
+    mintNftAuto :: String -> Contract () (CurrencySymbol /\ TokenName)
+    mintNftAuto tkstring = do
+      tkName <- liftContractM "Cannot make token name"
+        <<< (Value.mkTokenName <=< byteArrayFromAscii)
+        $ tkstring
+      utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
+      (txi /\ _) <- liftContractM "Could not find some utxo"
+        $ (Array.head <<< toUnfoldable)
+        $ utxos
+      AdminNft.mintNft txi tkName
+  runPlutipContract config distr \w ->
+    withKeyWallet w $ do
+      nitroTk <- liftContractM "Cannot make token name"
+        <<< (Value.mkTokenName <=< byteArrayFromAscii)
+        $ "Nitro"
+      (csAdmin /\ tkAdmin) <- mintNftAuto "Admin"
+      (csState /\ tkState) <- mintNftAuto "State"
+      let
+        nsp = NitroScriptParams
+          { adminToken: csAdmin /\ tkAdmin
+          , stateToken: csState /\ tkState
+          , nitroToken: nitroTk
+          }
+      mintNitroContract (BigInt.fromInt 100) nsp
+      bal <- liftedM "no balance" getWalletBalance
+      logInfo' $ show $ bal
 
 suite :: TestPlanM PlutipTest Unit
 suite = do
@@ -57,7 +128,6 @@ suite = do
       withKeyWallet w do
         Scaffold.contract
   adminNftSuite
-
 
 adminNftSuite :: TestPlanM PlutipTest Unit
 adminNftSuite = group "AdminNft" do
@@ -87,7 +157,8 @@ adminNftSuite = group "AdminNft" do
 
                 actual :: BigInt
                 actual =
-                  Value.valueOf valueAfter cs tn - Value.valueOf valueBefore cs tn
+                  Value.valueOf valueAfter cs tn - Value.valueOf valueBefore cs
+                    tn
 
                 expected :: BigInt
                 expected = BigInt.fromInt 1
@@ -98,6 +169,7 @@ adminNftSuite = group "AdminNft" do
 
               assertContract unexpectedTokenDelta (expected == actual)
               pure nftAssetClass
+
       withAssertionsMono
         :: forall (r :: Row Type)
          . ContractWrapAssertion r (CurrencySymbol /\ TokenName)
@@ -111,22 +183,32 @@ adminNftSuite = group "AdminNft" do
         (txi /\ _) <- liftedM "Could not find some utxo"
           $ ((_ >>= Array.head) <<< map toUnfoldable)
           <$> getWalletUtxos
+        tkname <- liftContractM "Cannot make token name"
+          <<< (Value.mkTokenName <=< byteArrayFromAscii)
+          $ "CardanoRacersAdminNFT"
         void $ withAssertionsMono (assertNftMint $ label addr "Receiver") $
-          AdminNft.mintAdminNft txi
+          AdminNft.mintNft txi tkname
         pure unit
   test "NFT minting policy fails to mint more than 1 token" $
     withWallets singleWalletDistribution \w ->
       withKeyWallet w do
         utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
-        (txi /\ _) <- liftContractM "Could not find some utxo" $ (Array.head <<< toUnfoldable) $ utxos
-        tkname <- liftContractM "Cannot make token name" <<< (Value.mkTokenName <=< byteArrayFromAscii) $ "Token"
+        (txi /\ _) <- liftContractM "Could not find some utxo"
+          $ (Array.head <<< toUnfoldable)
+          $ utxos
+        tkname <- liftContractM "Cannot make token name"
+          <<< (Value.mkTokenName <=< byteArrayFromAscii)
+          $ "Token"
         policy <- AdminNft.mkNftMintingPolicy txi
-        cs <- liftContractM "couldn't get currency symbol" $ Value.scriptCurrencySymbol policy
+        cs <- liftContractM "couldn't get currency symbol" $
+          Value.scriptCurrencySymbol policy
         let
           constraints :: Constraints.TxConstraints Void Void
           constraints =
-            Constraints.mustMintValue (Value.singleton cs tkname $ BigInt.fromInt 2)
+            Constraints.mustMintValue
+              (Value.singleton cs tkname $ BigInt.fromInt 2)
               <> Constraints.mustSpendPubKeyOutput txi
+
           lookups :: Lookups.ScriptLookups Void
           lookups =
             Lookups.mintingPolicy policy
@@ -135,18 +217,18 @@ adminNftSuite = group "AdminNft" do
         unBalTx <- liftedE $ Lookups.mkUnbalancedTx lookups constraints
         res <- balanceTx unBalTx
         res `shouldSatisfy` isLeft
-  where 
-    singleWalletDistribution :: InitialUTxOs
-    singleWalletDistribution = 
-      [ BigInt.fromInt 5_000_000
-      , BigInt.fromInt 2_000_000_000
-      ]
+  where
+  singleWalletDistribution :: InitialUTxOs
+  singleWalletDistribution =
+    [ BigInt.fromInt 5_000_000
+    , BigInt.fromInt 2_000_000_000
+    ]
 
 config :: PlutipConfig
 config =
   { host: "127.0.0.1"
   , port: UInt.fromInt 8082
-  , logLevel: Trace
+  , logLevel: Info
   , ogmiosConfig:
       { port: UInt.fromInt 1338
       , host: "127.0.0.1"
@@ -173,7 +255,7 @@ config =
       , dbname: "ctxlib"
       }
   , customLogger: Nothing
-  , suppressLogs: true
+  , suppressLogs: false
   , hooks: emptyHooks
   , clusterConfig:
       { slotLength: Seconds 0.05 }

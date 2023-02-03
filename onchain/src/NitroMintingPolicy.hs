@@ -29,43 +29,42 @@ import Plutus.V2.Ledger.Api (
 import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, ownHash, scriptOutputsAt, txSignedBy, valueLockedBy, valuePaidTo, valueProduced, valueSpent)
 import PlutusTx qualified (compile, makeLift, unsafeFromBuiltinData, unstableMakeIsData)
 
-data GameState = GameState
-  { gameTokenPrice :: Integer -- Nitro price in Lovelace
+data NitroState = NitroState
+  { nitroPrice :: Integer -- Nitro price in Lovelace
   , treasuryAddress :: Address
   , operatingAddress :: Address
   }
   deriving (Show, Generic, Eq)
-PlutusTx.unstableMakeIsData ''GameState
+PlutusTx.unstableMakeIsData ''NitroState
 
-data GameScriptParams = GameScriptParams
+data NitroScriptParams = NitroScriptParams
   { adminToken :: AssetClass
   , stateToken :: AssetClass
-  , gameToken :: TokenName
+  , nitroToken :: TokenName
   }
   deriving (Show, Generic)
-PlutusTx.unstableMakeIsData ''GameScriptParams
+PlutusTx.unstableMakeIsData ''NitroScriptParams
 
-data GameScriptRedeemer
-  = SetGameState GameState -- Requires AdminToken
-  | MintGameToken Integer
-  | BuyGameToken Integer
+data NitroScriptRedeemer
+  = SetNitroState NitroState -- Requires AdminToken
+  | MintNitroToken Integer
+  | BuyNitroToken Integer
   deriving (Show, Generic)
-PlutusTx.unstableMakeIsData ''GameScriptRedeemer
+PlutusTx.unstableMakeIsData ''NitroScriptRedeemer
 
 {-# INLINEABLE mkPolicy #-}
-mkPolicy :: GameScriptParams -> () -> GameScriptRedeemer -> ScriptContext -> Bool
-mkPolicy gsp dat red ctx =
-  traceIfFalse "state token not preserved" stateTokenPreserved && case red of
-    SetGameState gs ->
+mkPolicy :: NitroScriptParams -> () -> NitroScriptRedeemer -> ScriptContext -> Bool
+mkPolicy gsp dat red ctx = traceIfFalse "state token not preserved" stateTokenPreserved && case red of
+    SetNitroState gs ->
       traceIfFalse "Admin token not present" inputContainsAdminToken
         && traceIfFalse "game state token not spent" inputContainsStateToken
-        && traceIfFalse "game state not set" (setsGameStateTo gs)
-    MintGameToken i ->
+        && traceIfFalse "game state not set" (setsNitroStateTo gs)
+    MintNitroToken i ->
       traceIfFalse "admin token not present" inputContainsAdminToken
-        && traceIfFalse "wrong amount minted" (mintedGameToken i)
-    BuyGameToken i ->
-      traceIfFalse "no ref input with game token" hasGameStateRefInput
-        && traceIfFalse "wrong amount minted" (mintedGameToken i)
+        && traceIfFalse "wrong amount minted" (mintedNitroToken i)
+    BuyNitroToken i ->
+      traceIfFalse "no ref input with game token" hasNitroStateRefInput
+        && traceIfFalse "wrong amount minted" (mintedNitroToken i)
         && traceIfFalse "wrong amount spent" (sendsAdaToCorrectAddrs i)
   where
     info :: TxInfo
@@ -74,13 +73,13 @@ mkPolicy gsp dat red ctx =
     outputsLockedByTheScript :: [(OutputDatum, Value)]
     outputsLockedByTheScript = scriptOutputsAt (ownHash ctx) info
 
-    hasGameStateRefInput :: Bool
-    hasGameStateRefInput = isJust gameStateRefInput
+    hasNitroStateRefInput :: Bool
+    hasNitroStateRefInput = isJust gameStateRefInput
 
     gameStateRefInput :: Maybe TxOut
     gameStateRefInput = find ((`geq` stateTokenValue) . txOutValue) . map txInInfoResolved $ txInfoReferenceInputs info
 
-    currentStateFromRefInput :: Maybe GameState
+    currentStateFromRefInput :: Maybe NitroState
     currentStateFromRefInput = do
       outDatum <- txOutDatum <$> gameStateRefInput
       dat <- case outDatum of
@@ -102,8 +101,8 @@ mkPolicy gsp dat red ctx =
     inputContainsStateToken :: Bool
     inputContainsStateToken = inputContainsValue $ stateTokenValue
 
-    setsGameStateTo :: GameState -> Bool
-    setsGameStateTo gs =
+    setsNitroStateTo :: NitroState -> Bool
+    setsNitroStateTo gs =
       case filter (\(odat, val) -> val `geq` stateTokenValue) outputsLockedByTheScript of
         [(OutputDatum odat, val)] -> getDatum odat == toBuiltinData gs
         _ -> False
@@ -111,16 +110,16 @@ mkPolicy gsp dat red ctx =
     inputContainsValue :: Value -> Bool
     inputContainsValue v = valueSpent info `geq` v
 
-    mintedGameToken :: Integer -> Bool
-    mintedGameToken i = valueProduced info `geq` gameTokenValue i
+    mintedNitroToken :: Integer -> Bool
+    mintedNitroToken i = valueProduced info == nitroValue i
 
-    gameTokenValue :: Integer -> Value
-    gameTokenValue amt = assetClassValue (assetClass (ownCurrencySymbol ctx) (gameToken gsp)) amt
+    nitroValue :: Integer -> Value
+    nitroValue amt = assetClassValue (assetClass (ownCurrencySymbol ctx) (nitroToken gsp)) amt
 
     sendsAdaToCorrectAddrs :: Integer -> Bool
     sendsAdaToCorrectAddrs mintedAmount = fromMaybe False $ do
       gameState <- currentStateFromRefInput
-      let totalPrice = fromInteger mintedAmount * fromInteger (gameTokenPrice gameState)
+      let totalPrice = fromInteger mintedAmount * fromInteger (nitroPrice gameState)
           treasuryValue = lovelaceValueOf . round $ unsafeRatio 1 4 * totalPrice
           operatingValue = lovelaceValueOf . round $ unsafeRatio 3 4 * totalPrice
       paysToTreasury <- (`geq` treasuryValue) <$> valueToAddr (treasuryAddress gameState)

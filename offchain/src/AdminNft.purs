@@ -1,11 +1,19 @@
 -- | This module contains a contract that mints an nft using a utxo from user
 -- | wallet and CardanoRacersAdminNFT as the token name
-module AdminNft (mintAdminNft, mkNftMintingPolicy) where
+module AdminNft (mintNft, mkNftMintingPolicy) where
 
 import Contract.Prelude
 
 import CardanoRacers.ScriptsFFI (adminNftMintingPolicy)
-import Contract.Monad (Contract, liftContractM, liftedE, liftedM, wrapContract)
+import Contract.Log (logInfo')
+import Contract.Monad
+  ( Contract
+  , liftContractM
+  , liftedE
+  , liftedM
+  , throwContractError
+  , wrapContract
+  )
 import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
@@ -29,20 +37,17 @@ import Ctl.Internal.QueryM.Kupo (getUtxoByOref)
 import Data.Array (singleton) as Array
 import Data.Map (singleton)
 import Data.Profunctor.Choice (left)
-import Data.Tuple.Nested ((/\))
 import Effect.Exception (error)
 
-mintAdminNft :: TransactionInput -> Contract () (Tuple CurrencySymbol TokenName)
-mintAdminNft txi = do
+mintNft
+  :: TransactionInput
+  -> TokenName
+  -> Contract () (Tuple CurrencySymbol TokenName)
+mintNft txi tkname = do
   txo <- liftedM "Could not get utxos" $ liftedE $ wrapContract $ getUtxoByOref
     txi
   ptxo <- liftContractM "Could not convert to plutus txo" $
     toPlutusTxOutputWithRefScript txo
-
-  tkname <- liftContractM "Couldn't convert to hex" $
-    (mkTokenName <=< byteArrayFromAscii) "CardanoRacersAdminNFT"
-  -- (txi /\ _) <- liftContractM "Could not find some utxo" $ Array.head $
-  --   toUnfoldable utxos
 
   mp <- mkNftMintingPolicy txi
   cs <- liftContractM "couldn't get currency symbol" $ scriptCurrencySymbol mp
@@ -60,6 +65,8 @@ mintAdminNft txi = do
 
   txId <- submitTxFromConstraints lookups constraints
   awaitTxConfirmed txId
+
+  logInfo' "Minted successfully"
 
   pure $ cs /\ tkname
 
