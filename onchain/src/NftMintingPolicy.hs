@@ -29,8 +29,8 @@ mkPolicy txoref _red ctx =
     hasUtxo = elem txoref . map txInInfoOutRef $ txInfoInputs info
 
     mintedOne :: Bool
-    mintedOne = case filter (\(cs', _, _) -> cs' == cs) $ flattenValue (txInfoMint info) of
-        [(cs', _, amt)] -> cs' == cs && amt == 1
+    mintedOne = case filter (\(mintedCs, _, _) -> mintedCs == cs) $ flattenValue (txInfoMint info) of
+        [(mintedCs _, amt)] -> amt == 1
         _ -> False
 
     badInput = "parameter TxOutRef not consumed in inputs"
