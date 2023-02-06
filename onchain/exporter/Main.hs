@@ -21,6 +21,7 @@ import System.Environment (getArgs, lookupEnv)
 import Prelude
 
 import NitroMintingPolicy qualified
+import NftMintingPolicy qualified
 
 data ScriptsFFI = ScriptsFFI
     { js :: String
@@ -53,8 +54,10 @@ main = do
         argOut <- listToMaybe <$> getArgs
         envOut <- lookupEnv "out"
         pure $ maybe "." id $ argOut <|> envOut
-    let ScriptsFFI{js} =
+    let ScriptsFFI{js,purs} =
             mkScriptsFFI
                 [ ("rawNitroMintingPolicy", NitroMintingPolicy.script)
+                , ("adminNftMintingPolicy", NftMintingPolicy.script)
                 ]
     writeFile (out <> "/ScriptsFFI.js") js
+    writeFile (out <> "/ScriptsFFI.purs") purs
