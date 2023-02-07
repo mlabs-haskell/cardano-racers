@@ -30,8 +30,8 @@ mkPolicy txoref _red ctx =
 
     mintedOne :: Bool
     mintedOne = case filter (\(mintedCs, _, _) -> mintedCs == cs) $ flattenValue (txInfoMint info) of
-        [(mintedCs, _, amt)] -> amt == 1
-        _ -> False
+      [(mintedCs, _, amt)] -> amt == 1
+      _ -> False
 
     badInput = "parameter TxOutRef not consumed in inputs"
     badAmount = "amount minted is not 1"

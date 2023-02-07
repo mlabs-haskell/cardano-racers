@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -w #-}
 
-module NitroMintingPolicy (script) where
+module NitroMintingPolicy (script, mintredeemer, setstatered) where
 
 import PlutusTx.Prelude
 
@@ -10,24 +10,26 @@ import Control.Applicative ((<|>))
 import GHC.Generics (Generic)
 import GHC.Real (RealFrac (ceiling))
 import GHC.Show (Show)
-import Ledger (Address, AssetClass, CurrencySymbol, Datum (getDatum), PaymentPubKeyHash (unPaymentPubKeyHash), toPubKeyHash, toValidatorHash)
+import Ledger (Address, AssetClass, CurrencySymbol, Datum (getDatum), PaymentPubKeyHash (unPaymentPubKeyHash), Validator (Validator), fromSymbol, scriptHashAddress, toPubKeyHash, toValidatorHash, validatorHash, ScriptPurpose (Minting, Spending))
 import Ledger.Ada (lovelaceValueOf)
-import Ledger.Value (assetClass, assetClassValue, flattenValue, geq)
+import Ledger.Value (assetClass, assetClassValue, assetClassValueOf, flattenValue, geq)
 import Plutus.V2.Ledger.Api (
   Address,
   OutputDatum (OutputDatum),
   Script,
-  ScriptContext (scriptContextTxInfo),
+  ScriptContext (scriptContextTxInfo, scriptContextPurpose),
   ToData (toBuiltinData),
   TokenName,
   TxInInfo (txInInfoResolved),
   TxInfo (txInfoReferenceInputs),
   TxOut (txOutDatum, txOutValue),
+  ValidatorHash,
   Value,
   fromCompiledCode,
+  toData,
  )
-import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, ownHash, scriptOutputsAt, txSignedBy, valueLockedBy, valuePaidTo, valueProduced, valueSpent)
-import PlutusTx qualified (compile, makeLift, unsafeFromBuiltinData, unstableMakeIsData)
+import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, scriptOutputsAt, txSignedBy, valueLockedBy, valuePaidTo, valueProduced, valueSpent, ownHash)
+import PlutusTx qualified (compile, makeLift, unsafeFromBuiltinData, unstableMakeIsData, FromData (fromBuiltinData))
 
 data NitroState = NitroState
   { nitroPrice :: Integer -- Nitro price in Lovelace
@@ -53,12 +55,13 @@ data NitroScriptRedeemer
 PlutusTx.unstableMakeIsData ''NitroScriptRedeemer
 
 {-# INLINEABLE mkPolicy #-}
-mkPolicy :: NitroScriptParams -> () -> NitroScriptRedeemer -> ScriptContext -> Bool
-mkPolicy gsp dat red ctx = traceIfFalse "state token not preserved" stateTokenPreserved && case red of
-    SetNitroState gs ->
+mkPolicy :: NitroScriptParams -> NitroScriptRedeemer -> ScriptContext -> Bool
+mkPolicy gsp red ctx =
+  traceIfFalse "state token not preserved" stateTokenPreserved && case red of
+    SetNitroState ns ->
       traceIfFalse "Admin token not present" inputContainsAdminToken
         && traceIfFalse "game state token not spent" inputContainsStateToken
-        && traceIfFalse "game state not set" (setsNitroStateTo gs)
+        && traceIfFalse "game state not set" (setsNitroStateTo ns)
     MintNitroToken i ->
       traceIfFalse "admin token not present" inputContainsAdminToken
         && traceIfFalse "wrong amount minted" (mintedNitroToken i)
@@ -70,8 +73,14 @@ mkPolicy gsp dat red ctx = traceIfFalse "state token not preserved" stateTokenPr
     info :: TxInfo
     info = scriptContextTxInfo ctx
 
+    ownValidatorHash :: ValidatorHash
+    ownValidatorHash = case scriptContextPurpose ctx of
+      Spending _ -> ownHash ctx
+      Minting _ -> fromSymbol $ ownCurrencySymbol ctx
+      _ -> traceError "unexpected script purpose"
+
     outputsLockedByTheScript :: [(OutputDatum, Value)]
-    outputsLockedByTheScript = scriptOutputsAt (ownHash ctx) info
+    outputsLockedByTheScript = scriptOutputsAt ownValidatorHash info
 
     hasNitroStateRefInput :: Bool
     hasNitroStateRefInput = isJust gameStateRefInput
@@ -85,7 +94,7 @@ mkPolicy gsp dat red ctx = traceIfFalse "state token not preserved" stateTokenPr
       dat <- case outDatum of
         OutputDatum d -> Just $ getDatum d
         _ -> Nothing
-      PlutusTx.unsafeFromBuiltinData dat
+      PlutusTx.fromBuiltinData dat
 
     stateTokenPreserved :: Bool
     stateTokenPreserved = not inputContainsStateToken || stateTokenLocked -- if state token is in inputs then it must be locked again
@@ -93,7 +102,7 @@ mkPolicy gsp dat red ctx = traceIfFalse "state token not preserved" stateTokenPr
     stateTokenValue = assetClassValue (stateToken gsp) 1
 
     stateTokenLocked :: Bool
-    stateTokenLocked = valueLockedBy info (ownHash ctx) `geq` stateTokenValue
+    stateTokenLocked = valueLockedBy info ownValidatorHash `geq` stateTokenValue
 
     inputContainsAdminToken :: Bool
     inputContainsAdminToken = inputContainsValue $ assetClassValue (adminToken gsp) 1
@@ -111,10 +120,13 @@ mkPolicy gsp dat red ctx = traceIfFalse "state token not preserved" stateTokenPr
     inputContainsValue v = valueSpent info `geq` v
 
     mintedNitroToken :: Integer -> Bool
-    mintedNitroToken i = valueProduced info == nitroValue i
+    mintedNitroToken i = expectedMintedAmount == actualMintedAmount
+      where
+        expectedMintedAmount = i
+        actualMintedAmount = assetClassValueOf (valueProduced info) nitroAssetClass
 
-    nitroValue :: Integer -> Value
-    nitroValue amt = assetClassValue (assetClass (ownCurrencySymbol ctx) (nitroToken gsp)) amt
+    nitroAssetClass :: AssetClass
+    nitroAssetClass = assetClass (ownCurrencySymbol ctx) (nitroToken gsp)
 
     sendsAdaToCorrectAddrs :: Integer -> Bool
     sendsAdaToCorrectAddrs mintedAmount = fromMaybe False $ do
@@ -124,19 +136,21 @@ mkPolicy gsp dat red ctx = traceIfFalse "state token not preserved" stateTokenPr
           operatingValue = lovelaceValueOf . round $ unsafeRatio 3 4 * totalPrice
       paysToTreasury <- (`geq` treasuryValue) <$> valueToAddr (treasuryAddress gameState)
       paysToOperating <- (`geq` operatingValue) <$> valueToAddr (operatingAddress gameState)
-      pure $ paysToTreasury && paysToOperating
+      pure $
+        traceIfTrue "pays to treasury" paysToTreasury
+          && traceIfTrue "pays to operating" paysToOperating
+    -- pure $ paysToTreasury && paysToOperating
 
     valueToAddr :: Address -> Maybe Value
     valueToAddr addr = (fmap (valuePaidTo info) . toPubKeyHash $ addr) <|> (fmap (valueLockedBy info) . toValidatorHash $ addr)
 
 {-# INLINEABLE mkPolicy' #-}
 mkPolicy' :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
-mkPolicy' gsp datum redeemer context =
+mkPolicy' gsp _datum redeemer context =
   let
     result =
       mkPolicy
         (PlutusTx.unsafeFromBuiltinData gsp)
-        (PlutusTx.unsafeFromBuiltinData datum)
         (PlutusTx.unsafeFromBuiltinData redeemer)
         (PlutusTx.unsafeFromBuiltinData context)
    in
@@ -144,3 +158,22 @@ mkPolicy' gsp datum redeemer context =
 
 script :: Script
 script = fromCompiledCode $$(PlutusTx.compile [||mkPolicy'||])
+
+
+setstatered = toData $ SetNitroState $ NitroState 1000000 (scriptHashAddress $ validatorHash $ Validator script) (scriptHashAddress $ validatorHash $ Validator script)
+-- gamestate :: BuiltinData
+gamestate =
+  toData $
+    NitroState
+      { nitroPrice = 1000000
+      , treasuryAddress = scriptHashAddress $ validatorHash $ Validator script
+      , operatingAddress = scriptHashAddress $ validatorHash $ Validator script
+      }
+
+gameparams =
+  toData $
+    NitroScriptParams
+      {
+      }
+
+mintredeemer = toData $ MintNitroToken 1

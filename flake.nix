@@ -103,7 +103,7 @@
                 haskellPackages.fourmolu
                 nixpkgs-fmt
               ];
-              # tools.haskell-language-server = { };
+              tools.haskell-language-server = { };
               additional = ps:
                 with ps; [
                   cardano-api

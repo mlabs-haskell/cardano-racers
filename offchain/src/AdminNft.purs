@@ -65,9 +65,6 @@ mintNft txi tkname = do
 
   txId <- submitTxFromConstraints lookups constraints
   awaitTxConfirmed txId
-
-  logInfo' "Minted successfully"
-
   pure $ cs /\ tkname
 
 mkNftMintingPolicy :: TransactionInput -> Contract () MintingPolicy

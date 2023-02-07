@@ -62,58 +62,25 @@ import Effect.Aff
   , effectCanceler
   , launchAff
   )
-import Mote (group, test)
-import NitroMint (NitroScriptParams(..), mintNitroContract)
+import Mote (group, skip, test)
+import NitroMint
+  ( NitroScriptParams(..)
+  , NitroState(..)
+  , initNitroStateContract
+  , mintNitroContract
+  , modifyNitroStateContract
+  )
 import Scaffold (contract) as Scaffold
 import Test.Spec.Assertions (shouldSatisfy)
 import Test.Spec.Runner (defaultConfig)
 
 -- Run with `npm run test`
--- main :: Effect Unit
--- main = interruptOnSignal SIGINT =<< launchAff do
---   flip cancelWith (effectCanceler (exitCode 1)) do
---     interpretWithConfig
---       defaultConfig { timeout = Just $ Milliseconds 70_000.0, exit = true } $
---       testPlutipContracts config suite
-
 main :: Effect Unit
 main = interruptOnSignal SIGINT =<< launchAff do
-  let
-    distr :: InitialUTxOs
-    distr =
-      [ BigInt.fromInt 5_000_000
-      , BigInt.fromInt 8_000_000
-      , BigInt.fromInt 8_000_000
-      , BigInt.fromInt 8_000_000
-      , BigInt.fromInt 2_000_000_000
-      ]
-
-    mintNftAuto :: String -> Contract () (CurrencySymbol /\ TokenName)
-    mintNftAuto tkstring = do
-      tkName <- liftContractM "Cannot make token name"
-        <<< (Value.mkTokenName <=< byteArrayFromAscii)
-        $ tkstring
-      utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
-      (txi /\ _) <- liftContractM "Could not find some utxo"
-        $ (Array.head <<< toUnfoldable)
-        $ utxos
-      AdminNft.mintNft txi tkName
-  runPlutipContract config distr \w ->
-    withKeyWallet w $ do
-      nitroTk <- liftContractM "Cannot make token name"
-        <<< (Value.mkTokenName <=< byteArrayFromAscii)
-        $ "Nitro"
-      (csAdmin /\ tkAdmin) <- mintNftAuto "Admin"
-      (csState /\ tkState) <- mintNftAuto "State"
-      let
-        nsp = NitroScriptParams
-          { adminToken: csAdmin /\ tkAdmin
-          , stateToken: csState /\ tkState
-          , nitroToken: nitroTk
-          }
-      mintNitroContract (BigInt.fromInt 100) nsp
-      bal <- liftedM "no balance" getWalletBalance
-      logInfo' $ show $ bal
+  flip cancelWith (effectCanceler (exitCode 1)) do
+    interpretWithConfig
+      defaultConfig { timeout = Just $ Milliseconds 70_000.0, exit = true } $
+      testPlutipContracts config suite
 
 suite :: TestPlanM PlutipTest Unit
 suite = do
@@ -127,7 +94,103 @@ suite = do
     withWallets distribution \w ->
       withKeyWallet w do
         Scaffold.contract
-  adminNftSuite
+  skip adminNftSuite
+  nitroTokenSuite
+
+nitroTokenSuite :: TestPlanM PlutipTest Unit
+nitroTokenSuite = group "NitroToken script" do
+  skip $ test "Admin freely mints Nitro" do
+    withWallets singleWalletDistribution \w ->
+      withKeyWallet w $ do
+        nitroTk <- liftContractM "Cannot make token name"
+          <<< (Value.mkTokenName <=< byteArrayFromAscii)
+          $ "Nitro"
+        (csAdmin /\ tkAdmin) <- mintNftAuto "Admin"
+        (csState /\ tkState) <- mintNftAuto "State"
+        let
+          nsp = NitroScriptParams
+            { adminToken: csAdmin /\ tkAdmin
+            , stateToken: csState /\ tkState
+            , nitroToken: nitroTk
+            }
+        mintNitroContract (BigInt.fromInt 100) nsp
+        bal <- liftedM "no balance" getWalletBalance
+        logInfo' $ show $ bal
+  skip $ test "Initialise NitroState" do
+    withWallets singleWalletDistribution \w ->
+      withKeyWallet w $ do
+        nitroTk <- liftContractM "Cannot make token name"
+          <<< (Value.mkTokenName <=< byteArrayFromAscii)
+          $ "Nitro"
+        (csAdmin /\ tkAdmin) <- mintNftAuto "Admin"
+        (csState /\ tkState) <- mintNftAuto "State"
+        addr <- liftedM "Could not get address" $ Array.head <$>
+          getWalletAddresses
+        let
+          nsp = NitroScriptParams
+            { adminToken: csAdmin /\ tkAdmin
+            , stateToken: csState /\ tkState
+            , nitroToken: nitroTk
+            }
+          ns = NitroState
+            { nitroPrice: BigInt.fromInt 1000000
+            , treasuryAddress: addr
+            , operatingAddress: addr
+            }
+        initNitroStateContract nsp ns
+  test "Modify NitroState" do
+    withWallets singleWalletDistribution \w ->
+      withKeyWallet w do
+        nitroTk <- liftContractM "Cannot make token name"
+          <<< (Value.mkTokenName <=< byteArrayFromAscii)
+          $ "Nitro"
+        (csAdmin /\ tkAdmin) <- mintNftAuto "Admin"
+        (csState /\ tkState) <- mintNftAuto "State"
+        addr <- liftedM "Could not get address" $ Array.head <$>
+          getWalletAddresses
+        let
+          nsp = NitroScriptParams
+            { adminToken: csAdmin /\ tkAdmin
+            , stateToken: csState /\ tkState
+            , nitroToken: nitroTk
+            }
+          ns = NitroState
+            { nitroPrice: BigInt.fromInt 1000000
+            , treasuryAddress: addr
+            , operatingAddress: addr
+            }
+        initNitroStateContract nsp ns
+        logInfo' "Initialized state"
+        let
+          newNs = NitroState
+            { nitroPrice: BigInt.fromInt 2000000
+            , treasuryAddress: addr
+            , operatingAddress: addr
+            }
+        modifyNitroStateContract nsp newNs
+
+  where
+  singleWalletDistribution :: InitialUTxOs
+  singleWalletDistribution =
+    [ BigInt.fromInt 5_000_000
+    , BigInt.fromInt 8_000_000
+    , BigInt.fromInt 8_000_000
+    , BigInt.fromInt 8_000_000
+    , BigInt.fromInt 2_000_000_000
+    ]
+
+  mintNftAuto :: String -> Contract () (CurrencySymbol /\ TokenName)
+  mintNftAuto tkstring = do
+    tkName <- liftContractM "Cannot make token name"
+      <<< (Value.mkTokenName <=< byteArrayFromAscii)
+      $ tkstring
+    utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
+    (txi /\ _) <- liftContractM "Could not find some utxo"
+      $ (Array.head <<< toUnfoldable)
+      $ utxos
+    res <- AdminNft.mintNft txi tkName
+    logInfo' "Minted NFT successfully"
+    pure res
 
 adminNftSuite :: TestPlanM PlutipTest Unit
 adminNftSuite = group "AdminNft" do
