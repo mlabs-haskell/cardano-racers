@@ -10,14 +10,14 @@ import Control.Applicative ((<|>))
 import GHC.Generics (Generic)
 import GHC.Real (RealFrac (ceiling))
 import GHC.Show (Show)
-import Ledger (Address, AssetClass, CurrencySymbol, Datum (getDatum), PaymentPubKeyHash (unPaymentPubKeyHash), Validator (Validator), fromSymbol, scriptHashAddress, toPubKeyHash, toValidatorHash, validatorHash, ScriptPurpose (Minting, Spending))
+import Ledger (Address, AssetClass, CurrencySymbol, Datum (getDatum), PaymentPubKeyHash (unPaymentPubKeyHash), ScriptPurpose (Minting, Spending), Validator (Validator), fromSymbol, scriptHashAddress, toPubKeyHash, toValidatorHash, validatorHash)
 import Ledger.Ada (lovelaceValueOf)
 import Ledger.Value (assetClass, assetClassValue, assetClassValueOf, flattenValue, geq)
 import Plutus.V2.Ledger.Api (
   Address,
   OutputDatum (OutputDatum),
   Script,
-  ScriptContext (scriptContextTxInfo, scriptContextPurpose),
+  ScriptContext (scriptContextPurpose, scriptContextTxInfo),
   ToData (toBuiltinData),
   TokenName,
   TxInInfo (txInInfoResolved),
@@ -28,8 +28,8 @@ import Plutus.V2.Ledger.Api (
   fromCompiledCode,
   toData,
  )
-import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, scriptOutputsAt, txSignedBy, valueLockedBy, valuePaidTo, valueProduced, valueSpent, ownHash)
-import PlutusTx qualified (compile, makeLift, unsafeFromBuiltinData, unstableMakeIsData, FromData (fromBuiltinData))
+import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, ownHash, scriptOutputsAt, txSignedBy, valueLockedBy, valuePaidTo, valueProduced, valueSpent)
+import PlutusTx qualified (FromData (fromBuiltinData), compile, makeLift, unsafeFromBuiltinData, unstableMakeIsData)
 
 data NitroState = NitroState
   { nitroPrice :: Integer -- Nitro price in Lovelace
@@ -61,7 +61,7 @@ mkPolicy gsp red ctx =
     SetNitroState ns ->
       traceIfFalse "Admin token not present" inputContainsAdminToken
         && traceIfFalse "game state token not spent" inputContainsStateToken
-        && traceIfFalse "game state not set" (setsNitroStateTo ns)
+        && traceIfFalse "game state invalid: " (setsNitroStateTo ns)
     MintNitroToken i ->
       traceIfFalse "admin token not present" inputContainsAdminToken
         && traceIfFalse "wrong amount minted" (mintedNitroToken i)
@@ -113,8 +113,10 @@ mkPolicy gsp red ctx =
     setsNitroStateTo :: NitroState -> Bool
     setsNitroStateTo gs =
       case filter (\(odat, val) -> val `geq` stateTokenValue) outputsLockedByTheScript of
-        [(OutputDatum odat, val)] -> getDatum odat == toBuiltinData gs
-        _ -> False
+        [(OutputDatum odat, val)] ->
+          traceIfFalse "game state is not equal to state provided by redeemer" $
+            getDatum odat == toBuiltinData gs
+        _ -> traceError "game state not set"
 
     inputContainsValue :: Value -> Bool
     inputContainsValue v = valueSpent info `geq` v
@@ -159,8 +161,8 @@ mkPolicy' gsp _datum redeemer context =
 script :: Script
 script = fromCompiledCode $$(PlutusTx.compile [||mkPolicy'||])
 
-
 setstatered = toData $ SetNitroState $ NitroState 1000000 (scriptHashAddress $ validatorHash $ Validator script) (scriptHashAddress $ validatorHash $ Validator script)
+
 -- gamestate :: BuiltinData
 gamestate =
   toData $
