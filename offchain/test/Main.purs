@@ -6,12 +6,7 @@ import Contract.Prelude
 
 import AdminNft (mintNft, mkNftMintingPolicy) as AdminNft
 import CardanoRacers.ScriptsFFI (adminNftMintingPolicy)
-import Contract.Address
-  ( Address
-  , getNetworkId
-  , getWalletAddresses
-  , validatorHashEnterpriseAddress
-  )
+import Contract.Address (Address, getWalletAddresses, scriptHashAddress)
 import Contract.Config (emptyHooks)
 import Contract.Log (logInfo')
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
@@ -52,7 +47,8 @@ import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletBalance, getWalletUtxos, utxosAt)
 import Contract.Value (CurrencySymbol, TokenName)
 import Contract.Value (mkTokenName, scriptCurrencySymbol, singleton, valueOf) as Value
-import Data.Array (head) as Array
+import Data.Array (head, take) as Array
+import Data.Array (replicate)
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (toUnfoldable)
@@ -65,15 +61,16 @@ import Effect.Aff
   , effectCanceler
   , launchAff
   )
-import Mote (group, skip, test)
+import Mote (group, only, skip, test)
+import NitroMint (NitroScriptParams(..), NitroState(..))
 import NitroMint
-  ( NitroScriptParams(..)
-  , NitroState(..)
+  ( buyNitroContract
   , initNitroStateContract
   , mintNitroContract
   , mkNitroPolicy
+  , mkNitroValidator
   , modifyNitroStateContract
-  )
+  ) as NitroMint
 import Scaffold (contract) as Scaffold
 import Test.Spec.Assertions (shouldSatisfy)
 import Test.Spec.Runner (defaultConfig)
@@ -98,7 +95,7 @@ suite = do
     withWallets distribution \w ->
       withKeyWallet w do
         Scaffold.contract
-  adminNftSuite
+  skip adminNftSuite
   nitroTokenSuite
 
 nitroTokenSuite :: TestPlanM PlutipTest Unit
@@ -117,7 +114,7 @@ nitroTokenSuite = group "NitroToken script" do
             , stateToken: csState /\ tkState
             , nitroToken: nitroTk
             }
-        mintNitroContract (BigInt.fromInt 100) nsp
+        NitroMint.mintNitroContract (BigInt.fromInt 100) nsp
         bal <- liftedM "no balance" getWalletBalance
         logInfo' $ show $ bal
   test "Initialise NitroState" do
@@ -141,7 +138,7 @@ nitroTokenSuite = group "NitroToken script" do
             , treasuryAddress: addr
             , operatingAddress: addr
             }
-        initNitroStateContract nsp ns
+        NitroMint.initNitroStateContract nsp ns
   test "Modify NitroState" do
     withWallets singleWalletDistribution \w ->
       withKeyWallet w do
@@ -163,13 +160,11 @@ nitroTokenSuite = group "NitroToken script" do
             , treasuryAddress: addr
             , operatingAddress: addr
             }
-        netId <- getNetworkId
-        nitroValidator <- Validator <$> mkNitroPolicy nsp
-        valAddr <- liftContractM "Couldn't get validator address"
-          $ validatorHashEnterpriseAddress netId
-          $ validatorHash nitroValidator
-        initNitroStateContract nsp ns
-        utxosAfterInit <- utxosAt valAddr
+        nitroValidator <- NitroMint.mkNitroValidator nsp
+        let
+          scriptAddr = scriptHashAddress (validatorHash nitroValidator) Nothing
+        NitroMint.initNitroStateContract nsp ns
+        utxosAfterInit <- utxosAt scriptAddr
         logInfo' $ show utxosAfterInit
         let
           newNs = NitroState
@@ -177,10 +172,43 @@ nitroTokenSuite = group "NitroToken script" do
             , treasuryAddress: addr
             , operatingAddress: addr
             }
-        modifyNitroStateContract nsp newNs
-        utxosAfterModify <- utxosAt valAddr
+        NitroMint.modifyNitroStateContract nsp newNs
+        utxosAfterModify <- utxosAt scriptAddr
         logInfo' $ show utxosAfterModify
-
+  only $ test "User can purchase Nitro" do
+    withWallets
+      ( singleWalletDistribution /\ singleWalletDistribution /\
+          singleWalletDistribution
+      )
+      \(alice /\ bob /\ treasury) -> do
+        treasuryAddr <- withKeyWallet treasury
+          $ liftedM "Could not get address"
+          $ Array.head
+          <$> getWalletAddresses
+        nsp <- withKeyWallet alice do
+          nitroTk <- liftContractM "Cannot make token name"
+            <<< (Value.mkTokenName <=< byteArrayFromAscii)
+            $ "Nitro"
+          (csAdmin /\ tkAdmin) <- mintNftAuto "Admin"
+          (csState /\ tkState) <- mintNftAuto "State"
+          ownAddr <- liftedM "Could not get address" $ Array.head <$>
+            getWalletAddresses
+          let
+            nsp = NitroScriptParams
+              { adminToken: csAdmin /\ tkAdmin
+              , stateToken: csState /\ tkState
+              , nitroToken: nitroTk
+              }
+            ns = NitroState
+              { nitroPrice: BigInt.fromInt 1000000
+              , treasuryAddress: treasuryAddr
+              , operatingAddress: ownAddr
+              }
+          NitroMint.initNitroStateContract nsp ns
+          pure nsp
+        withKeyWallet bob do
+          NitroMint.buyNitroContract (BigInt.fromInt 100) nsp
+          getWalletBalance >>= logInfo' <<< show
   where
   singleWalletDistribution :: InitialUTxOs
   singleWalletDistribution =

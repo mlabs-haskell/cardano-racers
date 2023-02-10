@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -w #-}
 
-module NitroMintingPolicy (script, mintredeemer, setstatered) where
+module NitroMintingPolicy (script, mintredeemer, setstatered, rounded) where
 
 import PlutusTx.Prelude
 
@@ -12,7 +12,7 @@ import GHC.Real (RealFrac (ceiling))
 import GHC.Show (Show)
 import Ledger (Address, AssetClass, CurrencySymbol, Datum (getDatum), PaymentPubKeyHash (unPaymentPubKeyHash), ScriptPurpose (Minting, Spending), Validator (Validator), fromSymbol, scriptHashAddress, toPubKeyHash, toValidatorHash, validatorHash)
 import Ledger.Ada (lovelaceValueOf)
-import Ledger.Value (assetClass, assetClassValue, assetClassValueOf, flattenValue, geq)
+import Ledger.Value (assetClass, assetClassValue, assetClassValueOf, flattenValue, geq, leq)
 import Plutus.V2.Ledger.Api (
   Address,
   OutputDatum (OutputDatum),
@@ -54,6 +54,7 @@ data NitroScriptRedeemer
   deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''NitroScriptRedeemer
 
+-- todo: split into 2 fns or branch on purpose
 {-# INLINEABLE mkPolicy #-}
 mkPolicy :: NitroScriptParams -> NitroScriptRedeemer -> ScriptContext -> Bool
 mkPolicy gsp red ctx =
@@ -66,6 +67,8 @@ mkPolicy gsp red ctx =
       traceIfFalse "admin token not present" inputContainsAdminToken
         && traceIfFalse "wrong amount minted" (mintedNitroToken i)
     BuyNitroToken i ->
+      -- todo:  possible vulnerability: user can change game state if they reference state
+      -- input and try to spend it in the same transaction.
       traceIfFalse "no ref input with game token" hasNitroStateRefInput
         && traceIfFalse "wrong amount minted" (mintedNitroToken i)
         && traceIfFalse "wrong amount spent" (sendsAdaToCorrectAddrs i)
@@ -108,7 +111,7 @@ mkPolicy gsp red ctx =
     inputContainsAdminToken = inputContainsValue $ assetClassValue (adminToken gsp) 1
 
     inputContainsStateToken :: Bool
-    inputContainsStateToken = inputContainsValue $ stateTokenValue
+    inputContainsStateToken = inputContainsValue stateTokenValue
 
     setsNitroStateTo :: NitroState -> Bool
     setsNitroStateTo gs =
@@ -134,17 +137,23 @@ mkPolicy gsp red ctx =
     sendsAdaToCorrectAddrs mintedAmount = fromMaybe False $ do
       gameState <- currentStateFromRefInput
       let totalPrice = fromInteger mintedAmount * fromInteger (nitroPrice gameState)
-          treasuryValue = lovelaceValueOf . round $ unsafeRatio 1 4 * totalPrice
-          operatingValue = lovelaceValueOf . round $ unsafeRatio 3 4 * totalPrice
+          treasuryValue = lovelaceValueOf . round $ unsafeRatio 3 4 * totalPrice
+          operatingValue = lovelaceValueOf . round $ unsafeRatio 1 4 * totalPrice
       paysToTreasury <- (`geq` treasuryValue) <$> valueToAddr (treasuryAddress gameState)
       paysToOperating <- (`geq` operatingValue) <$> valueToAddr (operatingAddress gameState)
+      combinedValueCheck <- do
+        addrV <- valueToAddr (treasuryAddress gameState)
+        operV <- valueToAddr (operatingAddress gameState)
+        pure $ (addrV <> operV) `geq` (treasuryValue <> operatingValue)
       pure $
-        traceIfTrue "pays to treasury" paysToTreasury
-          && traceIfTrue "pays to operating" paysToOperating
-    -- pure $ paysToTreasury && paysToOperating
+        traceIfFalse "wrong amount paid to treasury" paysToTreasury
+          && traceIfFalse "wrong amount paid to operating" paysToOperating
+          && traceIfFalse "wrong combined amount paid to treasury and operating" combinedValueCheck
 
     valueToAddr :: Address -> Maybe Value
-    valueToAddr addr = (fmap (valuePaidTo info) . toPubKeyHash $ addr) <|> (fmap (valueLockedBy info) . toValidatorHash $ addr)
+    valueToAddr addr =
+      (fmap (valuePaidTo info) . toPubKeyHash $ addr)
+        <|> (fmap (valueLockedBy info) . toValidatorHash $ addr)
 
 {-# INLINEABLE mkPolicy' #-}
 mkPolicy' :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
@@ -179,3 +188,5 @@ gameparams =
       }
 
 mintredeemer = toData $ MintNitroToken 1
+
+rounded = round $ unsafeRatio 3 4 * (fromInteger 1000000)
