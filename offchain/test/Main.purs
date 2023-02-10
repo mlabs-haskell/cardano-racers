@@ -1,10 +1,18 @@
 -- | This module implements a test suite that uses Plutip to automate running
 -- | contracts in temporary, private networks.
-module Test.Scaffold.Main (main) where
+module Test.CardanoRacers.Main (main) where
 
 import Contract.Prelude
 
-import AdminNft (mintNft, mkNftMintingPolicy) as AdminNft
+import CardanoRacers.AdminNft (mintNft, mkNftMintingPolicy) as AdminNft
+import CardanoRacers.Nitro.Contract
+  ( buyNitroContract
+  , initNitroStateContract
+  , mintNitroContract
+  , mkNitroValidator
+  , modifyNitroStateContract
+  ) as NitroMint
+import CardanoRacers.Nitro.Types (NitroScriptParams(..), NitroState(..))
 import CardanoRacers.ScriptsFFI (adminNftMintingPolicy)
 import Contract.Address (Address, getWalletAddresses, scriptHashAddress)
 import Contract.Config (emptyHooks)
@@ -60,16 +68,7 @@ import Effect.Aff
   , effectCanceler
   , launchAff
   )
-import Mote (group, only, skip, test)
-import NitroMint (NitroScriptParams(..), NitroState(..))
-import NitroMint
-  ( buyNitroContract
-  , initNitroStateContract
-  , mintNitroContract
-  , mkNitroValidator
-  , modifyNitroStateContract
-  ) as NitroMint
-import Scaffold (contract) as Scaffold
+import Mote (group, test)
 import Test.Spec.Assertions (shouldSatisfy)
 import Test.Spec.Runner (defaultConfig)
 
@@ -83,21 +82,13 @@ main = interruptOnSignal SIGINT =<< launchAff do
 
 suite :: TestPlanM PlutipTest Unit
 suite = do
-  test "Print PubKey" do
-    let
-      distribution :: InitialUTxOs
-      distribution =
-        [ BigInt.fromInt 5_000_000
-        , BigInt.fromInt 2_000_000_000
-        ]
-    withWallets distribution \w ->
-      withKeyWallet w do
-        Scaffold.contract
-  skip adminNftSuite
+  adminNftSuite
   nitroTokenSuite
 
 nitroTokenSuite :: TestPlanM PlutipTest Unit
 nitroTokenSuite = group "NitroToken script" do
+  -- todo: fix occasional failure due to state token being included in inputs
+  -- by balancer
   test "Admin freely mints Nitro" do
     withWallets singleWalletDistribution \w ->
       withKeyWallet w $ do
@@ -173,7 +164,7 @@ nitroTokenSuite = group "NitroToken script" do
         NitroMint.modifyNitroStateContract nsp newNs
         utxosAfterModify <- utxosAt scriptAddr
         logInfo' $ show utxosAfterModify
-  only $ test "User can purchase Nitro" do
+  test "User can purchase Nitro" do
     withWallets
       ( singleWalletDistribution /\ singleWalletDistribution /\
           singleWalletDistribution
@@ -329,7 +320,7 @@ config :: PlutipConfig
 config =
   { host: "127.0.0.1"
   , port: UInt.fromInt 8082
-  , logLevel: Info
+  , logLevel: Trace
   , ogmiosConfig:
       { port: UInt.fromInt 1338
       , host: "127.0.0.1"
@@ -356,7 +347,7 @@ config =
       , dbname: "ctxlib"
       }
   , customLogger: Nothing
-  , suppressLogs: false
+  , suppressLogs: true
   , hooks: emptyHooks
   , clusterConfig:
       { slotLength: Seconds 0.05 }

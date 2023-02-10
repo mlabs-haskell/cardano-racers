@@ -1,6 +1,6 @@
 -- | This module contains a contract that mints an nft using a utxo from user
 -- | wallet and CardanoRacersAdminNFT as the token name
-module AdminNft (mintNft, mkNftMintingPolicy) where
+module CardanoRacers.AdminNft (mintNft, mkNftMintingPolicy) where
 
 import Contract.Prelude
 
