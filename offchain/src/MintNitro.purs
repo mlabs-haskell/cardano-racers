@@ -15,8 +15,7 @@ import CardanoRacers.ScriptsFFI (rawNitroMintingPolicy)
 import Contract.Address (Address, scriptHashAddress)
 import Contract.Credential (Credential(..))
 import Contract.Log (logInfo')
-import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
-import Contract.Numeric.Rational (reduce, (%))
+import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData
   ( class FromData
   , class HasPlutusSchema
@@ -37,22 +36,19 @@ import Contract.PlutusData
   , toData
   , unitDatum
   )
-import Contract.ScriptLookups (mkUnbalancedTx)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts
   ( MintingPolicy(..)
-  , PlutusScript
   , Validator(Validator)
-  , ValidatorHash(..)
+  , ValidatorHash
   , applyArgs
   , validatorHash
   )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
-  ( TransactionInput(..)
-  , TransactionOutputWithRefScript(..)
+  ( TransactionInput
+  , TransactionOutputWithRefScript
   , awaitTxConfirmed
-  , balanceTx
   , submitTxFromConstraints
   )
 import Contract.TxConstraints (DatumPresence(..))
@@ -68,7 +64,7 @@ import Contract.Value
 import Contract.Value (lovelaceValueOf, singleton) as Value
 import Data.Array (singleton) as Array
 import Data.BigInt (BigInt)
-import Data.BigInt (fromInt, fromNumber, toNumber) as BigInt
+import Data.BigInt (fromNumber, toNumber) as BigInt
 import Data.Map (singleton, toUnfoldable, union) as Map
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
@@ -243,6 +239,7 @@ mintNitroContract nitroAmount np = do
   awaitTxConfirmed txId
   pure $ unit
 
+-- todo: fix warining
 buyNitroContract :: BigInt -> NitroScriptParams -> Contract () Unit
 buyNitroContract nitroAmount np = do
   nitroVal <- mkNitroValidator np

@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -w #-}
 
-module NitroMintingPolicy (script, mintredeemer, setstatered, rounded) where
+module NitroMintingPolicy (script) where
 
 import PlutusTx.Prelude
 
@@ -169,24 +169,3 @@ mkPolicy' gsp _datum redeemer context =
 
 script :: Script
 script = fromCompiledCode $$(PlutusTx.compile [||mkPolicy'||])
-
-setstatered = toData $ SetNitroState $ NitroState 1000000 (scriptHashAddress $ validatorHash $ Validator script) (scriptHashAddress $ validatorHash $ Validator script)
-
--- gamestate :: BuiltinData
-gamestate =
-  toData $
-    NitroState
-      { nitroPrice = 1000000
-      , treasuryAddress = scriptHashAddress $ validatorHash $ Validator script
-      , operatingAddress = scriptHashAddress $ validatorHash $ Validator script
-      }
-
-gameparams =
-  toData $
-    NitroScriptParams
-      {
-      }
-
-mintredeemer = toData $ MintNitroToken 1
-
-rounded = round $ unsafeRatio 3 4 * (fromInteger 1000000)

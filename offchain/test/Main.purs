@@ -18,7 +18,7 @@ import Contract.ScriptLookups
   , mkUnbalancedTx
   , unspentOutputs
   ) as Lookups
-import Contract.Scripts (Validator(..), applyArgs, validatorHash)
+import Contract.Scripts (applyArgs, validatorHash)
 import Contract.Test.Mote (TestPlanM, interpretWithConfig)
 import Contract.Test.Plutip
   ( InitialUTxOs
@@ -47,8 +47,7 @@ import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletBalance, getWalletUtxos, utxosAt)
 import Contract.Value (CurrencySymbol, TokenName)
 import Contract.Value (mkTokenName, scriptCurrencySymbol, singleton, valueOf) as Value
-import Data.Array (head, take) as Array
-import Data.Array (replicate)
+import Data.Array (head) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (toUnfoldable)
@@ -67,7 +66,6 @@ import NitroMint
   ( buyNitroContract
   , initNitroStateContract
   , mintNitroContract
-  , mkNitroPolicy
   , mkNitroValidator
   , modifyNitroStateContract
   ) as NitroMint
