@@ -54,106 +54,81 @@ data NitroScriptRedeemer
   deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''NitroScriptRedeemer
 
--- todo: split into 2 fns or branch on purpose
 {-# INLINEABLE mkPolicy #-}
 mkPolicy :: NitroScriptParams -> NitroScriptRedeemer -> ScriptContext -> Bool
 mkPolicy gsp red ctx =
-  traceIfFalse "state token not preserved" stateTokenPreserved && case red of
-    SetNitroState ns ->
-      traceIfFalse "Admin token not present" inputContainsAdminToken
-        && traceIfFalse "game state token not spent" inputContainsStateToken
-        && traceIfFalse "game state invalid: " (setsNitroStateTo ns)
-    MintNitroToken i ->
-      traceIfFalse "admin token not present" inputContainsAdminToken
-        && traceIfFalse "wrong amount minted" (mintedNitroToken i)
-    BuyNitroToken i ->
-      -- todo:  possible vulnerability: user can change game state if they reference state
-      -- input and try to spend it in the same transaction.
-      traceIfFalse "no ref input with game token" hasNitroStateRefInput
-        && traceIfFalse "wrong amount minted" (mintedNitroToken i)
-        && traceIfFalse "wrong amount spent" (sendsAdaToCorrectAddrs i)
+    case (scriptContextPurpose ctx, red) of
+      (Minting cs, BuyNitroToken i) ->
+        traceIfFalse "wrong amount spent" (sendsAdaToCorrectAddrs i)
+          && traceIfFalse "wrong amount minted" (mintedNitroToken i)
+        where
+          gameStateRefInput :: Maybe TxOut
+          gameStateRefInput = find ((`geq` stateTokenValue) . txOutValue) . map txInInfoResolved $ txInfoReferenceInputs info
+
+          currentStateFromRefInput :: Maybe NitroState
+          currentStateFromRefInput = do
+            outDatum <- txOutDatum <$> gameStateRefInput
+            dat <- case outDatum of
+              OutputDatum d -> Just $ getDatum d
+              _ -> Nothing
+            PlutusTx.fromBuiltinData dat
+
+          sendsAdaToCorrectAddrs :: Integer -> Bool
+          sendsAdaToCorrectAddrs mintedAmount = fromMaybe False $ do
+            gameState <- currentStateFromRefInput
+            let totalPrice = fromInteger mintedAmount * fromInteger (nitroPrice gameState)
+                treasuryValue = lovelaceValueOf . round $ unsafeRatio 3 4 * totalPrice
+                operatingValue = lovelaceValueOf . round $ unsafeRatio 1 4 * totalPrice
+            paysToTreasury <- (`geq` treasuryValue) <$> valueToAddr (treasuryAddress gameState)
+            paysToOperating <- (`geq` operatingValue) <$> valueToAddr (operatingAddress gameState)
+            combinedValueCheck <- do
+              addrV <- valueToAddr (treasuryAddress gameState)
+              operV <- valueToAddr (operatingAddress gameState)
+              pure $ (addrV <> operV) `geq` (treasuryValue <> operatingValue)
+            pure $
+              traceIfFalse "wrong amount paid to treasury" paysToTreasury
+                && traceIfFalse "wrong amount paid to operating" paysToOperating
+                && traceIfFalse "wrong combined amount paid to treasury and operating" combinedValueCheck
+
+          valueToAddr :: Address -> Maybe Value
+          valueToAddr addr =
+            (fmap (valuePaidTo info) . toPubKeyHash $ addr)
+              <|> (fmap (valueLockedBy info) . toValidatorHash $ addr)
+
+      (Minting cs, MintNitroToken i) ->
+        traceIfFalse "admin token not present" inputContainsAdminToken
+          && traceIfFalse "wrong amount minted" (mintedNitroToken i)
+
+      (Spending _, SetNitroState ns) ->
+        traceIfFalse "Admin token not present" inputContainsAdminToken
+          && traceIfFalse "game state invalid: " (setsNitroStateTo ns)
+        where
+          outputsLockedByTheScript :: [(OutputDatum, Value)]
+          outputsLockedByTheScript = scriptOutputsAt (ownHash ctx) info
+
+          setsNitroStateTo :: NitroState -> Bool
+          setsNitroStateTo gs =
+            case filter (\(odat, val) -> val `geq` stateTokenValue) outputsLockedByTheScript of
+              [(OutputDatum odat, val)] ->
+                traceIfFalse "game state is not equal to state provided by redeemer" $
+                  getDatum odat == toBuiltinData gs
+              _ -> traceError "game state not set"
+      _ -> traceError "unexpected script purpose"
   where
     info :: TxInfo
     info = scriptContextTxInfo ctx
 
-    ownValidatorHash :: ValidatorHash
-    ownValidatorHash = case scriptContextPurpose ctx of
-      Spending _ -> ownHash ctx
-      Minting _ -> fromSymbol $ ownCurrencySymbol ctx
-      _ -> traceError "unexpected script purpose"
-
-    outputsLockedByTheScript :: [(OutputDatum, Value)]
-    outputsLockedByTheScript = scriptOutputsAt ownValidatorHash info
-
-    hasNitroStateRefInput :: Bool
-    hasNitroStateRefInput = isJust gameStateRefInput
-
-    gameStateRefInput :: Maybe TxOut
-    gameStateRefInput = find ((`geq` stateTokenValue) . txOutValue) . map txInInfoResolved $ txInfoReferenceInputs info
-
-    currentStateFromRefInput :: Maybe NitroState
-    currentStateFromRefInput = do
-      outDatum <- txOutDatum <$> gameStateRefInput
-      dat <- case outDatum of
-        OutputDatum d -> Just $ getDatum d
-        _ -> Nothing
-      PlutusTx.fromBuiltinData dat
-
-    stateTokenPreserved :: Bool
-    stateTokenPreserved = not inputContainsStateToken || stateTokenLocked -- if state token is in inputs then it must be locked again
     stateTokenValue :: Value
     stateTokenValue = assetClassValue (stateToken gsp) 1
 
-    stateTokenLocked :: Bool
-    stateTokenLocked = valueLockedBy info ownValidatorHash `geq` stateTokenValue
-
     inputContainsAdminToken :: Bool
-    inputContainsAdminToken = inputContainsValue $ assetClassValue (adminToken gsp) 1
-
-    inputContainsStateToken :: Bool
-    inputContainsStateToken = inputContainsValue stateTokenValue
-
-    setsNitroStateTo :: NitroState -> Bool
-    setsNitroStateTo gs =
-      case filter (\(odat, val) -> val `geq` stateTokenValue) outputsLockedByTheScript of
-        [(OutputDatum odat, val)] ->
-          traceIfFalse "game state is not equal to state provided by redeemer" $
-            getDatum odat == toBuiltinData gs
-        _ -> traceError "game state not set"
-
-    inputContainsValue :: Value -> Bool
-    inputContainsValue v = valueSpent info `geq` v
-
-    mintedNitroToken :: Integer -> Bool
-    mintedNitroToken i = expectedMintedAmount == actualMintedAmount
-      where
-        expectedMintedAmount = i
-        actualMintedAmount = assetClassValueOf (valueProduced info) nitroAssetClass
+    inputContainsAdminToken = valueSpent info `geq` assetClassValue (adminToken gsp) 1
 
     nitroAssetClass :: AssetClass
     nitroAssetClass = assetClass (ownCurrencySymbol ctx) (nitroToken gsp)
 
-    sendsAdaToCorrectAddrs :: Integer -> Bool
-    sendsAdaToCorrectAddrs mintedAmount = fromMaybe False $ do
-      gameState <- currentStateFromRefInput
-      let totalPrice = fromInteger mintedAmount * fromInteger (nitroPrice gameState)
-          treasuryValue = lovelaceValueOf . round $ unsafeRatio 3 4 * totalPrice
-          operatingValue = lovelaceValueOf . round $ unsafeRatio 1 4 * totalPrice
-      paysToTreasury <- (`geq` treasuryValue) <$> valueToAddr (treasuryAddress gameState)
-      paysToOperating <- (`geq` operatingValue) <$> valueToAddr (operatingAddress gameState)
-      combinedValueCheck <- do
-        addrV <- valueToAddr (treasuryAddress gameState)
-        operV <- valueToAddr (operatingAddress gameState)
-        pure $ (addrV <> operV) `geq` (treasuryValue <> operatingValue)
-      pure $
-        traceIfFalse "wrong amount paid to treasury" paysToTreasury
-          && traceIfFalse "wrong amount paid to operating" paysToOperating
-          && traceIfFalse "wrong combined amount paid to treasury and operating" combinedValueCheck
-
-    valueToAddr :: Address -> Maybe Value
-    valueToAddr addr =
-      (fmap (valuePaidTo info) . toPubKeyHash $ addr)
-        <|> (fmap (valueLockedBy info) . toValidatorHash $ addr)
+    mintedNitroToken :: Integer -> Bool
+    mintedNitroToken i = i == assetClassValueOf (valueProduced info) nitroAssetClass
 
 {-# INLINEABLE mkPolicy' #-}
 mkPolicy' :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
