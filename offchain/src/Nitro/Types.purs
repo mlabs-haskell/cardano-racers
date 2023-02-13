@@ -19,7 +19,6 @@ import Contract.PlutusData
   )
 import Contract.Value (CurrencySymbol, TokenName)
 import Data.BigInt (BigInt)
-import Data.Eq.Generic (genericEq)
 
 newtype NitroScriptParams = NitroScriptParams
   { adminToken :: (CurrencySymbol /\ TokenName)
@@ -29,6 +28,7 @@ newtype NitroScriptParams = NitroScriptParams
 
 derive instance Generic NitroScriptParams _
 derive instance Newtype NitroScriptParams _
+derive instance Eq NitroScriptParams
 
 instance
   HasPlutusSchema NitroScriptParams
@@ -54,9 +54,6 @@ instance FromData NitroScriptParams where
 instance Show NitroScriptParams where
   show = genericShow
 
-instance Eq NitroScriptParams where
-  eq = genericEq
-
 newtype NitroState = NitroState
   { nitroPrice :: BigInt -- Nitro price in Lovelace
   , treasuryAddress :: Address
@@ -65,6 +62,7 @@ newtype NitroState = NitroState
 
 derive instance Generic NitroState _
 derive instance Newtype NitroState _
+derive instance Eq NitroState
 
 instance
   HasPlutusSchema NitroState
@@ -90,15 +88,13 @@ instance FromData NitroState where
 instance Show NitroState where
   show = genericShow
 
-instance Eq NitroState where
-  eq = genericEq
-
 data NitroScriptRedeemer
   = SetNitroState NitroState -- Requires AdminToken
   | MintNitroToken BigInt
   | BuyNitroToken BigInt
 
 derive instance Generic NitroScriptRedeemer _
+derive instance Eq NitroScriptRedeemer
 instance
   HasPlutusSchema NitroScriptRedeemer
     ( "SetNitroState" := PNil @@ Z
@@ -119,6 +115,3 @@ instance FromData NitroScriptRedeemer where
 
 instance Show NitroScriptRedeemer where
   show = genericShow
-
-instance Eq NitroScriptRedeemer where
-  eq = genericEq
