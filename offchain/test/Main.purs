@@ -12,7 +12,10 @@ import CardanoRacers.Nitro.Contract
   , modifyNitroStateContract
   ) as NitroMint
 import CardanoRacers.Nitro.Contract (mkNitroPolicy, queryNitroPolicyState)
-import CardanoRacers.Nitro.Types (NitroScriptParams(..), NitroState(..))
+import CardanoRacers.Nitro.Types
+  ( NitroScriptParams(NitroScriptParams)
+  , NitroState(NitroState)
+  )
 import CardanoRacers.ScriptsFFI (adminNftMintingPolicy)
 import Contract.Address (Address, getWalletAddresses)
 import Contract.Config (emptyHooks)
@@ -70,7 +73,7 @@ import Effect.Aff
   , effectCanceler
   , launchAff
   )
-import Mote (group, test)
+import Mote (group, only, test)
 import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
 import Test.Spec.Runner (defaultConfig)
 
@@ -85,11 +88,11 @@ main = interruptOnSignal SIGINT =<< launchAff do
 suite :: TestPlanM PlutipTest Unit
 suite = do
   adminNftSuite
-  nitroTokenSuite
+  only nitroTokenSuite
 
 nitroTokenSuite :: TestPlanM PlutipTest Unit
 nitroTokenSuite = group "NitroToken script" do
-  test "Admin can mints Nitro" do
+  test "Admin mints Nitro" do
     withWallets walletUtxoDistr \w ->
       withKeyWallet w $ do
         nitroTk <- liftContractM "Cannot make token name"

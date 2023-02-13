@@ -11,11 +11,15 @@ module CardanoRacers.Nitro.Contract
 import Contract.Prelude
 
 import CardanoRacers.Nitro.Types
-  ( NitroScriptParams
-  , NitroScriptRedeemer(..)
+  ( NitroPolicyRedeemer(BuyNitroToken, MintNitroToken)
+  , NitroScriptParams
   , NitroState
+  , NitroStateRedeemer(SetNitroState)
   )
-import CardanoRacers.ScriptsFFI (rawNitroMintingPolicy)
+import CardanoRacers.ScriptsFFI
+  ( nitroMintingPolicyScript
+  , nitroStateValidatorScript
+  )
 import Contract.Address (Address, scriptHashAddress)
 import Contract.Credential (Credential(..))
 import Contract.Monad (Contract, liftContractM, liftedM)
@@ -223,7 +227,7 @@ queryNitroPolicyState nsp = do
 mkNitroValidator :: NitroScriptParams -> Contract () Validator
 mkNitroValidator np = do
   v2script <- liftContractM "Could not decode applied script" do
-    envelope <- decodeTextEnvelope rawNitroMintingPolicy
+    envelope <- decodeTextEnvelope nitroStateValidatorScript
     plutusScriptV2FromEnvelope envelope
   appliedScript <- liftEither $ left (error <<< show) $ applyArgs v2script
     $ Array.singleton
@@ -232,9 +236,10 @@ mkNitroValidator np = do
 
 mkNitroPolicy :: NitroScriptParams -> Contract () MintingPolicy
 mkNitroPolicy np = do
-  valScript <- mkNitroValidator np
-  appliedScript <- liftEither $ left (error <<< show)
-    $ applyArgs (unwrap valScript)
+  v2script <- liftContractM "Could not decode applied script" do
+    envelope <- decodeTextEnvelope nitroMintingPolicyScript
+    plutusScriptV2FromEnvelope envelope
+  appliedScript <- liftEither $ left (error <<< show) $ applyArgs v2script
     $ Array.singleton
-    $ toData unitDatum
-  pure $ PlutusMintingPolicy appliedScript
+    $ toData np
+  pure $ PlutusMintingPolicy $ appliedScript

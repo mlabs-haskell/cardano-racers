@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -w #-}
 
-module NftMintingPolicy (policy, script) where
+module NftPolicy (policy, script) where
 
 import PlutusTx.Prelude
 

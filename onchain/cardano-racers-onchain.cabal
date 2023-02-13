@@ -59,8 +59,8 @@ common common
 library
   import:          common
   exposed-modules: 
-    , NitroMintingPolicy
-    , NftMintingPolicy
+    , NitroPolicy
+    , NftPolicy
                  
   other-modules:
 

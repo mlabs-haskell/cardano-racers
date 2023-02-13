@@ -88,30 +88,46 @@ instance FromData NitroState where
 instance Show NitroState where
   show = genericShow
 
-data NitroScriptRedeemer
-  = SetNitroState NitroState -- Requires AdminToken
-  | MintNitroToken BigInt
+data NitroPolicyRedeemer
+  = MintNitroToken BigInt
   | BuyNitroToken BigInt
 
-derive instance Generic NitroScriptRedeemer _
-derive instance Eq NitroScriptRedeemer
+derive instance Generic NitroPolicyRedeemer _
+derive instance Eq NitroPolicyRedeemer
 instance
-  HasPlutusSchema NitroScriptRedeemer
-    ( "SetNitroState" := PNil @@ Z
-        :+ "MintNitroToken"
+  HasPlutusSchema NitroPolicyRedeemer
+    ( "MintNitroToken"
         := PNil
-        @@ (S Z)
+        @@ Z
         :+ "BuyNitroToken"
         := PNil
-        @@ (S (S Z))
+        @@ (S Z)
         :+ PNil
     )
 
-instance ToData NitroScriptRedeemer where
+instance ToData NitroPolicyRedeemer where
   toData = genericToData
 
-instance FromData NitroScriptRedeemer where
+instance FromData NitroPolicyRedeemer where
   fromData = genericFromData
 
-instance Show NitroScriptRedeemer where
+instance Show NitroPolicyRedeemer where
   show = genericShow
+
+newtype NitroStateRedeemer = SetNitroState NitroState
+
+derive instance Generic NitroStateRedeemer _
+derive instance Eq NitroStateRedeemer
+instance
+  HasPlutusSchema NitroStateRedeemer
+    ("SetNitroState" := PNil @@ Z :+ PNil)
+
+instance ToData NitroStateRedeemer where
+  toData = genericToData
+
+instance FromData NitroStateRedeemer where
+  fromData = genericFromData
+
+instance Show NitroStateRedeemer where
+  show = genericShow
+
