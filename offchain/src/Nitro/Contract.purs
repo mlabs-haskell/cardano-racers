@@ -3,6 +3,7 @@ module CardanoRacers.Nitro.Contract
   , buyNitroContract
   , initNitroStateContract
   , modifyNitroStateContract
+  , queryNitroPolicyState
   , mkNitroValidator
   , mkNitroPolicy
   ) where
@@ -17,7 +18,6 @@ import CardanoRacers.Nitro.Types
 import CardanoRacers.ScriptsFFI (rawNitroMintingPolicy)
 import Contract.Address (Address, scriptHashAddress)
 import Contract.Credential (Credential(..))
-import Contract.Log (logInfo')
 import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData
   ( Datum(..)
@@ -31,7 +31,6 @@ import Contract.ScriptLookups as Lookups
 import Contract.Scripts
   ( MintingPolicy(..)
   , Validator(Validator)
-  , ValidatorHash
   , applyArgs
   , validatorHash
   )
@@ -45,13 +44,7 @@ import Contract.Transaction
 import Contract.TxConstraints (DatumPresence(..))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletUtxos, utxosAt)
-import Contract.Value
-  ( CurrencySymbol
-  , TokenName
-  , Value
-  , geq
-  , scriptCurrencySymbol
-  )
+import Contract.Value (Value, geq, scriptCurrencySymbol)
 import Contract.Value (lovelaceValueOf, singleton) as Value
 import Data.Array (singleton) as Array
 import Data.BigInt (BigInt)
@@ -149,13 +142,10 @@ mintNitroContract nitroAmount np = do
 -- todo: fix warining
 buyNitroContract :: BigInt -> NitroScriptParams -> Contract () Unit
 buyNitroContract nitroAmount np = do
-  nitroVal <- mkNitroValidator np
   nitroMp <- mkNitroPolicy np
   let
-    vhash = validatorHash nitroVal
     red = Redeemer $ toData $ BuyNitroToken nitroAmount
-  (ns /\ stateTxi /\ stateTxo) <- getCurrentNitroState (unwrap np).stateToken
-    vhash
+  (ns /\ stateTxi /\ stateTxo) <- queryNitroPolicyState np
   cs <- liftContractM "Could not get currency symbol"
     $ scriptCurrencySymbol
     $ nitroMp
@@ -198,20 +188,20 @@ buyNitroContract nitroAmount np = do
   awaitTxConfirmed txId
   pure $ unit
 
-getCurrentNitroState
-  :: (CurrencySymbol /\ TokenName)
-  -> ValidatorHash
+queryNitroPolicyState
+  :: NitroScriptParams
   -> Contract ()
        (NitroState /\ TransactionInput /\ TransactionOutputWithRefScript)
-getCurrentNitroState stateAssetClass vhash = do
+queryNitroPolicyState nsp = do
+  vhash <- validatorHash <$> mkNitroValidator nsp
   let
+    stateAssetClass = (unwrap nsp).stateToken
     scriptAddress = scriptHashAddress vhash Nothing
     stateVal = uncurry Value.singleton stateAssetClass one
   scriptUtxos <- utxosAt scriptAddress
   (stateTxi /\ stateTxo) <- liftContractM "Couldn't find utxos with state token"
     $ find (\(_ /\ txo) -> (unwrap (unwrap txo).output).amount `geq` stateVal)
     $ (Map.toUnfoldable scriptUtxos :: Array _)
-  logInfo' $ show stateTxo
   dat <- liftContractM "OutputDatum is not inline" $
     case (unwrap (unwrap stateTxo).output).datum of
       OutputDatum d -> Just d

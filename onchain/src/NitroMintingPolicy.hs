@@ -57,63 +57,62 @@ PlutusTx.unstableMakeIsData ''NitroScriptRedeemer
 {-# INLINEABLE mkPolicy #-}
 mkPolicy :: NitroScriptParams -> NitroScriptRedeemer -> ScriptContext -> Bool
 mkPolicy gsp red ctx =
-    case (scriptContextPurpose ctx, red) of
-      (Minting cs, BuyNitroToken i) ->
-        traceIfFalse "wrong amount spent" (sendsAdaToCorrectAddrs i)
-          && traceIfFalse "wrong amount minted" (mintedNitroToken i)
-        where
-          gameStateRefInput :: Maybe TxOut
-          gameStateRefInput = find ((`geq` stateTokenValue) . txOutValue) . map txInInfoResolved $ txInfoReferenceInputs info
+  case (scriptContextPurpose ctx, red) of
+    (Minting cs, BuyNitroToken i) ->
+      traceIfFalse "wrong amount spent" (sendsAdaToCorrectAddrs i)
+        && traceIfFalse "wrong amount minted" (mintedNitroToken i)
+      where
+        gameStateRefInput :: Maybe TxOut
+        gameStateRefInput = find ((`geq` stateTokenValue) . txOutValue) . map txInInfoResolved $ txInfoReferenceInputs info
 
-          currentStateFromRefInput :: Maybe NitroState
-          currentStateFromRefInput = do
-            outDatum <- txOutDatum <$> gameStateRefInput
-            dat <- case outDatum of
-              OutputDatum d -> Just $ getDatum d
-              _ -> Nothing
-            PlutusTx.fromBuiltinData dat
+        currentStateFromRefInput :: Maybe NitroState
+        currentStateFromRefInput = do
+          outDatum <- txOutDatum <$> gameStateRefInput
+          dat <- case outDatum of
+            OutputDatum d -> Just $ getDatum d
+            _ -> Nothing
+          PlutusTx.fromBuiltinData dat
 
-          sendsAdaToCorrectAddrs :: Integer -> Bool
-          sendsAdaToCorrectAddrs mintedAmount = fromMaybe False $ do
-            gameState <- currentStateFromRefInput
-            let totalPrice = fromInteger mintedAmount * fromInteger (nitroPrice gameState)
-                treasuryValue = lovelaceValueOf . round $ unsafeRatio 3 4 * totalPrice
-                operatingValue = lovelaceValueOf . round $ unsafeRatio 1 4 * totalPrice
-            paysToTreasury <- (`geq` treasuryValue) <$> valueToAddr (treasuryAddress gameState)
-            paysToOperating <- (`geq` operatingValue) <$> valueToAddr (operatingAddress gameState)
-            combinedValueCheck <- do
-              addrV <- valueToAddr (treasuryAddress gameState)
-              operV <- valueToAddr (operatingAddress gameState)
-              pure $ (addrV <> operV) `geq` (treasuryValue <> operatingValue)
-            pure $
-              traceIfFalse "wrong amount paid to treasury" paysToTreasury
-                && traceIfFalse "wrong amount paid to operating" paysToOperating
-                && traceIfFalse "wrong combined amount paid to treasury and operating" combinedValueCheck
+        sendsAdaToCorrectAddrs :: Integer -> Bool
+        sendsAdaToCorrectAddrs mintedAmount = fromMaybe False $ do
+          gameState <- currentStateFromRefInput
+          let totalPrice = fromInteger mintedAmount * fromInteger (nitroPrice gameState)
+              -- TODO: unsure if rounding is the right/desired operation here
+              treasuryValue = lovelaceValueOf . round $ unsafeRatio 3 4 * totalPrice
+              operatingValue = lovelaceValueOf . round $ unsafeRatio 1 4 * totalPrice
+          paysToTreasury <- (`geq` treasuryValue) <$> valueToAddr (treasuryAddress gameState)
+          paysToOperating <- (`geq` operatingValue) <$> valueToAddr (operatingAddress gameState)
+          combinedValueCheck <- do
+            addrV <- valueToAddr (treasuryAddress gameState)
+            operV <- valueToAddr (operatingAddress gameState)
+            pure $ (addrV <> operV) `geq` (treasuryValue <> operatingValue)
+          pure $
+            traceIfFalse "wrong amount paid to treasury" paysToTreasury
+              && traceIfFalse "wrong amount paid to operating" paysToOperating
+              && traceIfFalse "wrong combined amount paid to treasury and operating" combinedValueCheck
 
-          valueToAddr :: Address -> Maybe Value
-          valueToAddr addr =
-            (fmap (valuePaidTo info) . toPubKeyHash $ addr)
-              <|> (fmap (valueLockedBy info) . toValidatorHash $ addr)
+        valueToAddr :: Address -> Maybe Value
+        valueToAddr addr =
+          (fmap (valuePaidTo info) . toPubKeyHash $ addr)
+            <|> (fmap (valueLockedBy info) . toValidatorHash $ addr)
+    (Minting cs, MintNitroToken i) ->
+      traceIfFalse "admin token not present" inputContainsAdminToken
+        && traceIfFalse "wrong amount minted" (mintedNitroToken i)
+    (Spending _, SetNitroState ns) ->
+      traceIfFalse "Admin token not present" inputContainsAdminToken
+        && traceIfFalse "game state invalid: " (setsNitroStateTo ns)
+      where
+        outputsLockedByTheScript :: [(OutputDatum, Value)]
+        outputsLockedByTheScript = scriptOutputsAt (ownHash ctx) info
 
-      (Minting cs, MintNitroToken i) ->
-        traceIfFalse "admin token not present" inputContainsAdminToken
-          && traceIfFalse "wrong amount minted" (mintedNitroToken i)
-
-      (Spending _, SetNitroState ns) ->
-        traceIfFalse "Admin token not present" inputContainsAdminToken
-          && traceIfFalse "game state invalid: " (setsNitroStateTo ns)
-        where
-          outputsLockedByTheScript :: [(OutputDatum, Value)]
-          outputsLockedByTheScript = scriptOutputsAt (ownHash ctx) info
-
-          setsNitroStateTo :: NitroState -> Bool
-          setsNitroStateTo gs =
-            case filter (\(odat, val) -> val `geq` stateTokenValue) outputsLockedByTheScript of
-              [(OutputDatum odat, val)] ->
-                traceIfFalse "game state is not equal to state provided by redeemer" $
-                  getDatum odat == toBuiltinData gs
-              _ -> traceError "game state not set"
-      _ -> traceError "unexpected script purpose"
+        setsNitroStateTo :: NitroState -> Bool
+        setsNitroStateTo gs =
+          case filter (\(odat, val) -> val `geq` stateTokenValue) outputsLockedByTheScript of
+            [(OutputDatum odat, val)] ->
+              traceIfFalse "game state is not equal to state provided by redeemer" $
+                getDatum odat == toBuiltinData gs
+            _ -> traceError "game state not set"
+    _ -> traceError "unexpected script purpose"
   where
     info :: TxInfo
     info = scriptContextTxInfo ctx
