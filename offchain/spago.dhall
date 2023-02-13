@@ -18,6 +18,7 @@ You can edit this file as you like.
   , "profunctor"
   , "spec"
   , "uint"
+  , "integers"
   ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs" ]

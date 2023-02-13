@@ -52,7 +52,8 @@ import Contract.Value (Value, geq, scriptCurrencySymbol)
 import Contract.Value (lovelaceValueOf, singleton) as Value
 import Data.Array (singleton) as Array
 import Data.BigInt (BigInt)
-import Data.BigInt (fromNumber, toNumber) as BigInt
+import Data.BigInt (fromInt, toNumber) as BigInt
+import Data.Int (ceil)
 import Data.Map (singleton, toUnfoldable, union) as Map
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
@@ -95,7 +96,7 @@ modifyNitroStateContract np ns = do
   let
     vhash = validatorHash nitroVal
     datum = Datum $ toData ns
-    red = Redeemer $ toData $ SetNitroState ns -- $ wrap $ (unwrap ns) { nitroPrice= BigInt.fromInt 1000000}
+    red = Redeemer $ toData $ SetNitroState ns
     stateVal = uncurry Value.singleton (unwrap np).stateToken one
     adminVal = uncurry Value.singleton (unwrap np).adminToken one
   (adminTxi /\ _) <- liftContractM "Could not find admin token in wallet"
@@ -162,15 +163,8 @@ buyNitroContract np nitroAmount = do
 
   let
     totalAmount = (unwrap ns).nitroPrice * nitroAmount
-  treasuryAmt <- liftContractM "Could not convert to BigInt"
-    $ BigInt.fromNumber
-    $ BigInt.toNumber totalAmount
-    * 0.75
-  operatingAmt <- liftContractM "Could not convert to BigInt"
-    $ BigInt.fromNumber
-    $ BigInt.toNumber totalAmount
-    * 0.25
-  let
+    treasuryAmt = BigInt.fromInt <<< ceil $ BigInt.toNumber totalAmount * 0.75
+    operatingAmt = BigInt.fromInt <<< ceil $ BigInt.toNumber totalAmount * 0.25
     treasuryVal = Value.lovelaceValueOf treasuryAmt
     operatingVal = Value.lovelaceValueOf operatingAmt
 

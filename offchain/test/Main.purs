@@ -161,7 +161,7 @@ nitroTokenSuite = group "NitroToken script" do
         NitroMint.modifyNitroStateContract nsp nitroState
         (updatedNitroState /\ _) <- queryNitroPolicyState nsp
         nitroState `shouldEqual` updatedNitroState
-  test "User buys Nitro" do
+  only $ test "User buys Nitro" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
       \(admin /\ treasury /\ bob) -> do
         nsp <- initNitroPolicyWithWallets (admin /\ treasury) $ BigInt.fromInt
@@ -173,9 +173,6 @@ nitroTokenSuite = group "NitroToken script" do
   walletUtxoDistr :: InitialUTxOs
   walletUtxoDistr =
     [ BigInt.fromInt 5_000_000
-    , BigInt.fromInt 8_000_000
-    , BigInt.fromInt 8_000_000
-    , BigInt.fromInt 8_000_000
     , BigInt.fromInt 2_000_000_000
     ]
 

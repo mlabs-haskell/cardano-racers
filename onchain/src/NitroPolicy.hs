@@ -26,6 +26,7 @@ import Plutus.V2.Ledger.Api (
  )
 import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, ownHash, scriptOutputsAt, valueLockedBy, valuePaidTo, valueProduced, valueSpent)
 import PlutusTx qualified (FromData (fromBuiltinData), compile, unsafeFromBuiltinData, unstableMakeIsData)
+import PlutusTx.Ratio (truncate)
 
 data NitroState = NitroState
   { nitroPrice :: Integer -- Nitro price in Lovelace
@@ -104,13 +105,17 @@ mkNitroMintiingPolicy nsp red ctx = case red of
           _ -> Nothing
         PlutusTx.fromBuiltinData dat
 
+      ceiling :: Rational -> Integer
+      ceiling x =
+        let floor = truncate x
+         in if fromInteger floor == x then floor else floor + 1
+
       sendsAdaToCorrectAddrs :: Integer -> Bool
       sendsAdaToCorrectAddrs mintedAmount = fromMaybe False $ do
         gameState <- currentStateFromRefInput
         let totalPrice = fromInteger mintedAmount * fromInteger (nitroPrice gameState)
-            -- TODO: unsure if rounding is the right/desired operation here
-            treasuryValue = lovelaceValueOf . round $ unsafeRatio 3 4 * totalPrice
-            operatingValue = lovelaceValueOf . round $ unsafeRatio 1 4 * totalPrice
+            treasuryValue = lovelaceValueOf . ceiling $ unsafeRatio 3 4 * totalPrice
+            operatingValue = lovelaceValueOf . ceiling $ unsafeRatio 1 4 * totalPrice
         paysToTreasury <- (`geq` treasuryValue) <$> valueToAddr (treasuryAddress gameState)
         paysToOperating <- (`geq` operatingValue) <$> valueToAddr (operatingAddress gameState)
         combinedValueCheck <- do
