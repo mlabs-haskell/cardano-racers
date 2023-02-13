@@ -53,6 +53,10 @@ import Data.Map (singleton, toUnfoldable, union) as Map
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
 
+-- Given NitroScriptParams attempts to lock the StateToken with an inline
+-- NitroState datum at validator script
+-- throws InsufficientTxInputs if state token is not in current wallets
+-- balance
 initNitroStateContract :: NitroScriptParams -> NitroState -> Contract () Unit
 initNitroStateContract np ns = do
   utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
@@ -61,7 +65,6 @@ initNitroStateContract np ns = do
     datum = Datum $ toData ns
     stateVal = uncurry Value.singleton (unwrap np).stateToken one
 
-  let
     constraints :: Constraints.TxConstraints Void Void
     constraints = Constraints.mustPayToScript
       (validatorHash nitroVal)
@@ -77,6 +80,10 @@ initNitroStateContract np ns = do
   awaitTxConfirmed txId
   pure unit
 
+-- Given NitroScriptParams and a state attempts to consume current state UTxO
+-- and create a new UTxO with the new state.
+-- throws if admin token is not present in wallet balance or if state token is
+-- not already locked at script
 modifyNitroStateContract :: NitroScriptParams -> NitroState -> Contract () Unit
 modifyNitroStateContract np ns = do
   ownUtxos <- liftedM "Could not get wallet utxos" getWalletUtxos
@@ -87,14 +94,10 @@ modifyNitroStateContract np ns = do
     red = Redeemer $ toData $ SetNitroState ns -- $ wrap $ (unwrap ns) { nitroPrice= BigInt.fromInt 1000000}
     stateVal = uncurry Value.singleton (unwrap np).stateToken one
     adminVal = uncurry Value.singleton (unwrap np).adminToken one
-    scriptAddr = scriptHashAddress vhash Nothing
-  (adminTxi /\ _) <- liftContractM "admin token not in wallet"
+  (adminTxi /\ _) <- liftContractM "Could not find admin token in wallet"
     $ find (\(_ /\ txo) -> (unwrap (unwrap txo).output).amount `geq` adminVal)
     $ (Map.toUnfoldable ownUtxos :: Array _)
-  (stateTxi /\ stateTxo) <- liftedM "Couldn't find state token at script"
-    $ utxosAt scriptAddr
-    <#> (Map.toUnfoldable :: _ -> Array _)
-    <#> find (\(_ /\ txo) -> (unwrap (unwrap txo).output).amount `geq` stateVal)
+  (_ /\ stateTxi /\ stateTxo) <- queryNitroPolicyState np
   let
     constraints :: Constraints.TxConstraints Void Void
     constraints = Constraints.mustSpendPubKeyOutput adminTxi
@@ -111,8 +114,10 @@ modifyNitroStateContract np ns = do
   awaitTxConfirmed txId
   pure $ unit
 
-mintNitroContract :: BigInt -> NitroScriptParams -> Contract () Unit
-mintNitroContract nitroAmount np = do
+-- Given script parameters and an amount, attempts to mint nitro token.
+-- throws if admin token is not present
+mintNitroContract :: NitroScriptParams -> BigInt -> Contract () Unit
+mintNitroContract np nitroAmount = do
   utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
   nitroMp <- mkNitroPolicy np
   let
@@ -139,9 +144,10 @@ mintNitroContract nitroAmount np = do
   awaitTxConfirmed txId
   pure $ unit
 
--- todo: fix warining
-buyNitroContract :: BigInt -> NitroScriptParams -> Contract () Unit
-buyNitroContract nitroAmount np = do
+-- Given NitroScriptParams and an amount attempts to purchase NitroToken based
+-- on current onchain nitro price
+buyNitroContract :: NitroScriptParams -> BigInt -> Contract () Unit
+buyNitroContract np nitroAmount = do
   nitroMp <- mkNitroPolicy np
   let
     red = Redeemer $ toData $ BuyNitroToken nitroAmount
@@ -152,11 +158,11 @@ buyNitroContract nitroAmount np = do
 
   let
     totalAmount = (unwrap ns).nitroPrice * nitroAmount
-  treasuryAmt <- liftContractM "Couldn't convert to BigInt"
+  treasuryAmt <- liftContractM "Could not convert to BigInt"
     $ BigInt.fromNumber
     $ BigInt.toNumber totalAmount
     * 0.75
-  operatingAmt <- liftContractM "Couldn't convert to BigInt"
+  operatingAmt <- liftContractM "Could not convert to BigInt"
     $ BigInt.fromNumber
     $ BigInt.toNumber totalAmount
     * 0.25
@@ -188,6 +194,7 @@ buyNitroContract nitroAmount np = do
   awaitTxConfirmed txId
   pure $ unit
 
+-- Given nitro parameters attempts to get current onchain nitro state/price
 queryNitroPolicyState
   :: NitroScriptParams
   -> Contract ()
@@ -199,20 +206,23 @@ queryNitroPolicyState nsp = do
     scriptAddress = scriptHashAddress vhash Nothing
     stateVal = uncurry Value.singleton stateAssetClass one
   scriptUtxos <- utxosAt scriptAddress
-  (stateTxi /\ stateTxo) <- liftContractM "Couldn't find utxos with state token"
-    $ find (\(_ /\ txo) -> (unwrap (unwrap txo).output).amount `geq` stateVal)
-    $ (Map.toUnfoldable scriptUtxos :: Array _)
-  dat <- liftContractM "OutputDatum is not inline" $
-    case (unwrap (unwrap stateTxo).output).datum of
-      OutputDatum d -> Just d
-      _ -> Nothing
-  ns <- liftContractM "Couldn't deserialise into NitroState" $ fromData $ unwrap
-    dat
+  (stateTxi /\ stateTxo) <-
+    liftContractM "Could not find utxos with state token"
+      $ find (\(_ /\ txo) -> (unwrap (unwrap txo).output).amount `geq` stateVal)
+      $ (Map.toUnfoldable scriptUtxos :: Array _)
+  dat <-
+    liftContractM "State UTxO does not contain datum or datum is not inline" $
+      case (unwrap (unwrap stateTxo).output).datum of
+        OutputDatum d -> Just d
+        _ -> Nothing
+  ns <- liftContractM "Could not deserialise into NitroState" $ fromData $
+    unwrap
+      dat
   pure $ ns /\ stateTxi /\ stateTxo
 
 mkNitroValidator :: NitroScriptParams -> Contract () Validator
 mkNitroValidator np = do
-  v2script <- liftContractM "Error decoding alwaysSucceeds" do
+  v2script <- liftContractM "Could not decode applied script" do
     envelope <- decodeTextEnvelope rawNitroMintingPolicy
     plutusScriptV2FromEnvelope envelope
   appliedScript <- liftEither $ left (error <<< show) $ applyArgs v2script

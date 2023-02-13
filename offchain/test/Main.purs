@@ -121,7 +121,7 @@ nitroTokenSuite = group "NitroToken script" do
           [ assertTokenGainAtAddress (label ownAddress "Admin")
               (nitroSymbol /\ nitroTk)
               (const $ pure amountToMint)
-          ] $ NitroMint.mintNitroContract amountToMint nsp
+          ] $ NitroMint.mintNitroContract nsp amountToMint
 
   test "Initialises NitroState" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr) \(admin /\ treasury) -> do
@@ -164,7 +164,7 @@ nitroTokenSuite = group "NitroToken script" do
         nsp <- initNitroPolicyWithWallets (admin /\ treasury) $ BigInt.fromInt
           1000000
         withKeyWallet bob do
-          NitroMint.buyNitroContract (BigInt.fromInt 100) nsp
+          NitroMint.buyNitroContract nsp $ BigInt.fromInt 100
           getWalletBalance >>= logInfo' <<< show
   where
   walletUtxoDistr :: InitialUTxOs
