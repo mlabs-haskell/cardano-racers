@@ -21,11 +21,11 @@ import CardanoRacers.ScriptsFFI
   , nitroStateValidatorScript
   )
 import Contract.Address (Address, scriptHashAddress)
-import Contract.Credential (Credential(..))
+import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData
-  ( Datum(..)
-  , OutputDatum(..)
+  ( Datum(Datum)
+  , OutputDatum(OutputDatum)
   , Redeemer(Redeemer)
   , fromData
   , toData
@@ -33,7 +33,7 @@ import Contract.PlutusData
   )
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts
-  ( MintingPolicy(..)
+  ( MintingPolicy(PlutusMintingPolicy)
   , Validator(Validator)
   , applyArgs
   , validatorHash
@@ -45,7 +45,7 @@ import Contract.Transaction
   , awaitTxConfirmed
   , submitTxFromConstraints
   )
-import Contract.TxConstraints (DatumPresence(..))
+import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletUtxos, utxosAt)
 import Contract.Value (Value, geq, scriptCurrencySymbol)

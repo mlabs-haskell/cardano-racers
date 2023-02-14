@@ -14,8 +14,8 @@ import PlutusTx (unsafeFromBuiltinData)
 import PlutusTx qualified (applyCode, compile, liftCode)
 
 {-# INLINEABLE mkPolicy #-}
-mkPolicy :: TxOutRef -> () -> ScriptContext -> Bool
-mkPolicy txoref _red ctx =
+mkPolicy :: TxOutRef -> ScriptContext -> Bool
+mkPolicy txoref ctx =
   traceIfFalse badInput hasUtxo
     && traceIfFalse badAmount mintedOne
   where
@@ -43,7 +43,6 @@ mkPolicy' params redeemer context =
     result =
       mkPolicy
         (unsafeFromBuiltinData params)
-        (unsafeFromBuiltinData redeemer)
         (unsafeFromBuiltinData context)
    in
     if result then () else traceError "Failed verification"

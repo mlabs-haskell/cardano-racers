@@ -4,7 +4,11 @@ module Test.CardanoRacers.Main (main) where
 
 import Contract.Prelude
 
-import CardanoRacers.AdminNft (mintNft, mkNftMintingPolicy) as AdminNft
+import CardanoRacers.AdminNft
+  ( mintAdminAndStateNfts
+  , mintAdminNft
+  , mkNftMintingPolicy
+  ) as AdminNft
 import CardanoRacers.Nitro.Contract
   ( buyNitroContract
   , initNitroStateContract
@@ -60,7 +64,7 @@ import Contract.Utxos (getWalletBalance, getWalletUtxos)
 import Contract.Value (CurrencySymbol, TokenName, scriptCurrencySymbol)
 import Contract.Value (mkTokenName, scriptCurrencySymbol, singleton, valueOf) as Value
 import Contract.Wallet (KeyWallet)
-import Data.Array (head) as Array
+import Data.Array (head, tail) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (toUnfoldable)
@@ -100,8 +104,7 @@ nitroTokenSuite = group "NitroToken script" do
           $ "Nitro"
         ownAddress <- liftedM "Couldn't get wallet address" $ Array.head <$>
           getWalletAddresses
-        (csAdmin /\ tkAdmin) <- mintNftAuto "Admin"
-        (csState /\ tkState) <- mintNftAuto "State"
+        ((csAdmin /\ tkAdmin) /\ (csState /\ tkState)) <- mintNftParameters
         let
           nsp = NitroScriptParams
             { adminToken: csAdmin /\ tkAdmin
@@ -126,7 +129,7 @@ nitroTokenSuite = group "NitroToken script" do
               (const $ pure amountToMint)
           ] $ NitroMint.mintNitroContract nsp amountToMint
 
-  test "Initialises NitroState" do
+  only $ test "Initialises NitroState" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr) \(admin /\ treasury) -> do
       let nitroPrice = BigInt.fromInt 1000000
       adminAddr <- withKeyWallet admin $ liftedM "Could not get admin address"
@@ -161,7 +164,7 @@ nitroTokenSuite = group "NitroToken script" do
         NitroMint.modifyNitroStateContract nsp nitroState
         (updatedNitroState /\ _) <- queryNitroPolicyState nsp
         nitroState `shouldEqual` updatedNitroState
-  only $ test "User buys Nitro" do
+  test "User buys Nitro" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
       \(admin /\ treasury /\ bob) -> do
         nsp <- initNitroPolicyWithWallets (admin /\ treasury) $ BigInt.fromInt
@@ -176,18 +179,24 @@ nitroTokenSuite = group "NitroToken script" do
     , BigInt.fromInt 2_000_000_000
     ]
 
-  mintNftAuto :: String -> Contract () (CurrencySymbol /\ TokenName)
-  mintNftAuto tkstring = do
-    tkName <- liftContractM "Cannot make token name"
-      <<< (Value.mkTokenName <=< byteArrayFromAscii)
-      $ tkstring
-    utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
-    (txi /\ _) <- liftContractM "Could not find some utxo"
-      $ (Array.head <<< toUnfoldable)
+  mintNftParameters
+    :: Contract ()
+         ((CurrencySymbol /\ TokenName) /\ (CurrencySymbol /\ TokenName))
+  mintNftParameters = do
+    utxos <- liftedM "Could not get wallet utxos" $ getWalletUtxos
+    logInfo' $ show utxos
+    let
+      firstTwo :: forall a. Array a -> Maybe (a /\ a)
+      firstTwo xs = do
+        one <- Array.head xs
+        two <- Array.tail xs >>= Array.head
+        pure (one /\ two)
+    txis <- liftContractM "Could not get 2 utxos: insufficient wallet utxos"
+      $ firstTwo
+      $ map fst
+      $ toUnfoldable
       $ utxos
-    res <- AdminNft.mintNft txi tkName
-    logInfo' "Minted NFT successfully"
-    pure res
+    AdminNft.mintAdminAndStateNfts txis
 
   initNitroPolicyWithWallets
     :: (KeyWallet /\ KeyWallet) -> BigInt -> Contract () NitroScriptParams
@@ -200,8 +209,8 @@ nitroTokenSuite = group "NitroToken script" do
       nitroTk <- liftContractM "Cannot make token name"
         <<< (Value.mkTokenName <=< byteArrayFromAscii)
         $ "Nitro"
-      (csAdmin /\ tkAdmin) <- mintNftAuto "Admin"
-      (csState /\ tkState) <- mintNftAuto "State"
+      ((csAdmin /\ tkAdmin) /\ (csState /\ tkState)) <- mintNftParameters
+      getWalletBalance >>= logInfo' <<< show
       ownAddr <- liftedM "Could not get address" $ Array.head <$>
         getWalletAddresses
       let
@@ -272,11 +281,8 @@ adminNftSuite = group "AdminNft" do
         (txi /\ _) <- liftedM "Could not find some utxo"
           $ ((_ >>= Array.head) <<< map toUnfoldable)
           <$> getWalletUtxos
-        tkname <- liftContractM "Cannot make token name"
-          <<< (Value.mkTokenName <=< byteArrayFromAscii)
-          $ "CardanoRacersAdminNFT"
         void $ withAssertionsMono (assertNftMint $ label addr "Receiver") $
-          AdminNft.mintNft txi tkname
+          AdminNft.mintAdminNft txi
   test "NFT minting policy fails to mint more than 1 token" $
     withWallets singleWalletDistribution \w ->
       withKeyWallet w do
@@ -309,14 +315,15 @@ adminNftSuite = group "AdminNft" do
   singleWalletDistribution :: InitialUTxOs
   singleWalletDistribution =
     [ BigInt.fromInt 5_000_000
-    , BigInt.fromInt 2_000_000_000
+    -- , BigInt.fromInt 2_000_000_000
+    -- , BigInt.fromInt 2_000_000_000
     ]
 
 config :: PlutipConfig
 config =
   { host: "127.0.0.1"
   , port: UInt.fromInt 8082
-  , logLevel: Trace
+  , logLevel: Info
   , ogmiosConfig:
       { port: UInt.fromInt 1338
       , host: "127.0.0.1"
@@ -343,7 +350,7 @@ config =
       , dbname: "ctxlib"
       }
   , customLogger: Nothing
-  , suppressLogs: true
+  , suppressLogs: false
   , hooks: emptyHooks
   , clusterConfig:
       { slotLength: Seconds 0.05 }

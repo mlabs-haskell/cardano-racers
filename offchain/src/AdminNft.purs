@@ -1,23 +1,20 @@
 -- | This module contains a contract that mints an nft using a utxo from user
 -- | wallet and CardanoRacersAdminNFT as the token name
-module CardanoRacers.AdminNft (mintNft, mkNftMintingPolicy) where
+module CardanoRacers.AdminNft
+  ( mintAdminNft
+  , mintStateNft
+  , mintAdminAndStateNfts
+  , mkNftMintingPolicy
+  ) where
 
 import Contract.Prelude
 
 import CardanoRacers.ScriptsFFI (adminNftMintingPolicy)
-import Contract.Log (logInfo')
-import Contract.Monad
-  ( Contract
-  , liftContractM
-  , liftedE
-  , liftedM
-  , throwContractError
-  , wrapContract
-  )
+import Contract.Monad (Contract, liftContractM, liftedE, liftedM, wrapContract)
 import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (MintingPolicy(..), applyArgs)
+import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), applyArgs)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
   ( TransactionInput
@@ -39,11 +36,14 @@ import Data.Map (singleton)
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
 
-mintNft
+mintNftConstraints
   :: TransactionInput
   -> TokenName
-  -> Contract () (Tuple CurrencySymbol TokenName)
-mintNft txi tkname = do
+  -> Contract ()
+       ( CurrencySymbol /\ (Constraints.TxConstraints Void Void) /\
+           (Lookups.ScriptLookups Void)
+       )
+mintNftConstraints txi tkname = do
   txo <- liftedM "Could not get utxos" $ liftedE $ wrapContract $ getUtxoByOref
     txi
   ptxo <- liftContractM "Could not convert to plutus txo" $
@@ -63,9 +63,60 @@ mintNft txi tkname = do
       Lookups.mintingPolicy mp
         <> Lookups.unspentOutputs (singleton txi ptxo)
 
+  pure $ cs /\ constraints /\ lookups
+
+type AssetClass = CurrencySymbol /\ TokenName
+
+mintAdminAndStateNfts
+  :: (TransactionInput /\ TransactionInput)
+  -> Contract () (AssetClass /\ AssetClass)
+mintAdminAndStateNfts (txiAdmin /\ txiState) = do
+  adminTk <-
+    liftContractM "Cannot make token name"
+      <<< (mkTokenName <=< byteArrayFromAscii)
+      $ "RacersAdmin"
+  (adminCs /\ adminConstraints /\ adminLookups) <- mintNftConstraints txiAdmin
+    adminTk
+
+  stateTk <-
+    liftContractM "Cannot make token name"
+      <<< (mkTokenName <=< byteArrayFromAscii)
+      $ "RacersNitroState"
+  (stateCs /\ stateConstraints /\ stateLookups) <- mintNftConstraints txiState
+    stateTk
+
+  let
+    constraints = adminConstraints <> stateConstraints
+    lookups = adminLookups <> stateLookups
+
+    adminAsset = (adminCs /\ adminTk)
+    stateAsset = (stateCs /\ stateTk)
+
   txId <- submitTxFromConstraints lookups constraints
   awaitTxConfirmed txId
-  pure $ cs /\ tkname
+  pure $ (adminAsset /\ stateAsset)
+
+mintNft
+  :: TransactionInput -> TokenName -> Contract () (CurrencySymbol /\ TokenName)
+mintNft txi tk = do
+  (cs /\ constraints /\ lookups) <- mintNftConstraints txi tk
+  txId <- submitTxFromConstraints lookups constraints
+  awaitTxConfirmed txId
+  pure $ (cs /\ tk)
+
+mintAdminNft :: TransactionInput -> Contract () (CurrencySymbol /\ TokenName)
+mintAdminNft txi = mintNft txi =<<
+  ( liftContractM "Cannot make token name"
+      <<< (mkTokenName <=< byteArrayFromAscii)
+      $ "RacersAdmin"
+  )
+
+mintStateNft :: TransactionInput -> Contract () (CurrencySymbol /\ TokenName)
+mintStateNft txi = mintNft txi =<<
+  ( liftContractM "Cannot make token name"
+      <<< (mkTokenName <=< byteArrayFromAscii)
+      $ "RacersNitroState"
+  )
 
 mkNftMintingPolicy :: TransactionInput -> Contract () MintingPolicy
 mkNftMintingPolicy txin = do
