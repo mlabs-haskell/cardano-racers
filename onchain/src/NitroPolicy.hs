@@ -6,10 +6,11 @@ module NitroPolicy (nitroPolicyScript, nitroStateValidatorScript) where
 
 import PlutusTx.Prelude
 
-import Control.Applicative ((<|>))
+import Utils (valueToAddr)
+
 import GHC.Generics (Generic)
 import GHC.Show (Show)
-import Ledger (Address, AssetClass, Datum (getDatum), toPubKeyHash, toValidatorHash)
+import Ledger (Address, AssetClass, Datum (getDatum))
 import Ledger.Ada (lovelaceValueOf)
 import Ledger.Value (assetClass, assetClassValue, assetClassValueOf, geq)
 import Plutus.V2.Ledger.Api (
@@ -24,7 +25,7 @@ import Plutus.V2.Ledger.Api (
   Value,
   fromCompiledCode,
  )
-import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, ownHash, scriptOutputsAt, valueLockedBy, valuePaidTo, valueProduced, valueSpent)
+import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, ownHash, scriptOutputsAt, valueLockedBy, valueProduced, valueSpent)
 import PlutusTx qualified (FromData (fromBuiltinData), compile, unsafeFromBuiltinData, unstableMakeIsData)
 import PlutusTx.Ratio (truncate)
 
@@ -84,6 +85,7 @@ mkNitroStateValidator nsp (SetNitroState ns) ctx =
             getDatum odat == toBuiltinData gs
         _ -> traceError "game state not set"
 
+{-# INLINABLE mkNitroMintiingPolicy  #-}
 mkNitroMintiingPolicy :: NitroScriptParams -> NitroPolicyRedeemer -> ScriptContext -> Bool
 mkNitroMintiingPolicy nsp red ctx = case red of
   MintNitroToken i ->
@@ -105,6 +107,10 @@ mkNitroMintiingPolicy nsp red ctx = case red of
           _ -> Nothing
         PlutusTx.fromBuiltinData dat
 
+      threeForths, oneForth :: Rational
+      threeForths = unsafeRatio 3 4
+      oneForth = unsafeRatio 1 4
+
       ceiling :: Rational -> Integer
       ceiling x =
         let floor = truncate x
@@ -114,23 +120,18 @@ mkNitroMintiingPolicy nsp red ctx = case red of
       sendsAdaToCorrectAddrs mintedAmount = fromMaybe False $ do
         gameState <- currentStateFromRefInput
         let totalPrice = fromInteger mintedAmount * fromInteger (nitroPrice gameState)
-            treasuryValue = lovelaceValueOf . ceiling $ unsafeRatio 3 4 * totalPrice
-            operatingValue = lovelaceValueOf . ceiling $ unsafeRatio 1 4 * totalPrice
-        paysToTreasury <- (`geq` treasuryValue) <$> valueToAddr (treasuryAddress gameState)
-        paysToOperating <- (`geq` operatingValue) <$> valueToAddr (operatingAddress gameState)
+            treasuryValue = lovelaceValueOf . ceiling $ threeForths * totalPrice
+            operatingValue = lovelaceValueOf . ceiling $ oneForth * totalPrice
+        paysToTreasury <- (`geq` treasuryValue) <$> valueToAddr info (treasuryAddress gameState)
+        paysToOperating <- (`geq` operatingValue) <$> valueToAddr info (operatingAddress gameState)
         combinedValueCheck <- do
-          addrV <- valueToAddr (treasuryAddress gameState)
-          operV <- valueToAddr (operatingAddress gameState)
+          addrV <- valueToAddr info (treasuryAddress gameState)
+          operV <- valueToAddr info (operatingAddress gameState)
           pure $ (addrV <> operV) `geq` (treasuryValue <> operatingValue)
         pure $
           traceIfFalse "wrong amount paid to treasury" paysToTreasury
             && traceIfFalse "wrong amount paid to operating" paysToOperating
             && traceIfFalse "wrong combined amount paid to treasury and operating" combinedValueCheck
-
-      valueToAddr :: Address -> Maybe Value
-      valueToAddr addr =
-        (fmap (valuePaidTo info) . toPubKeyHash $ addr)
-          <|> (fmap (valueLockedBy info) . toValidatorHash $ addr)
   where
     info :: TxInfo
     info = scriptContextTxInfo ctx
