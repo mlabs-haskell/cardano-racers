@@ -74,14 +74,14 @@ mintAdminAndStateNfts (txiAdmin /\ txiState) = do
   adminTk <-
     liftContractM "Cannot make token name"
       <<< (mkTokenName <=< byteArrayFromAscii)
-      $ "RacersAdmin"
+      $ "RacersAdminNFT"
   adminCs /\ adminConstraints /\ adminLookups <- mintNftConstraints txiAdmin
     adminTk
 
   stateTk <-
     liftContractM "Cannot make token name"
       <<< (mkTokenName <=< byteArrayFromAscii)
-      $ "RacersNitroState"
+      $ "RacersNitroStateNFT"
   stateCs /\ stateConstraints /\ stateLookups <- mintNftConstraints txiState
     stateTk
 
@@ -94,7 +94,7 @@ mintAdminAndStateNfts (txiAdmin /\ txiState) = do
 
   txId <- submitTxFromConstraints lookups constraints
   awaitTxConfirmed txId
-  pure $ (adminAsset /\ stateAsset)
+  pure $ adminAsset /\ stateAsset
 
 mintNft
   :: TransactionInput -> TokenName -> Contract () (CurrencySymbol /\ TokenName)

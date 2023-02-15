@@ -102,7 +102,7 @@ nitroTokenSuite = group "NitroToken script" do
       withKeyWallet w do
         nitroTk <- liftContractM "Cannot make token name"
           <<< (Value.mkTokenName <=< byteArrayFromAscii)
-          $ "Nitro"
+          $ "NITRO"
         ownAddress <- liftedM "Couldn't get wallet address" $ Array.head <$>
           getWalletAddresses
         (csAdmin /\ tkAdmin) /\ (csState /\ tkState) <- mintNftParameters
@@ -210,8 +210,8 @@ nitroTokenSuite = group "NitroToken script" do
     withKeyWallet admin do
       nitroTk <- liftContractM "Cannot make token name"
         <<< (Value.mkTokenName <=< byteArrayFromAscii)
-        $ "Nitro"
-      ((csAdmin /\ tkAdmin) /\ (csState /\ tkState)) <- mintNftParameters
+        $ "NITRO"
+      (csAdmin /\ tkAdmin) /\ (csState /\ tkState) <- mintNftParameters
       ownAddr <- liftedM "Could not get address" $ Array.head <$>
         getWalletAddresses
       let
@@ -234,7 +234,7 @@ adminNftSuite = group "AdminNft" do
     withWallets singleWalletDistribution \w ->
       withKeyWallet w do
         utxos <- liftedM "Could not get wallet utxos" $ getWalletUtxos
-        (txi /\ _) <- liftContractM "Could not find some utxo" $ Array.head $
+        txi /\ _ <- liftContractM "Could not find some utxo" $ Array.head $
           toUnfoldable utxos
         v2script <- liftContractM "Error decoding alwaysSucceeds" do
           envelope <- decodeTextEnvelope adminNftMintingPolicy
@@ -252,7 +252,7 @@ adminNftSuite = group "AdminNft" do
           checkBalanceDeltaAtAddress addr contract
             \nftAssetClass valueBefore valueAfter -> do
               let
-                (cs /\ tn) = nftAssetClass
+                cs /\ tn = nftAssetClass
 
                 actual :: BigInt
                 actual =
@@ -279,7 +279,7 @@ adminNftSuite = group "AdminNft" do
       withKeyWallet w do
         addr <- liftedM "Could not get wallet addresses" $ map Array.head
           getWalletAddresses
-        (txi /\ _) <- liftedM "Could not find some utxo"
+        txi /\ _ <- liftedM "Could not find some utxo"
           $ ((_ >>= Array.head) <<< map toUnfoldable)
           <$> getWalletUtxos
         void $ withAssertionsMono (assertNftMint $ label addr "Receiver") $
@@ -288,7 +288,7 @@ adminNftSuite = group "AdminNft" do
     withWallets singleWalletDistribution \w ->
       withKeyWallet w do
         utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
-        (txi /\ _) <- liftContractM "Could not find some utxo"
+        txi /\ _ <- liftContractM "Could not find some utxo"
           $ (Array.head <<< toUnfoldable)
           $ utxos
         tkname <- liftContractM "Cannot make token name"

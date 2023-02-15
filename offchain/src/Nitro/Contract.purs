@@ -131,7 +131,7 @@ mintNitroContract np nitroAmount = do
   let
     red = Redeemer $ toData $ MintNitroToken nitroAmount
     adminVal = uncurry Value.singleton (unwrap np).adminToken one
-  (adminTxi /\ _) <- liftContractM "admin token not in wallet"
+  adminTxi /\ _ <- liftContractM "admin token not in wallet"
     $ find (\(_ /\ txo) -> (unwrap (unwrap txo).output).amount `geq` adminVal)
     $ (Map.toUnfoldable utxos :: Array _)
   cs <- liftContractM "Could not get currency symbol"
@@ -159,7 +159,7 @@ buyNitroContract np nitroAmount = do
   nitroMp <- mkNitroPolicy np
   let
     red = Redeemer $ toData $ BuyNitroToken nitroAmount
-  (ns /\ stateTxi /\ stateTxo) <- queryNitroPolicyState np
+  ns /\ stateTxi /\ stateTxo <- queryNitroPolicyState np
   cs <- liftContractM "Could not get currency symbol"
     $ scriptCurrencySymbol
     $ nitroMp
@@ -207,7 +207,7 @@ queryNitroPolicyState nsp = do
     scriptAddress = scriptHashAddress vhash Nothing
     stateVal = uncurry Value.singleton stateAssetClass one
   scriptUtxos <- utxosAt scriptAddress
-  (stateTxi /\ stateTxo) <-
+  stateTxi /\ stateTxo <-
     liftContractM "Could not find utxos with state token"
       $ find (\(_ /\ txo) -> (unwrap (unwrap txo).output).amount `geq` stateVal)
       $ (Map.toUnfoldable scriptUtxos :: Array _)
