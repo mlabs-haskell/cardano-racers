@@ -75,22 +75,22 @@ mintAdminAndStateNfts (txiAdmin /\ txiState) = do
     liftContractM "Cannot make token name"
       <<< (mkTokenName <=< byteArrayFromAscii)
       $ "RacersAdmin"
-  (adminCs /\ adminConstraints /\ adminLookups) <- mintNftConstraints txiAdmin
+  adminCs /\ adminConstraints /\ adminLookups <- mintNftConstraints txiAdmin
     adminTk
 
   stateTk <-
     liftContractM "Cannot make token name"
       <<< (mkTokenName <=< byteArrayFromAscii)
       $ "RacersNitroState"
-  (stateCs /\ stateConstraints /\ stateLookups) <- mintNftConstraints txiState
+  stateCs /\ stateConstraints /\ stateLookups <- mintNftConstraints txiState
     stateTk
 
   let
     constraints = adminConstraints <> stateConstraints
     lookups = adminLookups <> stateLookups
 
-    adminAsset = (adminCs /\ adminTk)
-    stateAsset = (stateCs /\ stateTk)
+    adminAsset = adminCs /\ adminTk
+    stateAsset = stateCs /\ stateTk
 
   txId <- submitTxFromConstraints lookups constraints
   awaitTxConfirmed txId
@@ -99,10 +99,10 @@ mintAdminAndStateNfts (txiAdmin /\ txiState) = do
 mintNft
   :: TransactionInput -> TokenName -> Contract () (CurrencySymbol /\ TokenName)
 mintNft txi tk = do
-  (cs /\ constraints /\ lookups) <- mintNftConstraints txi tk
+  cs /\ constraints /\ lookups <- mintNftConstraints txi tk
   txId <- submitTxFromConstraints lookups constraints
   awaitTxConfirmed txId
-  pure $ (cs /\ tk)
+  pure $ cs /\ tk
 
 mintAdminNft :: TransactionInput -> Contract () (CurrencySymbol /\ TokenName)
 mintAdminNft txi = mintNft txi =<<

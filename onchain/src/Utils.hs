@@ -1,18 +1,16 @@
 module Utils where
 
-import PlutusTx.Prelude
+import Control.Applicative ((<|>))
 import Ledger (Address, toPubKeyHash, toValidatorHash)
 import Plutus.V2.Ledger.Api (
   TxInfo,
   Value,
  )
 import Plutus.V2.Ledger.Contexts (valueLockedBy, valuePaidTo)
-import Control.Applicative ((<|>))
+import PlutusTx.Prelude
 
-{-# INLINABLE valueToAddr #-}
+{-# INLINEABLE valueToAddr #-}
 valueToAddr :: TxInfo -> Address -> Maybe Value
 valueToAddr info addr =
   (fmap (valuePaidTo info) . toPubKeyHash $ addr)
     <|> (fmap (valueLockedBy info) . toValidatorHash $ addr)
-
-

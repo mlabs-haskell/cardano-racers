@@ -40,7 +40,8 @@ import Contract.Scripts
   )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
-  ( TransactionInput
+  ( TransactionHash
+  , TransactionInput
   , TransactionOutputWithRefScript
   , awaitTxConfirmed
   , submitTxFromConstraints
@@ -58,11 +59,12 @@ import Data.Map (singleton, toUnfoldable, union) as Map
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
 
--- Given NitroScriptParams attempts to lock the StateToken with an inline
--- NitroState datum at validator script
--- throws InsufficientTxInputs if state token is not in current wallets
--- balance
-initNitroStateContract :: NitroScriptParams -> NitroState -> Contract () Unit
+-- | Given NitroScriptParams attempts to lock the StateToken with an inline
+-- | NitroState datum at validator script
+-- | throws InsufficientTxInputs if state token is not in current wallets
+-- | balance
+initNitroStateContract
+  :: NitroScriptParams -> NitroState -> Contract () TransactionHash
 initNitroStateContract np ns = do
   utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
   nitroVal <- mkNitroValidator np
@@ -83,13 +85,14 @@ initNitroStateContract np ns = do
 
   txId <- submitTxFromConstraints lookups constraints
   awaitTxConfirmed txId
-  pure unit
+  pure txId
 
--- Given NitroScriptParams and a state attempts to consume current state UTxO
--- and create a new UTxO with the new state.
--- throws if admin token is not present in wallet balance or if state token is
--- not already locked at script
-modifyNitroStateContract :: NitroScriptParams -> NitroState -> Contract () Unit
+-- | Given NitroScriptParams and a state attempts to consume current state UTxO
+-- | and create a new UTxO with the new state.
+-- | throws if admin token is not present in wallet balance or if state token is
+-- | not already locked at script
+modifyNitroStateContract
+  :: NitroScriptParams -> NitroState -> Contract () TransactionHash
 modifyNitroStateContract np ns = do
   ownUtxos <- liftedM "Could not get wallet utxos" getWalletUtxos
   nitroVal <- mkNitroValidator np
@@ -117,11 +120,11 @@ modifyNitroStateContract np ns = do
 
   txId <- submitTxFromConstraints lookups constraints
   awaitTxConfirmed txId
-  pure $ unit
+  pure txId
 
--- Given script parameters and an amount, attempts to mint nitro token.
--- throws if admin token is not present
-mintNitroContract :: NitroScriptParams -> BigInt -> Contract () Unit
+-- | Given script parameters and an amount, attempts to mint nitro token.
+-- | throws if admin token is not present
+mintNitroContract :: NitroScriptParams -> BigInt -> Contract () TransactionHash
 mintNitroContract np nitroAmount = do
   utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
   nitroMp <- mkNitroPolicy np
@@ -147,11 +150,11 @@ mintNitroContract np nitroAmount = do
 
   txId <- submitTxFromConstraints lookups constraints
   awaitTxConfirmed txId
-  pure $ unit
+  pure txId
 
--- Given NitroScriptParams and an amount attempts to purchase NitroToken based
--- on current onchain nitro price
-buyNitroContract :: NitroScriptParams -> BigInt -> Contract () Unit
+-- |  Given NitroScriptParams and an amount attempts to purchase NitroToken based
+-- |  on current onchain nitro price
+buyNitroContract :: NitroScriptParams -> BigInt -> Contract () TransactionHash
 buyNitroContract np nitroAmount = do
   nitroMp <- mkNitroPolicy np
   let
@@ -190,9 +193,9 @@ buyNitroContract np nitroAmount = do
 
   txId <- submitTxFromConstraints lookups constraints
   awaitTxConfirmed txId
-  pure $ unit
+  pure txId
 
--- Given nitro parameters attempts to get current onchain nitro state/price
+-- | Given nitro parameters attempts to get current onchain nitro state/price
 queryNitroPolicyState
   :: NitroScriptParams
   -> Contract ()

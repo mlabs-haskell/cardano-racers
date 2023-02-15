@@ -58,13 +58,13 @@ import Contract.Test.Utils
   , withAssertions
   )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
-import Contract.Transaction (balanceTx)
+import Contract.Transaction (TransactionHash, balanceTx)
 import Contract.TxConstraints as Constraints
-import Contract.Utxos (getWalletBalance, getWalletUtxos)
+import Contract.Utxos (getWalletUtxos)
 import Contract.Value (CurrencySymbol, TokenName, scriptCurrencySymbol)
 import Contract.Value (mkTokenName, scriptCurrencySymbol, singleton, valueOf) as Value
 import Contract.Wallet (KeyWallet)
-import Data.Array (head, tail) as Array
+import Data.Array (head, take) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (toUnfoldable)
@@ -77,7 +77,7 @@ import Effect.Aff
   , effectCanceler
   , launchAff
   )
-import Mote (group, only, test)
+import Mote (group, test)
 import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
 import Test.Spec.Runner (defaultConfig)
 
@@ -92,19 +92,20 @@ main = interruptOnSignal SIGINT =<< launchAff do
 suite :: TestPlanM PlutipTest Unit
 suite = do
   adminNftSuite
-  only nitroTokenSuite
+
+  nitroTokenSuite
 
 nitroTokenSuite :: TestPlanM PlutipTest Unit
 nitroTokenSuite = group "NitroToken script" do
-  test "Admin mints Nitro" do
+  test "Admin can mint Nitro" do
     withWallets walletUtxoDistr \w ->
-      withKeyWallet w $ do
+      withKeyWallet w do
         nitroTk <- liftContractM "Cannot make token name"
           <<< (Value.mkTokenName <=< byteArrayFromAscii)
           $ "Nitro"
         ownAddress <- liftedM "Couldn't get wallet address" $ Array.head <$>
           getWalletAddresses
-        ((csAdmin /\ tkAdmin) /\ (csState /\ tkState)) <- mintNftParameters
+        (csAdmin /\ tkAdmin) /\ (csState /\ tkState) <- mintNftParameters
         let
           nsp = NitroScriptParams
             { adminToken: csAdmin /\ tkAdmin
@@ -119,17 +120,20 @@ nitroTokenSuite = group "NitroToken script" do
         let
           withAssertionsMono
             :: forall (r :: Row Type)
-             . Array (ContractWrapAssertion r Unit)
-            -> Contract r Unit
-            -> Contract r Unit
+             . Array (ContractWrapAssertion r TransactionHash)
+            -> Contract r TransactionHash
+            -> Contract r TransactionHash
           withAssertionsMono = withAssertions
-        withAssertionsMono
-          [ assertTokenGainAtAddress (label ownAddress "Admin")
-              (nitroSymbol /\ nitroTk)
-              (const $ pure amountToMint)
-          ] $ NitroMint.mintNitroContract nsp amountToMint
+        void
+          $ withAssertionsMono
+              [ assertTokenGainAtAddress (label ownAddress "Admin")
+                  (nitroSymbol /\ nitroTk)
+                  (const $ pure amountToMint)
+              ]
+          $ NitroMint.mintNitroContract nsp amountToMint
+        pure unit
 
-  only $ test "Initialises NitroState" do
+  test "Initialises NitroState" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr) \(admin /\ treasury) -> do
       let nitroPrice = BigInt.fromInt 1000000
       adminAddr <- withKeyWallet admin $ liftedM "Could not get admin address"
@@ -146,7 +150,7 @@ nitroTokenSuite = group "NitroToken script" do
           , treasuryAddress: treasuryAddr
           , operatingAddress: adminAddr
           }
-      (onchainNitroState /\ _) <- queryNitroPolicyState nsp
+      onchainNitroState /\ _ <- queryNitroPolicyState nsp
       onchainNitroState `shouldEqual` expectedNitroState
   test "Modifies NitroState" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr) \(admin /\ treasury) -> do
@@ -161,17 +165,16 @@ nitroTokenSuite = group "NitroToken script" do
             , treasuryAddress: addr
             , operatingAddress: addr
             }
-        NitroMint.modifyNitroStateContract nsp nitroState
-        (updatedNitroState /\ _) <- queryNitroPolicyState nsp
+        void $ NitroMint.modifyNitroStateContract nsp nitroState
+        updatedNitroState /\ _ <- queryNitroPolicyState nsp
         nitroState `shouldEqual` updatedNitroState
   test "User buys Nitro" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
       \(admin /\ treasury /\ bob) -> do
         nsp <- initNitroPolicyWithWallets (admin /\ treasury) $ BigInt.fromInt
           1000000
-        withKeyWallet bob do
+        void $ withKeyWallet bob do
           NitroMint.buyNitroContract nsp $ BigInt.fromInt 100
-          getWalletBalance >>= logInfo' <<< show
   where
   walletUtxoDistr :: InitialUTxOs
   walletUtxoDistr =
@@ -187,10 +190,9 @@ nitroTokenSuite = group "NitroToken script" do
     logInfo' $ show utxos
     let
       firstTwo :: forall a. Array a -> Maybe (a /\ a)
-      firstTwo xs = do
-        one <- Array.head xs
-        two <- Array.tail xs >>= Array.head
-        pure (one /\ two)
+      firstTwo xs = case Array.take 2 xs of
+        [ one, two ] -> pure (one /\ two)
+        _ -> Nothing
     txis <- liftContractM "Could not get 2 utxos: insufficient wallet utxos"
       $ firstTwo
       $ map fst
@@ -210,7 +212,6 @@ nitroTokenSuite = group "NitroToken script" do
         <<< (Value.mkTokenName <=< byteArrayFromAscii)
         $ "Nitro"
       ((csAdmin /\ tkAdmin) /\ (csState /\ tkState)) <- mintNftParameters
-      getWalletBalance >>= logInfo' <<< show
       ownAddr <- liftedM "Could not get address" $ Array.head <$>
         getWalletAddresses
       let
@@ -224,7 +225,7 @@ nitroTokenSuite = group "NitroToken script" do
           , treasuryAddress: treasuryAddr
           , operatingAddress: ownAddr
           }
-      NitroMint.initNitroStateContract nsp ns
+      void $ NitroMint.initNitroStateContract nsp ns
       pure nsp
 
 adminNftSuite :: TestPlanM PlutipTest Unit
@@ -350,7 +351,7 @@ config =
       , dbname: "ctxlib"
       }
   , customLogger: Nothing
-  , suppressLogs: false
+  , suppressLogs: true
   , hooks: emptyHooks
   , clusterConfig:
       { slotLength: Seconds 0.05 }

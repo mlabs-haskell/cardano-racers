@@ -25,7 +25,7 @@ import Plutus.V2.Ledger.Api (
   Value,
   fromCompiledCode,
  )
-import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, ownHash, scriptOutputsAt, valueLockedBy, valueProduced, valueSpent)
+import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, ownHash, scriptOutputsAt, valueProduced, valueSpent)
 import PlutusTx qualified (FromData (fromBuiltinData), compile, unsafeFromBuiltinData, unstableMakeIsData)
 import PlutusTx.Ratio (truncate)
 
@@ -39,8 +39,12 @@ PlutusTx.unstableMakeIsData ''NitroState
 
 data NitroScriptParams = NitroScriptParams
   { adminToken :: AssetClass
+  -- ^ Admin NFT AssetClass that allows free minting and state modification
   , stateToken :: AssetClass
+  -- ^ State NFT AssetClass that reprensents the current NitroState
+  -- | see https://github.com/Plutonomicon/plutonomicon/blob/main/statethread.md
   , nitroToken :: TokenName
+  -- ^ TokenName of Nitro token
   }
   deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''NitroScriptParams
@@ -58,38 +62,38 @@ PlutusTx.unstableMakeIsData ''NitroStateRedeemer
 {-# INLINEABLE mkNitroStateValidator #-}
 mkNitroStateValidator :: NitroScriptParams -> NitroStateRedeemer -> ScriptContext -> Bool
 mkNitroStateValidator nsp (SetNitroState ns) ctx =
-  traceIfFalse "Admin token not present" inputContainsAdminToken
-    && traceIfFalse "state token is not locked again" stateTokenLocked
+  traceIfFalse "Admin token not present" inputContainsAdminNft
     && traceIfFalse "game state invalid: " (setsNitroStateTo ns)
   where
     info :: TxInfo
     info = scriptContextTxInfo ctx
 
-    stateTokenValue :: Value
-    stateTokenValue = assetClassValue (stateToken nsp) 1
+    stateNftValue :: Value
+    stateNftValue = assetClassValue (stateToken nsp) 1
 
-    stateTokenLocked :: Bool
-    stateTokenLocked = valueLockedBy info (ownHash ctx) `geq` stateTokenValue
-
-    inputContainsAdminToken :: Bool
-    inputContainsAdminToken = valueSpent info `geq` assetClassValue (adminToken nsp) 1
+    inputContainsAdminNft :: Bool
+    inputContainsAdminNft = valueSpent info `geq` assetClassValue (adminToken nsp) 1
 
     outputsLockedByTheScript :: [(OutputDatum, Value)]
     outputsLockedByTheScript = scriptOutputsAt (ownHash ctx) info
 
+    -- This will ensure that state is set to expected value and that stateNft
+    -- is re-locked at the script
     setsNitroStateTo :: NitroState -> Bool
     setsNitroStateTo gs =
-      case filter (\(_, val) -> val `geq` stateTokenValue) outputsLockedByTheScript of
+      case filter (\(_, val) -> val `geq` stateNftValue) outputsLockedByTheScript of
         [(OutputDatum odat, _)] ->
           traceIfFalse "game state is not equal to state provided by redeemer" $
             getDatum odat == toBuiltinData gs
-        _ -> traceError "game state not set"
+        [(_, _)] -> traceError "game state datum must be inline"
+        [] -> traceError "game state is not re-locked at the script"
+        _ -> traceError "unexpected game state output"
 
-{-# INLINABLE mkNitroMintiingPolicy  #-}
+{-# INLINEABLE mkNitroMintiingPolicy #-}
 mkNitroMintiingPolicy :: NitroScriptParams -> NitroPolicyRedeemer -> ScriptContext -> Bool
 mkNitroMintiingPolicy nsp red ctx = case red of
   MintNitroToken i ->
-    traceIfFalse "admin token not present" inputContainsAdminToken
+    traceIfFalse "admin token not present" inputContainsAdminNft
       && traceIfFalse "wrong amount minted" (mintedNitroToken i)
   BuyNitroToken i ->
     traceIfFalse "wrong amount spent" (sendsAdaToCorrectAddrs i)
@@ -97,7 +101,7 @@ mkNitroMintiingPolicy nsp red ctx = case red of
       && traceIfFalse "wrong amount minted" (mintedNitroToken i)
     where
       gameStateRefInput :: Maybe TxOut
-      gameStateRefInput = find ((`geq` stateTokenValue) . txOutValue) . map txInInfoResolved $ txInfoReferenceInputs info
+      gameStateRefInput = find ((`geq` stateNftValue) . txOutValue) . map txInInfoResolved $ txInfoReferenceInputs info
 
       currentStateFromRefInput :: Maybe NitroState
       currentStateFromRefInput = do
@@ -136,11 +140,11 @@ mkNitroMintiingPolicy nsp red ctx = case red of
     info :: TxInfo
     info = scriptContextTxInfo ctx
 
-    stateTokenValue :: Value
-    stateTokenValue = assetClassValue (stateToken nsp) 1
+    stateNftValue :: Value
+    stateNftValue = assetClassValue (stateToken nsp) 1
 
-    inputContainsAdminToken :: Bool
-    inputContainsAdminToken = valueSpent info `geq` assetClassValue (adminToken nsp) 1
+    inputContainsAdminNft :: Bool
+    inputContainsAdminNft = valueSpent info `geq` assetClassValue (adminToken nsp) 1
 
     nitroAssetClass :: AssetClass
     nitroAssetClass = assetClass (ownCurrencySymbol ctx) (nitroToken nsp)
