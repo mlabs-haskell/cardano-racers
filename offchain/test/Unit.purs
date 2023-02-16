@@ -11,7 +11,7 @@ import Effect.Aff
   , effectCanceler
   , launchAff
   )
-import Test.CardanoRacers.Aeson as Aeson
+import Test.CardanoRacers.Nitro.Types as NitroTypes
 import Test.Spec.Runner (defaultConfig)
 
 main :: Effect Unit
@@ -23,5 +23,5 @@ main = interruptOnSignal SIGINT =<< launchAff do
 
 testPlan :: TestPlanM (Aff Unit) Unit
 testPlan =
-  Aeson.nitroTypesSuite
+  NitroTypes.nitroTypesSuite
 

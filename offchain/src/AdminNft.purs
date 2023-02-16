@@ -3,8 +3,8 @@
 module CardanoRacers.AdminNft
   ( mintAdminNft
   , mintStateNft
-  , mintAdminAndStateNfts
   , mkNftMintingPolicy
+  , mintManyNfts
   ) where
 
 import Contract.Prelude
@@ -31,7 +31,7 @@ import Contract.Value
 import Contract.Value (singleton) as Value
 import Ctl.Internal.Plutus.Conversion (toPlutusTxOutputWithRefScript)
 import Ctl.Internal.QueryM.Kupo (getUtxoByOref)
-import Data.Array (singleton) as Array
+import Data.Array (singleton, zip) as Array
 import Data.Map (singleton)
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
@@ -65,36 +65,19 @@ mintNftConstraints txi tkname = do
 
   pure $ cs /\ constraints /\ lookups
 
-type AssetClass = CurrencySymbol /\ TokenName
-
-mintAdminAndStateNfts
-  :: (TransactionInput /\ TransactionInput)
-  -> Contract () (AssetClass /\ AssetClass)
-mintAdminAndStateNfts (txiAdmin /\ txiState) = do
-  adminTk <-
-    liftContractM "Cannot make token name"
-      <<< (mkTokenName <=< byteArrayFromAscii)
-      $ "RacersAdminNFT"
-  adminCs /\ adminConstraints /\ adminLookups <- mintNftConstraints txiAdmin
-    adminTk
-
-  stateTk <-
-    liftContractM "Cannot make token name"
-      <<< (mkTokenName <=< byteArrayFromAscii)
-      $ "RacersNitroStateNFT"
-  stateCs /\ stateConstraints /\ stateLookups <- mintNftConstraints txiState
-    stateTk
-
+mintManyNfts
+  :: Array (TransactionInput /\ TokenName)
+  -> Contract () (Array (CurrencySymbol /\ TokenName))
+mintManyNfts txis = do
+  nftConstraints <- traverse (uncurry mintNftConstraints) txis
   let
-    constraints = adminConstraints <> stateConstraints
-    lookups = adminLookups <> stateLookups
-
-    adminAsset = adminCs /\ adminTk
-    stateAsset = stateCs /\ stateTk
-
+    constraints = foldMap (\(_ /\ c /\ _) -> c) nftConstraints
+    lookups = foldMap (\(_ /\ _ /\ l) -> l) nftConstraints
+    symbols = map (\(cs /\ _ /\ _) -> cs) nftConstraints
+    assets = Array.zip symbols $ map snd txis
   txId <- submitTxFromConstraints lookups constraints
   awaitTxConfirmed txId
-  pure $ adminAsset /\ stateAsset
+  pure $ assets
 
 mintNft
   :: TransactionInput -> TokenName -> Contract () (CurrencySymbol /\ TokenName)

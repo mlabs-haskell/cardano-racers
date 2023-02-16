@@ -1,20 +1,20 @@
-module Test.CardanoRacers.Aeson (nitroTypesSuite) where
+module Test.CardanoRacers.Nitro.Types (nitroTypesSuite) where
 
 import Contract.Prelude
 
 import Aeson (decodeJsonString, encodeAeson)
 import CardanoRacers.Nitro.Types
-  ( NitroPolicyRedeemer(..)
-  , NitroScriptParams(..)
-  , NitroState(..)
-  , NitroStateRedeemer(..)
+  ( NitroPolicyRedeemer(MintNitroToken, BuyNitroToken)
+  , NitroScriptParams(NitroScriptParams)
+  , NitroState(NitroState)
+  , NitroStateRedeemer(SetNitroState)
   )
-import Contract.Address (PubKeyHash(..))
-import Contract.Credential (Credential(..))
+import Contract.Address (PubKeyHash(PubKeyHash))
+import Contract.Credential (Credential(PubKeyCredential))
 import Contract.Prim.ByteArray (hexToByteArrayUnsafe)
 import Contract.Test.Mote (TestPlanM)
 import Contract.Value (mkCurrencySymbol, mkTokenName)
-import Ctl.Internal.Plutus.Types.Address (Address(..))
+import Ctl.Internal.Plutus.Types.Address (Address(Address))
 import Ctl.Internal.Serialization.Hash (ed25519KeyHashFromBech32)
 import Data.Bifunctor (lmap)
 import Data.BigInt (fromInt) as BigInt
@@ -56,7 +56,7 @@ nitroScriptParamsFixture :: NitroScriptParams /\ String
 nitroScriptParamsFixture =
   let
     jsonStr =
-      "{\"NitroScriptParams\":{\"stateToken\":[{\"unCurrencySymbol\":\"a130d78694de04aa1570706e1a4e7afa83e8d85ad1cba379b6135bb5\"},{\"unTokenName\":\"RacersNitroStateNFT\"}],\"nitroToken\":{\"unTokenName\":\"NITRO\"},\"adminToken\":[{\"unCurrencySymbol\":\"8028e67f22ae8dcc562eb486977642c8a273ac96f9394b5905989302\"},{\"unTokenName\":\"RacersAdminNFT\"}]}}"
+      "{\"NitroScriptParams\":{\"stateToken\":[{\"unCurrencySymbol\":\"a130d78694de04aa1570706e1a4e7afa83e8d85ad1cba379b6135bb5\"},{\"unTokenName\":\"RacersNitroStateNFT\"}],\"nitroToken\":{\"unTokenName\":\"NITRO\"},\"botToken\":[{\"unCurrencySymbol\":\"8028e67f22ae8dcc562eb486977642c8a273ac96f9394b5905989302\"},{\"unTokenName\":\"RacersAdminNFT\"}],\"adminToken\":[{\"unCurrencySymbol\":\"8028e67f22ae8dcc562eb486977642c8a273ac96f9394b5905989302\"},{\"unTokenName\":\"RacersAdminNFT\"}]}}"
     csAdmin = unsafePartial $ fromJust $ mkCurrencySymbol $
       hexToByteArrayUnsafe
         "8028e67f22ae8dcc562eb486977642c8a273ac96f9394b5905989302"
@@ -71,6 +71,7 @@ nitroScriptParamsFixture =
       "4e4954524f"
     nsp = NitroScriptParams
       { adminToken: csAdmin /\ tkAdmin
+      , botToken: csAdmin /\ tkAdmin
       , stateToken: csState /\ tkState
       , nitroToken: nitroTk
       }

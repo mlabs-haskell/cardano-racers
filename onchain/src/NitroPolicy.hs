@@ -40,6 +40,8 @@ PlutusTx.unstableMakeIsData ''NitroState
 data NitroScriptParams = NitroScriptParams
   { adminToken :: AssetClass
   -- ^ Admin NFT AssetClass that allows free minting and state modification
+  , botToken :: AssetClass
+  -- ^ Bot NFT AssetClass that allows bot to mint Nitro tokens only
   , stateToken :: AssetClass
   -- ^ State NFT AssetClass that reprensents the current NitroState
   -- | see https://github.com/Plutonomicon/plutonomicon/blob/main/statethread.md
@@ -93,7 +95,9 @@ mkNitroStateValidator nsp (SetNitroState ns) ctx =
 mkNitroMintiingPolicy :: NitroScriptParams -> NitroPolicyRedeemer -> ScriptContext -> Bool
 mkNitroMintiingPolicy nsp red ctx = case red of
   MintNitroToken i ->
-    traceIfFalse "admin token not present" inputContainsAdminNft
+    ( traceIfFalse "admin token not present" inputContainsAdminNft
+        || traceIfFalse "bot token not present" inputContainsBotNft
+    )
       && traceIfFalse "wrong amount minted" (mintedNitroToken i)
   BuyNitroToken i ->
     traceIfFalse "wrong amount spent" (sendsAdaToCorrectAddrs i)
@@ -145,6 +149,9 @@ mkNitroMintiingPolicy nsp red ctx = case red of
 
     inputContainsAdminNft :: Bool
     inputContainsAdminNft = valueSpent info `geq` assetClassValue (adminToken nsp) 1
+
+    inputContainsBotNft :: Bool
+    inputContainsBotNft = valueSpent info `geq` assetClassValue (botToken nsp) 1
 
     nitroAssetClass :: AssetClass
     nitroAssetClass = assetClass (ownCurrencySymbol ctx) (nitroToken nsp)

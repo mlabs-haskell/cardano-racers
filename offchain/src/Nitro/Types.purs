@@ -25,6 +25,7 @@ import Data.BigInt (BigInt)
 
 newtype NitroScriptParams = NitroScriptParams
   { adminToken :: (CurrencySymbol /\ TokenName)
+  , botToken :: (CurrencySymbol /\ TokenName)
   , stateToken :: (CurrencySymbol /\ TokenName)
   , nitroToken :: TokenName
   }
@@ -38,6 +39,8 @@ instance
     ( "NitroScriptParams"
         :=
           ( "adminToken" := I (CurrencySymbol /\ TokenName)
+              :+ "botToken"
+              := I (CurrencySymbol /\ TokenName)
               :+ "stateToken"
               := I (CurrencySymbol /\ TokenName)
               :+ "nitroToken"
@@ -63,9 +66,10 @@ instance EncodeAeson NitroScriptParams where
 instance DecodeAeson NitroScriptParams where
   decodeAeson = decodeWrappedAeson "NitroScriptParams" \obj -> do
     adminToken <- obj .: "adminToken"
+    botToken <- obj .: "botToken"
     stateToken <- obj .: "stateToken"
     nitroToken <- obj .: "nitroToken"
-    pure $ NitroScriptParams { adminToken, stateToken, nitroToken }
+    pure $ NitroScriptParams { adminToken, botToken, stateToken, nitroToken }
 
 newtype NitroState = NitroState
   { nitroPrice :: BigInt -- Nitro price in Lovelace

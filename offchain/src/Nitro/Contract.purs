@@ -1,18 +1,20 @@
 module CardanoRacers.Nitro.Contract
-  ( mintNitroContract
+  ( createNitroScriptParameter
+  , mintNitroContract
   , buyNitroContract
   , initNitroStateContract
   , modifyNitroStateContract
-  , queryNitroPolicyState
+  , queryNitroState
   , mkNitroValidator
   , mkNitroPolicy
   ) where
 
 import Contract.Prelude
 
+import CardanoRacers.AdminNft (mintManyNfts)
 import CardanoRacers.Nitro.Types
   ( NitroPolicyRedeemer(BuyNitroToken, MintNitroToken)
-  , NitroScriptParams
+  , NitroScriptParams(..)
   , NitroState
   , NitroStateRedeemer(SetNitroState)
   )
@@ -22,7 +24,7 @@ import CardanoRacers.ScriptsFFI
   )
 import Contract.Address (Address, scriptHashAddress)
 import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
-import Contract.Monad (Contract, liftContractM, liftedM)
+import Contract.Monad (Contract, liftContractM, liftedM, throwContractError)
 import Contract.PlutusData
   ( Datum(Datum)
   , OutputDatum(OutputDatum)
@@ -31,6 +33,7 @@ import Contract.PlutusData
   , toData
   , unitDatum
   )
+import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts
   ( MintingPolicy(PlutusMintingPolicy)
@@ -49,15 +52,35 @@ import Contract.Transaction
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletUtxos, utxosAt)
-import Contract.Value (Value, geq, scriptCurrencySymbol)
+import Contract.Value (Value, geq, mkTokenName, scriptCurrencySymbol)
 import Contract.Value (lovelaceValueOf, singleton) as Value
-import Data.Array (singleton) as Array
+import Data.Array (singleton, take, zip) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt, toNumber) as BigInt
 import Data.Int (ceil)
 import Data.Map (singleton, toUnfoldable, union) as Map
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
+
+createNitroScriptParameter
+  :: String -> Array TransactionInput -> Contract () NitroScriptParams
+createNitroScriptParameter nitroTkStr availableTxis = do
+  unless (length availableTxis >= 3) $ throwContractError
+    "Must provide at least 3 inputs for minting of Admin, Bot and State NFTs"
+  tkNames <- liftContractM "Could not make required token names" $ traverse
+    (mkTokenName <=< byteArrayFromAscii)
+    [ "RacersAdminNFT", "RacersBotNFT", "RacersNitroStateNFT" ]
+  nitroTk <- liftContractM "Could not make nitro token name" $
+    (mkTokenName <=< byteArrayFromAscii) nitroTkStr
+  nfts <- mintManyNfts $ Array.zip (Array.take 3 availableTxis) tkNames
+  case nfts of
+    [ adminAsset, botAsset, stateAsset ] -> pure $ NitroScriptParams
+      { adminToken: adminAsset
+      , botToken: botAsset
+      , stateToken: stateAsset
+      , nitroToken: nitroTk
+      }
+    _ -> throwContractError "Impossible"
 
 -- | Given NitroScriptParams attempts to lock the StateToken with an inline
 -- | NitroState datum at validator script
@@ -73,15 +96,12 @@ initNitroStateContract np ns = do
     stateVal = uncurry Value.singleton (unwrap np).stateToken one
 
     constraints :: Constraints.TxConstraints Void Void
-    constraints = Constraints.mustPayToScript
-      (validatorHash nitroVal)
-      datum
+    constraints = Constraints.mustPayToScript (validatorHash nitroVal) datum
       Constraints.DatumInline
       stateVal
 
     lookups :: Lookups.ScriptLookups Void
-    lookups = Lookups.validator nitroVal
-      <> Lookups.unspentOutputs utxos
+    lookups = Lookups.validator nitroVal <> Lookups.unspentOutputs utxos
 
   txId <- submitTxFromConstraints lookups constraints
   awaitTxConfirmed txId
@@ -105,7 +125,7 @@ modifyNitroStateContract np ns = do
   (adminTxi /\ _) <- liftContractM "Could not find admin token in wallet"
     $ find (\(_ /\ txo) -> (unwrap (unwrap txo).output).amount `geq` adminVal)
     $ (Map.toUnfoldable ownUtxos :: Array _)
-  (_ /\ stateTxi /\ stateTxo) <- queryNitroPolicyState np
+  (_ /\ stateTxi /\ stateTxo) <- queryNitroState np
   let
     constraints :: Constraints.TxConstraints Void Void
     constraints = Constraints.mustSpendPubKeyOutput adminTxi
@@ -159,7 +179,7 @@ buyNitroContract np nitroAmount = do
   nitroMp <- mkNitroPolicy np
   let
     red = Redeemer $ toData $ BuyNitroToken nitroAmount
-  ns /\ stateTxi /\ stateTxo <- queryNitroPolicyState np
+  ns /\ stateTxi /\ stateTxo <- queryNitroState np
   cs <- liftContractM "Could not get currency symbol"
     $ scriptCurrencySymbol
     $ nitroMp
@@ -196,11 +216,11 @@ buyNitroContract np nitroAmount = do
   pure txId
 
 -- | Given nitro parameters attempts to get current onchain nitro state/price
-queryNitroPolicyState
+queryNitroState
   :: NitroScriptParams
   -> Contract ()
        (NitroState /\ TransactionInput /\ TransactionOutputWithRefScript)
-queryNitroPolicyState nsp = do
+queryNitroState nsp = do
   vhash <- validatorHash <$> mkNitroValidator nsp
   let
     stateAssetClass = (unwrap nsp).stateToken
