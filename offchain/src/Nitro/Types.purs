@@ -2,6 +2,8 @@ module CardanoRacers.Nitro.Types where
 
 import Contract.Prelude
 
+import Aeson (class DecodeAeson, class EncodeAeson, (.:))
+import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
 import Contract.Address (Address)
 import Contract.PlutusData
   ( class FromData
@@ -18,6 +20,7 @@ import Contract.PlutusData
   , genericToData
   )
 import Contract.Value (CurrencySymbol, TokenName)
+import Control.Alt ((<|>))
 import Data.BigInt (BigInt)
 
 newtype NitroScriptParams = NitroScriptParams
@@ -54,6 +57,16 @@ instance FromData NitroScriptParams where
 instance Show NitroScriptParams where
   show = genericShow
 
+instance EncodeAeson NitroScriptParams where
+  encodeAeson = wrapEncodeAeson "NitroScriptParams" <<< unwrap
+
+instance DecodeAeson NitroScriptParams where
+  decodeAeson = decodeWrappedAeson "NitroScriptParams" \obj -> do
+    adminToken <- obj .: "adminToken"
+    stateToken <- obj .: "stateToken"
+    nitroToken <- obj .: "nitroToken"
+    pure $ NitroScriptParams { adminToken, stateToken, nitroToken }
+
 newtype NitroState = NitroState
   { nitroPrice :: BigInt -- Nitro price in Lovelace
   , treasuryAddress :: Address
@@ -88,6 +101,16 @@ instance FromData NitroState where
 instance Show NitroState where
   show = genericShow
 
+instance EncodeAeson NitroState where
+  encodeAeson = wrapEncodeAeson "NitroState" <<< unwrap
+
+instance DecodeAeson NitroState where
+  decodeAeson = decodeWrappedAeson "NitroState" \obj -> do
+    nitroPrice <- obj .: "nitroPrice"
+    treasuryAddress <- obj .: "treasuryAddress"
+    operatingAddress <- obj .: "operatingAddress"
+    pure $ NitroState { nitroPrice, treasuryAddress, operatingAddress }
+
 data NitroPolicyRedeemer
   = MintNitroToken BigInt
   | BuyNitroToken BigInt
@@ -114,9 +137,19 @@ instance FromData NitroPolicyRedeemer where
 instance Show NitroPolicyRedeemer where
   show = genericShow
 
+instance EncodeAeson NitroPolicyRedeemer where
+  encodeAeson (MintNitroToken amt) = wrapEncodeAeson "MintNitroToken" amt
+  encodeAeson (BuyNitroToken amt) = wrapEncodeAeson "BuyNitroToken" amt
+
+instance DecodeAeson NitroPolicyRedeemer where
+  decodeAeson aes =
+    decodeWrappedAeson "MintNitroToken" (pure <<< MintNitroToken) aes <|>
+      decodeWrappedAeson "BuyNitroToken" (pure <<< BuyNitroToken) aes
+
 newtype NitroStateRedeemer = SetNitroState NitroState
 
 derive instance Generic NitroStateRedeemer _
+derive instance Newtype NitroStateRedeemer _
 derive instance Eq NitroStateRedeemer
 instance
   HasPlutusSchema NitroStateRedeemer
@@ -131,3 +164,8 @@ instance FromData NitroStateRedeemer where
 instance Show NitroStateRedeemer where
   show = genericShow
 
+instance EncodeAeson NitroStateRedeemer where
+  encodeAeson = wrapEncodeAeson "SetNitroState" <<< unwrap
+
+instance DecodeAeson NitroStateRedeemer where
+  decodeAeson = decodeWrappedAeson "SetNitroState" (pure <<< SetNitroState)

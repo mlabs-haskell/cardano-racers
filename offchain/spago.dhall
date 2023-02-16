@@ -19,6 +19,11 @@ You can edit this file as you like.
   , "spec"
   , "uint"
   , "integers"
+  , "aeson"
+  , "partial"
+  , "bifunctors"
+  , "foreign-object"
+  , "control"
   ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs" ]

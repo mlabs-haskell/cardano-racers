@@ -23,7 +23,6 @@ import CardanoRacers.Nitro.Types
 import CardanoRacers.ScriptsFFI (adminNftMintingPolicy)
 import Contract.Address (Address, getWalletAddresses)
 import Contract.Config (emptyHooks)
-import Contract.Log (logInfo')
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
 import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
@@ -92,7 +91,6 @@ main = interruptOnSignal SIGINT =<< launchAff do
 suite :: TestPlanM PlutipTest Unit
 suite = do
   adminNftSuite
-
   nitroTokenSuite
 
 nitroTokenSuite :: TestPlanM PlutipTest Unit
@@ -187,7 +185,6 @@ nitroTokenSuite = group "NitroToken script" do
          ((CurrencySymbol /\ TokenName) /\ (CurrencySymbol /\ TokenName))
   mintNftParameters = do
     utxos <- liftedM "Could not get wallet utxos" $ getWalletUtxos
-    logInfo' $ show utxos
     let
       firstTwo :: forall a. Array a -> Maybe (a /\ a)
       firstTwo xs = case Array.take 2 xs of
@@ -316,8 +313,7 @@ adminNftSuite = group "AdminNft" do
   singleWalletDistribution :: InitialUTxOs
   singleWalletDistribution =
     [ BigInt.fromInt 5_000_000
-    -- , BigInt.fromInt 2_000_000_000
-    -- , BigInt.fromInt 2_000_000_000
+    , BigInt.fromInt 2_000_000_000
     ]
 
 config :: PlutipConfig

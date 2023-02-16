@@ -161,6 +161,7 @@
               '';
             packageJson = ./offchain/package.json;
             packageLock = ./offchain/package-lock.json;
+            nodejs = pkgs.nodejs-16_x;
             shell = {
               packageLockOnly = true;
               packages = with pkgs; [
