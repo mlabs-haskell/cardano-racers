@@ -37,8 +37,10 @@ mkPolicy txoref ctx =
     badAmount = "amount minted is not 1"
 
 {-# INLINEABLE mkPolicy' #-}
-mkPolicy' :: BuiltinData -> BuiltinData -> BuiltinData -> ()
-mkPolicy' params redeemer context =
+mkPolicy' :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
+mkPolicy' params _nonce redeemer context =
+  --               ^ the nonce is to enable a Tx to use a single TxOutRef to mint
+  --               multiple unique NFTs
   let
     result =
       mkPolicy
@@ -50,8 +52,9 @@ mkPolicy' params redeemer context =
 script :: Scripts.Script
 script = Scripts.fromCompiledCode $$(PlutusTx.compile [||mkPolicy'||])
 
-policy :: TxOutRef -> Scripts.MintingPolicy
-policy params =
+policy :: TxOutRef -> TokenName -> Scripts.MintingPolicy
+policy params tk =
   Scripts.mkMintingPolicyScript $
     $$(PlutusTx.compile [||mkPolicy'||])
       `PlutusTx.applyCode` PlutusTx.liftCode (toBuiltinData params)
+      `PlutusTx.applyCode` PlutusTx.liftCode (toBuiltinData tk)

@@ -4,16 +4,16 @@ module Test.CardanoRacers.Main (main) where
 
 import Contract.Prelude
 
-import CardanoRacers.AdminNft (mintAdminNft, mkNftMintingPolicy) as AdminNft
+import CardanoRacers.Nft (mkNftMintingPolicy) as Nft
 import CardanoRacers.Nitro.Contract
   ( buyNitroContract
-  , createNitroScriptParameter
   , initNitroStateContract
   , mintNitroContract
   , mkNitroPolicy
   , modifyNitroStateContract
   , queryNitroState
   ) as Nitro
+import CardanoRacers.Nitro.Helpers (createNitroScriptParameter, mintAdminNft) as NitroHelpers
 import CardanoRacers.Nitro.Types (NitroScriptParams, NitroState(NitroState))
 import CardanoRacers.ScriptsFFI (adminNftMintingPolicy)
 import Contract.Address (Address, getWalletAddresses)
@@ -171,7 +171,9 @@ nitroTokenSuite = group "NitroToken script" do
   createNitroParamsHelper :: Contract () NitroScriptParams
   createNitroParamsHelper = do
     utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
-    Nitro.createNitroScriptParameter "NITRO" $ fst <$> toUnfoldable utxos
+    (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
+      toUnfoldable utxos
+    NitroHelpers.createNitroScriptParameter txi "NITRO"
 
   initNitroPolicyWithWallets
     :: (KeyWallet /\ KeyWallet) -> BigInt -> Contract () NitroScriptParams
@@ -248,7 +250,7 @@ adminNftSuite = group "AdminNft" do
           $ ((_ >>= Array.head) <<< map toUnfoldable)
           <$> getWalletUtxos
         void $ withAssertionsMono (assertNftMint $ label addr "Receiver") $
-          AdminNft.mintAdminNft txi
+          NitroHelpers.mintAdminNft txi
   test "NFT minting policy fails to mint more than 1 token" $
     withWallets singleWalletDistribution \w ->
       withKeyWallet w do
@@ -259,7 +261,7 @@ adminNftSuite = group "AdminNft" do
         tkname <- liftContractM "Cannot make token name"
           <<< (Value.mkTokenName <=< byteArrayFromAscii)
           $ "Token"
-        policy <- AdminNft.mkNftMintingPolicy txi
+        policy <- Nft.mkNftMintingPolicy txi tkname
         cs <- liftContractM "couldn't get currency symbol" $
           Value.scriptCurrencySymbol policy
         let
