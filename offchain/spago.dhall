@@ -24,6 +24,7 @@ You can edit this file as you like.
   , "bifunctors"
   , "foreign-object"
   , "control"
+  , "transformers"
   ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs" ]

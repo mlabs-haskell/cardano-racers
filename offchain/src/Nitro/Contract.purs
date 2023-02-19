@@ -1,5 +1,6 @@
 module CardanoRacers.Nitro.Contract
-  ( mintNitroContract
+  ( adminMintsNitroContract
+  , botMintsNitroContract
   , buyNitroContract
   , initNitroStateContract
   , modifyNitroStateContract
@@ -49,7 +50,13 @@ import Contract.Transaction
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletUtxos, utxosAt)
-import Contract.Value (Value, geq, scriptCurrencySymbol)
+import Contract.Value
+  ( CurrencySymbol
+  , TokenName
+  , Value
+  , geq
+  , scriptCurrencySymbol
+  )
 import Contract.Value (lovelaceValueOf, singleton) as Value
 import Data.Array (singleton) as Array
 import Data.BigInt (BigInt)
@@ -121,16 +128,24 @@ modifyNitroStateContract np ns = do
 
 -- | Given script parameters and an amount, attempts to mint nitro token.
 -- | throws if admin token is not present
-mintNitroContract :: NitroScriptParams -> BigInt -> Contract () TransactionHash
-mintNitroContract np nitroAmount = do
+mintNitroContract
+  :: (NitroScriptParams -> (CurrencySymbol /\ TokenName))
+  -> NitroScriptParams
+  -> BigInt
+  -> Contract () TransactionHash
+mintNitroContract authTokenGetter np nitroAmount = do
   utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
   nitroMp <- mkNitroPolicy np
   let
     red = Redeemer $ toData $ MintNitroToken nitroAmount
-    adminVal = uncurry Value.singleton (unwrap np).adminToken one
-  adminTxi /\ _ <- liftContractM "admin token not in wallet"
-    $ find (\(_ /\ txo) -> (unwrap (unwrap txo).output).amount `geq` adminVal)
-    $ (Map.toUnfoldable utxos :: Array _)
+    authTokenVal = uncurry Value.singleton (authTokenGetter np) one
+  authTxi /\ _ <-
+    liftContractM "Could not find appropriate auth token in wallet"
+      $ find
+          ( \(_ /\ txo) -> (unwrap (unwrap txo).output).amount `geq`
+              authTokenVal
+          )
+      $ (Map.toUnfoldable utxos :: Array _)
   cs <- liftContractM "Could not get currency symbol"
     $ scriptCurrencySymbol
     $ nitroMp
@@ -139,7 +154,7 @@ mintNitroContract np nitroAmount = do
     constraints =
       Constraints.mustMintValueWithRedeemer red
         (Value.singleton cs (unwrap np).nitroToken nitroAmount)
-        <> Constraints.mustSpendPubKeyOutput adminTxi
+        <> Constraints.mustSpendPubKeyOutput authTxi
 
     lookups :: Lookups.ScriptLookups Void
     lookups = Lookups.mintingPolicy nitroMp
@@ -148,6 +163,20 @@ mintNitroContract np nitroAmount = do
   txId <- submitTxFromConstraints lookups constraints
   awaitTxConfirmed txId
   pure txId
+
+adminMintsNitroContract
+  :: NitroScriptParams -> BigInt -> Contract () TransactionHash
+adminMintsNitroContract nsp nitroAmount = mintNitroContract
+  (_.adminToken <<< unwrap)
+  nsp
+  nitroAmount
+
+botMintsNitroContract
+  :: NitroScriptParams -> BigInt -> Contract () TransactionHash
+botMintsNitroContract nsp nitroAmount = mintNitroContract
+  (_.botToken <<< unwrap)
+  nsp
+  nitroAmount
 
 -- |  Given NitroScriptParams and an amount attempts to purchase NitroToken based
 -- |  on current onchain nitro price

@@ -1,5 +1,5 @@
 module CardanoRacers.Nitro.Helpers
-  ( createNitroScriptParameter
+  ( createNitroScriptParams
   , mintAdminNft
   , mintBotNft
   , mintStateNft
@@ -14,9 +14,9 @@ import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.Transaction (TransactionInput)
 import Contract.Value (CurrencySymbol, TokenName, mkTokenName)
 
-createNitroScriptParameter
+createNitroScriptParams
   :: TransactionInput -> String -> Contract () NitroScriptParams
-createNitroScriptParameter txi nitroTkStr = do
+createNitroScriptParams txi nitroTkStr = do
   tkNames <- liftContractM "Could not make required token names" $ traverse
     (mkTokenName <=< byteArrayFromAscii)
     [ "RacersAdminNFT", "RacersBotNFT", "RacersNitroStateNFT" ]

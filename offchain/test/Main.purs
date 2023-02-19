@@ -4,64 +4,10 @@ module Test.CardanoRacers.Main (main) where
 
 import Contract.Prelude
 
-import CardanoRacers.Nft (mkNftMintingPolicy) as Nft
-import CardanoRacers.Nitro.Contract
-  ( buyNitroContract
-  , initNitroStateContract
-  , mintNitroContract
-  , mkNitroPolicy
-  , modifyNitroStateContract
-  , queryNitroState
-  ) as Nitro
-import CardanoRacers.Nitro.Helpers (createNitroScriptParameter, mintAdminNft) as NitroHelpers
-import CardanoRacers.Nitro.Types (NitroScriptParams, NitroState(NitroState))
-import CardanoRacers.ScriptsFFI (adminNftMintingPolicy)
-import Contract.Address (Address, getWalletAddresses)
 import Contract.Config (emptyHooks)
-import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
-import Contract.PlutusData (toData)
-import Contract.Prim.ByteArray (byteArrayFromAscii)
-import Contract.ScriptLookups
-  ( ScriptLookups
-  , mintingPolicy
-  , mkUnbalancedTx
-  , unspentOutputs
-  ) as Lookups
-import Contract.Scripts (applyArgs)
 import Contract.Test.Mote (TestPlanM, interpretWithConfig)
-import Contract.Test.Plutip
-  ( InitialUTxOs
-  , PlutipConfig
-  , PlutipTest
-  , testPlutipContracts
-  , withKeyWallet
-  , withWallets
-  )
-import Contract.Test.Utils
-  ( ContractAssertionFailure(UnexpectedTokenDelta)
-  , ContractWrapAssertion
-  , ExpectedActual(ExpectedActual)
-  , Labeled
-  , assertContract
-  , assertTokenGainAtAddress
-  , checkBalanceDeltaAtAddress
-  , exitCode
-  , interruptOnSignal
-  , label
-  , runContractAssertionM
-  , withAssertions
-  )
-import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
-import Contract.Transaction (TransactionHash, balanceTx)
-import Contract.TxConstraints as Constraints
-import Contract.Utxos (getWalletUtxos)
-import Contract.Value (CurrencySymbol, TokenName, scriptCurrencySymbol)
-import Contract.Value (mkTokenName, scriptCurrencySymbol, singleton, valueOf) as Value
-import Contract.Wallet (KeyWallet)
-import Data.Array (head) as Array
-import Data.BigInt (BigInt)
-import Data.BigInt (fromInt) as BigInt
-import Data.Map (toUnfoldable)
+import Contract.Test.Plutip (PlutipConfig, PlutipTest, testPlutipContracts)
+import Contract.Test.Utils (exitCode, interruptOnSignal)
 import Data.Posix.Signal (Signal(SIGINT))
 import Data.Time.Duration (Seconds(Seconds))
 import Data.UInt (fromInt) as UInt
@@ -71,8 +17,8 @@ import Effect.Aff
   , effectCanceler
   , launchAff
   )
-import Mote (group, test)
-import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
+import Test.CardanoRacers.Nft (adminNftSuite)
+import Test.CardanoRacers.Nitro.Contract (nitroTokenSuite)
 import Test.Spec.Runner (defaultConfig)
 
 -- Run with `npm run test`
@@ -87,204 +33,6 @@ suite :: TestPlanM PlutipTest Unit
 suite = do
   adminNftSuite
   nitroTokenSuite
-
-nitroTokenSuite :: TestPlanM PlutipTest Unit
-nitroTokenSuite = group "NitroToken script" do
-  test "Admin can mint Nitro" do
-    withWallets walletUtxoDistr \w ->
-      withKeyWallet w do
-        ownAddress <- liftedM "Couldn't get wallet address" $ Array.head <$>
-          getWalletAddresses
-        nsp <- createNitroParamsHelper
-        nitroSymbol <-
-          liftedM "Couldn't create currency symbol from NitroPolicy"
-            $ scriptCurrencySymbol
-            <$> Nitro.mkNitroPolicy nsp
-        let
-          amountToMint = BigInt.fromInt 100
-
-          withAssertionsMono
-            :: forall (r :: Row Type)
-             . Array (ContractWrapAssertion r TransactionHash)
-            -> Contract r TransactionHash
-            -> Contract r TransactionHash
-          withAssertionsMono = withAssertions
-        void
-          $ withAssertionsMono
-              [ assertTokenGainAtAddress (label ownAddress "Admin")
-                  (nitroSymbol /\ (unwrap nsp).nitroToken)
-                  (const $ pure amountToMint)
-              ]
-          $ Nitro.mintNitroContract nsp amountToMint
-        pure unit
-
-  test "Initialises NitroState" do
-    withWallets (walletUtxoDistr /\ walletUtxoDistr) \(admin /\ treasury) -> do
-      let nitroPrice = BigInt.fromInt 1000000
-      adminAddr <- withKeyWallet admin $ liftedM "Could not get admin address"
-        $ Array.head
-        <$> getWalletAddresses
-      treasuryAddr <- withKeyWallet treasury
-        $ liftedM "Could not get treasury address"
-        $ Array.head
-        <$> getWalletAddresses
-      nsp <- initNitroPolicyWithWallets (admin /\ treasury) nitroPrice
-      let
-        expectedNitroState = NitroState
-          { nitroPrice: nitroPrice
-          , treasuryAddress: treasuryAddr
-          , operatingAddress: adminAddr
-          }
-      onchainNitroState /\ _ <- Nitro.queryNitroState nsp
-      onchainNitroState `shouldEqual` expectedNitroState
-  test "Modifies NitroState" do
-    withWallets (walletUtxoDistr /\ walletUtxoDistr) \(admin /\ treasury) -> do
-      nsp <- initNitroPolicyWithWallets (admin /\ treasury) $ BigInt.fromInt
-        1000000
-      withKeyWallet admin do
-        addr <- liftedM "Could not get address" $ Array.head <$>
-          getWalletAddresses
-        let
-          nitroState = NitroState
-            { nitroPrice: BigInt.fromInt 2000000
-            , treasuryAddress: addr
-            , operatingAddress: addr
-            }
-        void $ Nitro.modifyNitroStateContract nsp nitroState
-        updatedNitroState /\ _ <- Nitro.queryNitroState nsp
-        nitroState `shouldEqual` updatedNitroState
-  test "User buys Nitro" do
-    withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
-      \(admin /\ treasury /\ bob) -> do
-        nsp <- initNitroPolicyWithWallets (admin /\ treasury) $ BigInt.fromInt
-          1000000
-        void $ withKeyWallet bob do
-          Nitro.buyNitroContract nsp $ BigInt.fromInt 100
-  where
-  walletUtxoDistr :: InitialUTxOs
-  walletUtxoDistr =
-    [ BigInt.fromInt 5_000_000
-    , BigInt.fromInt 2_000_000_000
-    , BigInt.fromInt 2_000_000_000
-    ]
-
-  createNitroParamsHelper :: Contract () NitroScriptParams
-  createNitroParamsHelper = do
-    utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
-    (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
-      toUnfoldable utxos
-    NitroHelpers.createNitroScriptParameter txi "NITRO"
-
-  initNitroPolicyWithWallets
-    :: (KeyWallet /\ KeyWallet) -> BigInt -> Contract () NitroScriptParams
-  initNitroPolicyWithWallets (admin /\ treasury) nitroPrice = do
-    treasuryAddr <- withKeyWallet treasury
-      $ liftedM "Could not get address"
-      $ Array.head
-      <$> getWalletAddresses
-    withKeyWallet admin do
-      nsp <- createNitroParamsHelper
-      ownAddr <- liftedM "Could not get address" $ Array.head <$>
-        getWalletAddresses
-      let
-        ns = NitroState
-          { nitroPrice: nitroPrice
-          , treasuryAddress: treasuryAddr
-          , operatingAddress: ownAddr
-          }
-      void $ Nitro.initNitroStateContract nsp ns
-      pure nsp
-
-adminNftSuite :: TestPlanM PlutipTest Unit
-adminNftSuite = group "AdminNft" do
-  test "Apply TxOutRef to script" do
-    withWallets singleWalletDistribution \w ->
-      withKeyWallet w do
-        utxos <- liftedM "Could not get wallet utxos" $ getWalletUtxos
-        txi /\ _ <- liftContractM "Could not find some utxo" $ Array.head $
-          toUnfoldable utxos
-        v2script <- liftContractM "Error decoding alwaysSucceeds" do
-          envelope <- decodeTextEnvelope adminNftMintingPolicy
-          plutusScriptV2FromEnvelope envelope
-        let appliedScriptE = applyArgs v2script $ [ toData txi ]
-        shouldSatisfy appliedScriptE isRight
-  test "Mints NFT" do
-    let
-      assertNftMint
-        :: forall (r :: Row Type)
-         . Labeled Address
-        -> ContractWrapAssertion r (CurrencySymbol /\ TokenName)
-      assertNftMint addr contract =
-        runContractAssertionM contract $
-          checkBalanceDeltaAtAddress addr contract
-            \nftAssetClass valueBefore valueAfter -> do
-              let
-                cs /\ tn = nftAssetClass
-
-                actual :: BigInt
-                actual =
-                  Value.valueOf valueAfter cs tn - Value.valueOf valueBefore cs
-                    tn
-
-                expected :: BigInt
-                expected = BigInt.fromInt 1
-
-                unexpectedTokenDelta :: ContractAssertionFailure
-                unexpectedTokenDelta =
-                  UnexpectedTokenDelta addr tn (ExpectedActual expected actual)
-
-              assertContract unexpectedTokenDelta (expected == actual)
-              pure nftAssetClass
-
-      withAssertionsMono
-        :: forall (r :: Row Type)
-         . ContractWrapAssertion r (CurrencySymbol /\ TokenName)
-        -> Contract r (CurrencySymbol /\ TokenName)
-        -> Contract r (CurrencySymbol /\ TokenName)
-      withAssertionsMono = withAssertions
-    withWallets singleWalletDistribution \w ->
-      withKeyWallet w do
-        addr <- liftedM "Could not get wallet addresses" $ map Array.head
-          getWalletAddresses
-        txi /\ _ <- liftedM "Could not find some utxo"
-          $ ((_ >>= Array.head) <<< map toUnfoldable)
-          <$> getWalletUtxos
-        void $ withAssertionsMono (assertNftMint $ label addr "Receiver") $
-          NitroHelpers.mintAdminNft txi
-  test "NFT minting policy fails to mint more than 1 token" $
-    withWallets singleWalletDistribution \w ->
-      withKeyWallet w do
-        utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
-        txi /\ _ <- liftContractM "Could not find some utxo"
-          $ (Array.head <<< toUnfoldable)
-          $ utxos
-        tkname <- liftContractM "Cannot make token name"
-          <<< (Value.mkTokenName <=< byteArrayFromAscii)
-          $ "Token"
-        policy <- Nft.mkNftMintingPolicy txi tkname
-        cs <- liftContractM "couldn't get currency symbol" $
-          Value.scriptCurrencySymbol policy
-        let
-          constraints :: Constraints.TxConstraints Void Void
-          constraints =
-            Constraints.mustMintValue
-              (Value.singleton cs tkname $ BigInt.fromInt 2)
-              <> Constraints.mustSpendPubKeyOutput txi
-
-          lookups :: Lookups.ScriptLookups Void
-          lookups =
-            Lookups.mintingPolicy policy
-              <> Lookups.unspentOutputs utxos
-
-        unBalTx <- liftedE $ Lookups.mkUnbalancedTx lookups constraints
-        res <- balanceTx unBalTx
-        res `shouldSatisfy` isLeft
-  where
-  singleWalletDistribution :: InitialUTxOs
-  singleWalletDistribution =
-    [ BigInt.fromInt 5_000_000
-    , BigInt.fromInt 2_000_000_000
-    ]
 
 config :: PlutipConfig
 config =
@@ -317,7 +65,7 @@ config =
       , dbname: "ctxlib"
       }
   , customLogger: Nothing
-  , suppressLogs: true
+  , suppressLogs: false
   , hooks: emptyHooks
   , clusterConfig:
       { slotLength: Seconds 0.05 }
