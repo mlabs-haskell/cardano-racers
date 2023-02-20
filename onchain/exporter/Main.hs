@@ -20,47 +20,52 @@ import Plutus.V2.Ledger.Api (Script)
 import System.Environment (getArgs, lookupEnv)
 import Prelude
 
-import NitroPolicy qualified
-import NftPolicy qualified
 import DepositScript qualified
+import GameAssetPolicy qualified
+import NftPolicy qualified
+import NitroPolicy qualified
 
-data ScriptsFFI = ScriptsFFI
-    { js :: String
-    , purs :: String
-    }
+data ScriptsFFI
+  = ScriptsFFI
+      { js :: String
+      , purs :: String
+      }
 
 -- | Generates target JS and Purs files
 mkScriptsFFI :: [(String, Script)] -> ScriptsFFI
-mkScriptsFFI scripts = ScriptsFFI{js, purs}
+mkScriptsFFI scripts = ScriptsFFI {js, purs}
   where
     purs =
-        unlines $
-            ["module CardanoRacers.ScriptsFFI (" <> intercalate "," (fst <$> scripts) <> ") where\n"]
-                ++ ((\(rawName, _) -> "foreign import " ++ rawName ++ " :: String") <$> scripts)
+      unlines $
+        ("module CardanoRacers.ScriptsFFI (" <> intercalate "," (fst <$> scripts) <> ") where\n")
+          : ((\(rawName, _) -> "foreign import " ++ rawName ++ " :: String") <$> scripts)
     js = unlines $ scriptToDeclaration <$> scripts
     scriptToDeclaration (rawName, script) =
-        trace ("generating " <> rawName <> " with hash = " <> show (scriptHash script)) $
-            "exports." <> rawName <> " = " <> show (scriptToString script) <> ";"
+      trace ("generating " <> rawName <> " with hash = " <> show (scriptHash script)) $
+        "exports." <> rawName <> " = " <> show (scriptToString script) <> ";"
     scriptToString =
-        Text.unpack . Text.decodeUtf8 . serialiseToJSON
-            . serialiseToTextEnvelope Nothing
-            . PlutusScriptSerialised @PlutusScriptV2
-            . toShort
-            . toStrict
-            . serialise
+      Text.unpack
+        . Text.decodeUtf8
+        . serialiseToJSON
+        . serialiseToTextEnvelope Nothing
+        . PlutusScriptSerialised @PlutusScriptV2
+        . toShort
+        . toStrict
+        . serialise
 
 main :: IO ()
 main = do
-    out <- do
-        argOut <- listToMaybe <$> getArgs
-        envOut <- lookupEnv "out"
-        pure $ maybe "." id $ argOut <|> envOut
-    let ScriptsFFI{js,purs} =
-            mkScriptsFFI
-                [ ("nitroMintingPolicyScript", NitroPolicy.nitroPolicyScript)
-                , ("nitroStateValidatorScript",  NitroPolicy.nitroStateValidatorScript)
-                , ("adminNftMintingPolicy", NftPolicy.script)
-                , ("depositScript", DepositScript.script)
-                ]
-    writeFile (out <> "/ScriptsFFI.js") js
-    writeFile (out <> "/ScriptsFFI.purs") purs
+  out <- do
+    argOut <- listToMaybe <$> getArgs
+    envOut <- lookupEnv "out"
+    pure $ maybe "." id $ argOut <|> envOut
+  let ScriptsFFI {js, purs} =
+        mkScriptsFFI
+          [ ("nitroMintingPolicyScript", NitroPolicy.nitroPolicyScript)
+          , ("nitroStateValidatorScript", NitroPolicy.nitroStateValidatorScript)
+          , ("adminNftMintingPolicy", NftPolicy.script)
+          , ("depositScript", DepositScript.script)
+          , ("gameAssetPolicy", GameAssetPolicy.script)
+          ]
+  writeFile (out <> "/ScriptsFFI.js") js
+  writeFile (out <> "/ScriptsFFI.purs") purs

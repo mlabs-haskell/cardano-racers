@@ -84,35 +84,8 @@ mkNitroStateValidator nsp (SetNitroState ns) ctx =
         [] -> traceError "game state is not re-locked at the script"
         _ -> traceError "unexpected game state output"
 
-data Driver = Driver 
-      { driveId :: BuiltinByteString
-      , aggression :: Integer
-      , experience :: Integer
-      , reflexes :: Integer
-      , luck :: Integer
-      }
-  deriving (Show, Generic)
-PlutusTx.unstableMakeIsData ''Driver
-
-data Car = Car 
-      { carId :: BuiltinByteString
-      , topSpeed :: Integer
-      , acceleration :: Integer
-      , cornering :: Integer
-      , aerodynamics :: Integer
-      }
-  deriving (Show, Generic)
-PlutusTx.unstableMakeIsData ''Car
-
-data GameAsset
-  = DriverAsset Driver
-  | CarAsset Car
-  deriving (Show, Generic)
-PlutusTx.unstableMakeIsData ''GameAsset
-
 data NitroPolicyRedeemer
   = MintNitroToken Integer
-  | MintGameAsset GameAsset
   | BuyNitroToken Integer
   deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''NitroPolicyRedeemer
@@ -120,12 +93,6 @@ PlutusTx.unstableMakeIsData ''NitroPolicyRedeemer
 {-# INLINEABLE mkNitroMintiingPolicy #-}
 mkNitroMintiingPolicy :: NitroScriptParams -> NitroPolicyRedeemer -> ScriptContext -> Bool
 mkNitroMintiingPolicy nsp red ctx = case red of
-  MintGameAsset a -> ( traceIfFalse "admin token not present" inputContainsAdminNft
-                    || traceIfFalse "bot token not present" inputContainsBotNft)
-                    && traceIfFalse "wrong asset minted" (mintedGameAsset a)
-    where
-      mintedGameAsset :: GameAsset -> Bool
-      mintedGameAsset _ = True
   MintNitroToken i ->
     ( traceIfFalse "admin token not present" inputContainsAdminNft
         || traceIfFalse "bot token not present" inputContainsBotNft
