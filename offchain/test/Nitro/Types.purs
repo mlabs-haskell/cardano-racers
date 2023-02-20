@@ -117,6 +117,3 @@ nitroStateRedeemerFixture =
       "{\"SetNitroState\":{\"NitroState\":{\"treasuryAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"operatingAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"nitroPrice\":1000000}}}"
   in
     SetNitroState ns /\ setNsRedStr
-
--- nitroPolicyRedeemerFixture :: NitroPolicyRedeemer /\ String
--- nitroPolicyRedeemerFixture = "" /\ ""
