@@ -17,8 +17,14 @@ You can edit this file as you like.
   , "prelude"
   , "profunctor"
   , "spec"
-  , "tuples"
   , "uint"
+  , "integers"
+  , "aeson"
+  , "partial"
+  , "bifunctors"
+  , "foreign-object"
+  , "control"
+  , "transformers"
   ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs" ]

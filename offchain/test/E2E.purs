@@ -1,5 +1,5 @@
 -- | This module is used to serve the E2E tests to the headless browser.
-module Scaffold.Test.E2E.Serve where
+module CardanoRacers.Test.E2E.Serve where
 
 import Contract.Prelude
 
@@ -22,7 +22,6 @@ import Contract.Test.Cip30Mock
 import Contract.Test.E2E (E2EConfigName, E2ETestName, addLinks, route)
 import Data.Map (Map)
 import Data.Map as Map
-import Scaffold as Scaffold
 
 main :: Effect Unit
 main = do
@@ -49,6 +48,6 @@ configs = Map.fromFoldable
 
 tests :: Map E2ETestName (Contract () Unit)
 tests = Map.fromFoldable
-  [ "Contract" /\ Scaffold.contract
+  [ -- "Contract" /\ Scaffold.contract
   -- Add more `Contract`s here
   ]

@@ -103,7 +103,7 @@
                 haskellPackages.fourmolu
                 nixpkgs-fmt
               ];
-              # tools.haskell-language-server = { };
+              tools.haskell-language-server = { };
               additional = ps:
                 with ps; [
                   cardano-api
@@ -161,6 +161,7 @@
               '';
             packageJson = ./offchain/package.json;
             packageLock = ./offchain/package-lock.json;
+            nodejs = pkgs.nodejs-16_x;
             shell = {
               packageLockOnly = true;
               packages = with pkgs; [

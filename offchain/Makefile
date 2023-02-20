@@ -3,8 +3,8 @@ SHELL := bash
 .SHELLFLAGS := -eu -o pipefail -c
 
 ps-sources := $$(fd -epurs)
-ps-entrypoint := Scaffold.Main
-e2e-entrypoint := Scaffold.Test.E2E.Serve
+ps-entrypoint := CardanoRacers.Main
+e2e-entrypoint := CardanoRacers.Test.E2E.Serve
 ps-bundle = spago bundle-module -m ${ps-entrypoint} --to output.js
 
 run-dev:

@@ -59,10 +59,12 @@ common common
 library
   import:          common
   exposed-modules: 
-    , NitroMintingPolicy
-    , NftMintingPolicy
+    , NitroPolicy
+    , NftPolicy
+    , DepositScript
                  
   other-modules:
+    , Utils
 
   build-depends:
     , plutus-ledger
