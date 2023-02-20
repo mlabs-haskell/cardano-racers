@@ -61,6 +61,7 @@ library
   exposed-modules: 
     , NitroPolicy
     , NftPolicy
+    , DepositScript
                  
   other-modules:
     , Utils

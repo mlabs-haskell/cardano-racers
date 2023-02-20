@@ -22,6 +22,7 @@ import Prelude
 
 import NitroPolicy qualified
 import NftPolicy qualified
+import DepositScript qualified
 
 data ScriptsFFI = ScriptsFFI
     { js :: String
@@ -59,6 +60,7 @@ main = do
                 [ ("nitroMintingPolicyScript", NitroPolicy.nitroPolicyScript)
                 , ("nitroStateValidatorScript",  NitroPolicy.nitroStateValidatorScript)
                 , ("adminNftMintingPolicy", NftPolicy.script)
+                , ("depositScript", DepositScript.script)
                 ]
     writeFile (out <> "/ScriptsFFI.js") js
     writeFile (out <> "/ScriptsFFI.purs") purs
