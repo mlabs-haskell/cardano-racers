@@ -156,7 +156,7 @@ mkNitroMintiingPolicy nsp red ctx = case red of
     nitroAssetClass = assetClass (ownCurrencySymbol ctx) (nitroToken nsp)
 
     mintedNitroToken :: Integer -> Bool
-    mintedNitroToken i = assetClassValueOf (txInfoMint info) nitroAssetClass `geq` i
+    mintedNitroToken i = i == assetClassValueOf (txInfoMint info) nitroAssetClass
 
 {-# INLINEABLE mkPolicy #-}
 mkPolicy :: BuiltinData -> BuiltinData -> BuiltinData -> ()
