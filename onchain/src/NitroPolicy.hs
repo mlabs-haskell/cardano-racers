@@ -20,12 +20,12 @@ import Plutus.V2.Ledger.Api (
   ToData (toBuiltinData),
   TokenName,
   TxInInfo (txInInfoResolved),
-  TxInfo (txInfoReferenceInputs),
+  TxInfo (txInfoReferenceInputs, txInfoMint),
   TxOut (txOutDatum, txOutValue),
   Value,
   fromCompiledCode,
  )
-import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, ownHash, scriptOutputsAt, valueProduced, valueSpent)
+import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, ownHash, scriptOutputsAt, valueSpent)
 import PlutusTx qualified (FromData (fromBuiltinData), compile, unsafeFromBuiltinData, unstableMakeIsData)
 import PlutusTx.Ratio (truncate)
 
@@ -157,7 +157,7 @@ mkNitroMintiingPolicy nsp red ctx = case red of
     nitroAssetClass = assetClass (ownCurrencySymbol ctx) (nitroToken nsp)
 
     mintedNitroToken :: Integer -> Bool
-    mintedNitroToken i = i == assetClassValueOf (valueProduced info) nitroAssetClass
+    mintedNitroToken i = i == assetClassValueOf (txInfoMint info) nitroAssetClass
 
 {-# INLINEABLE mkPolicy #-}
 mkPolicy :: BuiltinData -> BuiltinData -> BuiltinData -> ()
