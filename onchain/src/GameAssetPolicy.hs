@@ -107,6 +107,7 @@ mkGameAssetPolicy oref gapp ctx =
           valueToAddr info (airdropAddress gapd)
       pure $ v `geq` assetClassValue nftAssetClass 1
 
+    -- todo: don't use valueProduced, use txInfoMint
     mintsAssetNft :: Bool
     mintsAssetNft = valueProduced info == assetClassValue nftAssetClass 1
 

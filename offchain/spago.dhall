@@ -25,7 +25,9 @@ You can edit this file as you like.
   , "foreign-object"
   , "control"
   , "transformers"
+  , "strings"
+  , "aff-promise"
   ]
 , packages = ./packages.dhall
-, sources = [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs" ]
+, sources = [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs", "demos/**/*.purs"]
 }
