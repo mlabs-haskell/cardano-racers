@@ -38,15 +38,9 @@ config :: PlutipConfig
 config =
   { host: "127.0.0.1"
   , port: UInt.fromInt 8082
-  , logLevel: Info
+  , logLevel: Trace
   , ogmiosConfig:
       { port: UInt.fromInt 1338
-      , host: "127.0.0.1"
-      , secure: false
-      , path: Nothing
-      }
-  , ogmiosDatumCacheConfig:
-      { port: UInt.fromInt 10000
       , host: "127.0.0.1"
       , secure: false
       , path: Nothing
@@ -57,16 +51,46 @@ config =
       , secure: false
       , path: Nothing
       }
-  , postgresConfig:
-      { host: "127.0.0.1"
-      , port: UInt.fromInt 5433
-      , user: "ctxlib"
-      , password: "ctxlib"
-      , dbname: "ctxlib"
-      }
   , customLogger: Nothing
-  , suppressLogs: false
+  , suppressLogs: true
   , hooks: emptyHooks
   , clusterConfig:
       { slotLength: Seconds 0.05 }
   }
+
+-- config :: PlutipConfig
+-- config =
+--   { host: "127.0.0.1"
+--   , port: UInt.fromInt 8082
+--   , logLevel: Info
+--   , ogmiosConfig:
+--       { port: UInt.fromInt 1338
+--       , host: "127.0.0.1"
+--       , secure: false
+--       , path: Nothing
+--       }
+--   , ogmiosDatumCacheConfig:
+--       { port: UInt.fromInt 10000
+--       , host: "127.0.0.1"
+--       , secure: false
+--       , path: Nothing
+--       }
+--   , kupoConfig:
+--       { port: UInt.fromInt 1443
+--       , host: "127.0.0.1"
+--       , secure: false
+--       , path: Nothing
+--       }
+--   , postgresConfig:
+--       { host: "127.0.0.1"
+--       , port: UInt.fromInt 5433
+--       , user: "ctxlib"
+--       , password: "ctxlib"
+--       , dbname: "ctxlib"
+--       }
+--   , customLogger: Nothing
+--   , suppressLogs: false
+--   , hooks: emptyHooks
+--   , clusterConfig:
+--       { slotLength: Seconds 0.05 }
+--   }

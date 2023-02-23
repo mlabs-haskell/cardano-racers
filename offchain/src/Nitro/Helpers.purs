@@ -15,7 +15,7 @@ import Contract.Transaction (TransactionInput)
 import Contract.Value (CurrencySymbol, TokenName, mkTokenName)
 
 createNitroScriptParams
-  :: TransactionInput -> String -> Contract () NitroScriptParams
+  :: TransactionInput -> String -> Contract NitroScriptParams
 createNitroScriptParams txi nitroTkStr = do
   tkNames <- liftContractM "Could not make required token names" $ traverse
     (mkTokenName <=< byteArrayFromAscii)
@@ -32,21 +32,21 @@ createNitroScriptParams txi nitroTkStr = do
       }
     _ -> throwContractError "Impossible"
 
-mintAdminNft :: TransactionInput -> Contract () (CurrencySymbol /\ TokenName)
+mintAdminNft :: TransactionInput -> Contract (CurrencySymbol /\ TokenName)
 mintAdminNft txi = mintNft txi =<<
   ( liftContractM "Cannot make token name"
       <<< (mkTokenName <=< byteArrayFromAscii)
       $ "RacersAdminNFT"
   )
 
-mintBotNft :: TransactionInput -> Contract () (CurrencySymbol /\ TokenName)
+mintBotNft :: TransactionInput -> Contract (CurrencySymbol /\ TokenName)
 mintBotNft txi = mintNft txi =<<
   ( liftContractM "Cannot make token name"
       <<< (mkTokenName <=< byteArrayFromAscii)
       $ "RacersNitroBotNFT"
   )
 
-mintStateNft :: TransactionInput -> Contract () (CurrencySymbol /\ TokenName)
+mintStateNft :: TransactionInput -> Contract (CurrencySymbol /\ TokenName)
 mintStateNft txi = mintNft txi =<<
   ( liftContractM "Cannot make token name"
       <<< (mkTokenName <=< byteArrayFromAscii)

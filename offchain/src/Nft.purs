@@ -9,21 +9,21 @@ module CardanoRacers.Nft
 import Contract.Prelude
 
 import CardanoRacers.ScriptsFFI (adminNftMintingPolicy)
-import Contract.Monad (Contract, liftContractM, liftedE, liftedM, wrapContract)
+import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData (toData)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), applyArgs)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
   ( TransactionInput
+  , TransactionOutputWithRefScript(TransactionOutputWithRefScript)
   , awaitTxConfirmed
   , submitTxFromConstraints
   )
 import Contract.TxConstraints as Constraints
+import Contract.Utxos (getUtxo)
 import Contract.Value (CurrencySymbol, TokenName, scriptCurrencySymbol)
 import Contract.Value (singleton) as Value
-import Ctl.Internal.Plutus.Conversion (toPlutusTxOutputWithRefScript)
-import Ctl.Internal.QueryM.Kupo (getUtxoByOref)
 import Data.Array (zip) as Array
 import Data.Map (singleton)
 import Data.Profunctor.Choice (left)
@@ -32,17 +32,23 @@ import Effect.Exception (error)
 mintNftConstraints
   :: TransactionInput
   -> TokenName
-  -> Contract ()
+  -> Contract
        ( CurrencySymbol /\ Constraints.TxConstraints Void Void /\
            Lookups.ScriptLookups Void
        )
 mintNftConstraints txi tkname = do
-  txo <- liftedM "Could not get utxos" $ liftedE $ wrapContract $ getUtxoByOref
-    txi
+  txo <- liftedM "Could not get utxos" $ getUtxo txi
+  let
+    txoWithRefScript =
+      case (unwrap txo).referenceScript of
+        Just _ -> TransactionOutputWithRefScript
+          { output: txo, scriptRef: Nothing }
+        Nothing -> TransactionOutputWithRefScript
+          { output: txo, scriptRef: Nothing }
 
   -- todo: find workaround to avoid using internal functions
-  ptxo <- liftContractM "Could not convert to plutus txo" $
-    toPlutusTxOutputWithRefScript txo
+  -- ptxo <- liftContractM "Could not convert to plutus txo" $
+  --   toPlutusTxOutputWithRefScript txo
 
   mp <- mkNftMintingPolicy txi tkname
   cs <- liftContractM "couldn't get currency symbol" $ scriptCurrencySymbol mp
@@ -56,14 +62,14 @@ mintNftConstraints txi tkname = do
     lookups :: Lookups.ScriptLookups Void
     lookups =
       Lookups.mintingPolicy mp
-        <> Lookups.unspentOutputs (singleton txi ptxo)
+        <> Lookups.unspentOutputs (singleton txi txoWithRefScript)
 
   pure $ cs /\ constraints /\ lookups
 
 mintManyNfts
   :: TransactionInput
   -> Array TokenName
-  -> Contract () (Array (CurrencySymbol /\ TokenName))
+  -> Contract (Array (CurrencySymbol /\ TokenName))
 mintManyNfts txi tks = do
   nftConstraints <- traverse (mintNftConstraints txi) tks
   let
@@ -76,14 +82,14 @@ mintManyNfts txi tks = do
   pure $ assets
 
 mintNft
-  :: TransactionInput -> TokenName -> Contract () (CurrencySymbol /\ TokenName)
+  :: TransactionInput -> TokenName -> Contract (CurrencySymbol /\ TokenName)
 mintNft txi tk = do
   cs /\ constraints /\ lookups <- mintNftConstraints txi tk
   txId <- submitTxFromConstraints lookups constraints
   awaitTxConfirmed txId
   pure $ cs /\ tk
 
-mkNftMintingPolicy :: TransactionInput -> TokenName -> Contract () MintingPolicy
+mkNftMintingPolicy :: TransactionInput -> TokenName -> Contract MintingPolicy
 mkNftMintingPolicy txin tk = do
   v2script <- liftContractM "Error decoding alwaysSucceeds" do
     envelope <- decodeTextEnvelope adminNftMintingPolicy

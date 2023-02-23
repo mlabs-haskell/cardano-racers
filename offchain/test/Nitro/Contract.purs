@@ -29,6 +29,12 @@ import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData, unitDatum)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (validatorHash)
+import Contract.Test.Assert
+  ( checkGainAtAddress'
+  , checkTokenGainAtAddress'
+  , label
+  , runChecks
+  )
 import Contract.Test.Mote (TestPlanM)
 import Contract.Test.Plutip
   ( InitialUTxOs
@@ -36,14 +42,7 @@ import Contract.Test.Plutip
   , withKeyWallet
   , withWallets
   )
-import Contract.Test.Utils
-  ( ContractWrapAssertion
-  , assertGainAtAddress'
-  , assertTokenGainAtAddress
-  , label
-  , withAssertions
-  )
-import Contract.Transaction (TransactionHash, submitTxFromConstraints)
+import Contract.Transaction (submitTxFromConstraints)
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletUtxos)
@@ -51,6 +50,7 @@ import Contract.Value (CurrencySymbol, TokenName, Value)
 import Contract.Value (geq, lovelaceValueOf, scriptCurrencySymbol, singleton) as Value
 import Contract.Wallet (KeyWallet)
 import Control.Monad.Error.Class (try)
+import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt, toNumber) as BigInt
@@ -74,19 +74,12 @@ nitroTokenSuite = group "NitroToken script" do
               <$> Nitro.mkNitroPolicy nsp
           let
             amountToMint = BigInt.fromInt 100
-
-            withAssertionsMono
-              :: forall (r :: Row Type)
-               . Array (ContractWrapAssertion r TransactionHash)
-              -> Contract r TransactionHash
-              -> Contract r TransactionHash
-            withAssertionsMono = withAssertions
           void
-            $ withAssertionsMono
-                [ assertTokenGainAtAddress (label ownAddress "Admin")
-                    (nitroSymbol /\ (unwrap nsp).nitroToken)
-                    (const $ pure amountToMint)
+            $ runChecks
+                [ checkTokenGainAtAddress' (label ownAddress "Admin")
+                    (nitroSymbol /\ (unwrap nsp).nitroToken /\ amountToMint)
                 ]
+            $ lift
             $ Nitro.adminMintsNitroContract nsp amountToMint
     test "Bot can mint Nitro" do
       withWallets (walletUtxoDistr /\ walletUtxoDistr) \(admin /\ bot) -> do
@@ -105,18 +98,14 @@ nitroTokenSuite = group "NitroToken script" do
           let
             amountToMint = BigInt.fromInt 100
 
-            withAssertionsMono
-              :: forall (r :: Row Type)
-               . Array (ContractWrapAssertion r TransactionHash)
-              -> Contract r TransactionHash
-              -> Contract r TransactionHash
-            withAssertionsMono = withAssertions
           void
-            $ withAssertionsMono
-                [ assertTokenGainAtAddress (label botAddress "Admin")
-                    (nitroSymbol /\ (unwrap nspWithBotToken).nitroToken)
-                    (const $ pure amountToMint)
+            $ runChecks
+                [ checkTokenGainAtAddress' (label botAddress "Admin")
+                    ( nitroSymbol /\ (unwrap nspWithBotToken).nitroToken /\
+                        amountToMint
+                    )
                 ]
+            $ lift
             $ Nitro.botMintsNitroContract nspWithBotToken amountToMint
     test "User buys Nitro" do
       withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
@@ -147,22 +136,15 @@ nitroTokenSuite = group "NitroToken script" do
                 $ BigInt.toNumber (amountToBuy * nitroPrice)
                 * 0.25
               assertions =
-                [ assertGainAtAddress' (label treasuryAddr "Treasury")
+                [ checkGainAtAddress' (label treasuryAddr "Treasury")
                     amountToTreasury
-                , assertGainAtAddress' (label operatingAddress "Operating")
+                , checkGainAtAddress' (label operatingAddress "Operating")
                     amountToOperating
-                , assertTokenGainAtAddress (label bobAddress "Bob")
-                    (nitroCs /\ (unwrap nsp).nitroToken)
-                    (const $ pure amountToBuy)
+                , checkTokenGainAtAddress' (label bobAddress "Bob")
+                    (nitroCs /\ (unwrap nsp).nitroToken /\ amountToBuy)
                 ]
 
-              withAssertionsMono
-                :: forall (r :: Row Type)
-                 . Array (ContractWrapAssertion r TransactionHash)
-                -> Contract r TransactionHash
-                -> Contract r TransactionHash
-              withAssertionsMono = withAssertions
-            withAssertionsMono assertions $
+            runChecks assertions $ lift $
               Nitro.buyNitroContract nsp amountToBuy
     test
       "User fails to mint Nitro with incorrect amount paid to operating/treasury"
@@ -350,14 +332,14 @@ nitroTokenSuite = group "NitroToken script" do
     , BigInt.fromInt 2_000_000_000
     ]
 
-  mintBotNftHelper :: Contract () (CurrencySymbol /\ TokenName)
+  mintBotNftHelper :: Contract (CurrencySymbol /\ TokenName)
   mintBotNftHelper = do
     utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
     (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
       Map.toUnfoldable utxos
     NitroHelpers.mintBotNft txi
 
-  createNitroParamsHelper :: Contract () NitroScriptParams
+  createNitroParamsHelper :: Contract NitroScriptParams
   createNitroParamsHelper = do
     utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
     (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
@@ -368,7 +350,7 @@ nitroTokenSuite = group "NitroToken script" do
     :: (KeyWallet /\ KeyWallet)
     -> NitroScriptParams
     -> BigInt
-    -> Contract () Unit
+    -> Contract Unit
   initNitroPolicyWithAdminAndTreasury (admin /\ treasury) nsp nitroPrice = do
     treasuryAddr <- withKeyWallet treasury
       $ liftedM "Could not get address"

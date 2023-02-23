@@ -71,7 +71,7 @@ import Effect.Exception (error)
 -- | throws InsufficientTxInputs if state token is not in current wallets
 -- | balance
 initNitroStateContract
-  :: NitroScriptParams -> NitroState -> Contract () TransactionHash
+  :: NitroScriptParams -> NitroState -> Contract TransactionHash
 initNitroStateContract np ns = do
   utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
   nitroVal <- mkNitroValidator np
@@ -96,7 +96,7 @@ initNitroStateContract np ns = do
 -- | throws if admin token is not present in wallet balance or if state token is
 -- | not already locked at script
 modifyNitroStateContract
-  :: NitroScriptParams -> NitroState -> Contract () TransactionHash
+  :: NitroScriptParams -> NitroState -> Contract TransactionHash
 modifyNitroStateContract np ns = do
   ownUtxos <- liftedM "Could not get wallet utxos" getWalletUtxos
   nitroVal <- mkNitroValidator np
@@ -132,7 +132,7 @@ mintNitroContract
   :: (NitroScriptParams -> (CurrencySymbol /\ TokenName))
   -> NitroScriptParams
   -> BigInt
-  -> Contract () TransactionHash
+  -> Contract TransactionHash
 mintNitroContract authTokenGetter np nitroAmount = do
   utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
   nitroMp <- mkNitroPolicy np
@@ -165,14 +165,14 @@ mintNitroContract authTokenGetter np nitroAmount = do
   pure txId
 
 adminMintsNitroContract
-  :: NitroScriptParams -> BigInt -> Contract () TransactionHash
+  :: NitroScriptParams -> BigInt -> Contract TransactionHash
 adminMintsNitroContract nsp nitroAmount = mintNitroContract
   (_.adminToken <<< unwrap)
   nsp
   nitroAmount
 
 botMintsNitroContract
-  :: NitroScriptParams -> BigInt -> Contract () TransactionHash
+  :: NitroScriptParams -> BigInt -> Contract TransactionHash
 botMintsNitroContract nsp nitroAmount = mintNitroContract
   (_.botToken <<< unwrap)
   nsp
@@ -180,7 +180,7 @@ botMintsNitroContract nsp nitroAmount = mintNitroContract
 
 -- |  Given NitroScriptParams and an amount attempts to purchase NitroToken based
 -- |  on current onchain nitro price
-buyNitroContract :: NitroScriptParams -> BigInt -> Contract () TransactionHash
+buyNitroContract :: NitroScriptParams -> BigInt -> Contract TransactionHash
 buyNitroContract np nitroAmount = do
   nitroMp <- mkNitroPolicy np
   let
@@ -224,7 +224,7 @@ buyNitroContract np nitroAmount = do
 -- | Given nitro parameters attempts to get current onchain nitro state/price
 queryNitroState
   :: NitroScriptParams
-  -> Contract ()
+  -> Contract
        (NitroState /\ TransactionInput /\ TransactionOutputWithRefScript)
 queryNitroState nsp = do
   vhash <- validatorHash <$> mkNitroValidator nsp
@@ -247,7 +247,7 @@ queryNitroState nsp = do
       dat
   pure $ ns /\ stateTxi /\ stateTxo
 
-mkNitroValidator :: NitroScriptParams -> Contract () Validator
+mkNitroValidator :: NitroScriptParams -> Contract Validator
 mkNitroValidator np = do
   v2script <- liftContractM "Could not decode applied script" do
     envelope <- decodeTextEnvelope nitroStateValidatorScript
@@ -257,7 +257,7 @@ mkNitroValidator np = do
     $ toData np
   pure $ Validator $ appliedScript
 
-mkNitroPolicy :: NitroScriptParams -> Contract () MintingPolicy
+mkNitroPolicy :: NitroScriptParams -> Contract MintingPolicy
 mkNitroPolicy np = do
   v2script <- liftContractM "Could not decode applied script" do
     envelope <- decodeTextEnvelope nitroMintingPolicyScript

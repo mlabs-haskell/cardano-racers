@@ -6,7 +6,7 @@ import CardanoRacers.Nft (mkNftMintingPolicy) as Nft
 import CardanoRacers.Nitro.Helpers (mintAdminNft) as NitroHelpers
 import CardanoRacers.ScriptsFFI (adminNftMintingPolicy)
 import Contract.Address (Address, getWalletAddresses)
-import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
+import Contract.Monad (liftContractM, liftedE, liftedM)
 import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups
@@ -16,6 +16,17 @@ import Contract.ScriptLookups
   , unspentOutputs
   ) as Lookups
 import Contract.Scripts (applyArgs)
+import Contract.Test.Assert
+  ( ContractAssertion
+  , ContractAssertionFailure(UnexpectedTokenDelta)
+  , ContractCheck
+  , ExpectedActual(ExpectedActual)
+  , Labeled
+  , assertContract
+  , assertValueDeltaAtAddress
+  , label
+  , runChecks
+  )
 import Contract.Test.Mote (TestPlanM)
 import Contract.Test.Plutip
   ( InitialUTxOs
@@ -23,23 +34,13 @@ import Contract.Test.Plutip
   , withKeyWallet
   , withWallets
   )
-import Contract.Test.Utils
-  ( ContractAssertionFailure(UnexpectedTokenDelta)
-  , ContractWrapAssertion
-  , ExpectedActual(ExpectedActual)
-  , Labeled
-  , assertContract
-  , checkBalanceDeltaAtAddress
-  , label
-  , runContractAssertionM
-  , withAssertions
-  )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction (balanceTx)
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletUtxos)
-import Contract.Value (CurrencySymbol, TokenName)
+import Contract.Value (CurrencySymbol, TokenName, Value)
 import Contract.Value (mkTokenName, scriptCurrencySymbol, singleton, valueOf) as Value
+import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
@@ -62,38 +63,35 @@ adminNftSuite = group "AdminNft" do
         shouldSatisfy appliedScriptE isRight
   test "Mints NFT" do
     let
-      assertNftMint
+      checkNftGain
         :: forall (r :: Row Type)
          . Labeled Address
-        -> ContractWrapAssertion r (CurrencySymbol /\ TokenName)
-      assertNftMint addr contract =
-        runContractAssertionM contract $
-          checkBalanceDeltaAtAddress addr contract
-            \nftAssetClass valueBefore valueAfter -> do
-              let
-                cs /\ tn = nftAssetClass
+        -> ContractCheck (CurrencySymbol /\ TokenName)
+      checkNftGain addr contract = assertValueDeltaAtAddress addr check contract
+        where
+        check
+          :: Maybe (CurrencySymbol /\ TokenName)
+          -> Value
+          -> Value
+          -> ContractAssertion Unit
+        check result valueBefore valueAfter = do
+          (cs /\ tn) <- lift $ liftContractM
+            "Could not get contract result (CurrencySymbol,TokenName)"
+            result
+          let
+            actual :: BigInt
+            actual = Value.valueOf valueAfter cs tn - Value.valueOf valueBefore
+              cs
+              tn
 
-                actual :: BigInt
-                actual =
-                  Value.valueOf valueAfter cs tn - Value.valueOf valueBefore cs
-                    tn
+            expected :: BigInt
+            expected = BigInt.fromInt 1
 
-                expected :: BigInt
-                expected = BigInt.fromInt 1
+            unexpectedTokenDelta :: ContractAssertionFailure
+            unexpectedTokenDelta =
+              UnexpectedTokenDelta addr tn (ExpectedActual expected actual)
 
-                unexpectedTokenDelta :: ContractAssertionFailure
-                unexpectedTokenDelta =
-                  UnexpectedTokenDelta addr tn (ExpectedActual expected actual)
-
-              assertContract unexpectedTokenDelta (expected == actual)
-              pure nftAssetClass
-
-      withAssertionsMono
-        :: forall (r :: Row Type)
-         . ContractWrapAssertion r (CurrencySymbol /\ TokenName)
-        -> Contract r (CurrencySymbol /\ TokenName)
-        -> Contract r (CurrencySymbol /\ TokenName)
-      withAssertionsMono = withAssertions
+          assertContract unexpectedTokenDelta (actual == expected)
     withWallets singleWalletDistribution \w ->
       withKeyWallet w do
         addr <- liftedM "Could not get wallet addresses" $ map Array.head
@@ -101,7 +99,7 @@ adminNftSuite = group "AdminNft" do
         txi /\ _ <- liftedM "Could not find some utxo"
           $ ((_ >>= Array.head) <<< map toUnfoldable)
           <$> getWalletUtxos
-        void $ withAssertionsMono (assertNftMint $ label addr "Receiver") $
+        void $ runChecks [ checkNftGain $ label addr "Receiver" ] $ lift $
           NitroHelpers.mintAdminNft txi
   test "NFT minting policy fails to mint more than 1 token" $
     withWallets singleWalletDistribution \w ->

@@ -154,7 +154,7 @@ initNitro = do
     sendToBot nsp botAddr
     pure $ show $ encodeAeson nsp
   where
-  sendToBot :: NitroScriptParams -> Address -> Contract () Unit
+  sendToBot :: NitroScriptParams -> Address -> Contract Unit
   sendToBot nsp botAddr = do
     let
       constraints :: Constraints.TxConstraints Void Void
@@ -205,7 +205,7 @@ userBuyNitro = do
     a <- liftContractM "couldn't convert amount" $ BigInt.fromString amo
     buyNitroContract nsp a
 
-withActor :: forall a. String -> Contract () a -> Effect (Promise a)
+withActor :: forall a. String -> Contract a -> Effect (Promise a)
 withActor actor contract = case lookup actor keys of
   Just k -> fromAff $ runKeyWalletContract k contract
   Nothing -> throwError $ error $ "Could not find actor " <> actor
@@ -294,7 +294,7 @@ actorAddress actor = do
         >>> enterpriseAddress
         >>> enterpriseAddressToAddress
 
-runKeyWalletContract :: forall a. String -> Contract () a -> Aff a
+runKeyWalletContract :: forall a. String -> Contract a -> Aff a
 runKeyWalletContract phex c = runContract cfg c
   where
   cfg = testnetConfig { walletSpec = mkWalletSpec phex }
