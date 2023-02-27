@@ -5,7 +5,7 @@ module GameAssetPolicy (script) where
 import GHC.Generics (Generic)
 import GHC.Show (Show)
 import Ledger (AssetClass)
-import Ledger.Value (assetClass, assetClassValue, geq, assetClassValueOf)
+import Ledger.Value (assetClass, assetClassValue, geq, flattenValue)
 import Plutus.V2.Ledger.Api (
   Address,
   Datum (getDatum),
@@ -13,7 +13,6 @@ import Plutus.V2.Ledger.Api (
   OutputDatum (OutputDatum),
   Script,
   ScriptContext (scriptContextTxInfo),
-  TokenName (TokenName),
   TxInInfo (txInInfoOutRef, txInInfoResolved),
   TxInfo (txInfoInputs, txInfoMint),
   TxOut (txOutDatum),
@@ -25,43 +24,16 @@ import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
 import PlutusTx.Prelude
 import Utils (valueToAddr)
 
-data Driver = Driver
-  { driverId :: BuiltinByteString
-  , aggression :: Integer
-  , experience :: Integer
-  , reflexes :: Integer
-  , luck :: Integer
-  }
-  deriving (Show, Generic)
-PlutusTx.unstableMakeIsData ''Driver
-
-data Car = Car
-  { carId :: BuiltinByteString
-  , topSpeed :: Integer
-  , acceleration :: Integer
-  , cornering :: Integer
-  , aerodynamics :: Integer
-  }
-  deriving (Show, Generic)
-PlutusTx.unstableMakeIsData ''Car
-
-data GameAsset
-  = DriverAsset Driver
-  | CarAsset Car
-  deriving (Show, Generic)
-PlutusTx.unstableMakeIsData ''GameAsset
-
 data GameAssetPolicyParams = GameAssetPolicyParams
   { adminToken :: AssetClass
   , botToken :: AssetClass
-  , asset :: GameAsset
   }
   deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''GameAssetPolicyParams
 
-newtype AirdropAddressDatum = AirdropAddressDatum
+newtype GameAssetPolicyDatum = GameAssetPolicyDatum
   {airdropAddress :: Address}
-PlutusTx.unstableMakeIsData ''AirdropAddressDatum
+PlutusTx.unstableMakeIsData ''GameAssetPolicyDatum
 
 {-# INLINEABLE mkGameAssetPolicy #-}
 mkGameAssetPolicy :: TxOutRef -> GameAssetPolicyParams -> ScriptContext -> Bool
@@ -70,7 +42,7 @@ mkGameAssetPolicy oref gapp ctx =
       || traceIfFalse "input does not contain bot token" inputContainsBotNft
   )
     && traceIfFalse "does not spend parameter TxOutRef" (isJust paramTxo)
-    && traceIfFalse "does not mint asset NFT" mintsAssetNft
+    && traceIfFalse "does not mint asset NFT" (isJust mintedNftAssetClass)
     && traceIfFalse "doesn't send nft to airdrop address" paysNftToAirdrop
   where
     info :: TxInfo
@@ -85,30 +57,25 @@ mkGameAssetPolicy oref gapp ctx =
     inputContainsBotNft :: Bool
     inputContainsBotNft = valueSpent info `geq` assetClassValue (botToken gapp) 1
 
-    nftTokenName :: TokenName
-    nftTokenName = TokenName $ case asset gapp of
-      DriverAsset d -> driverId d
-      CarAsset c -> carId c
-
-    nftAssetClass :: AssetClass
-    nftAssetClass = assetClass (ownCurrencySymbol ctx) nftTokenName
-
     paysNftToAirdrop :: Bool
     paysNftToAirdrop = fromMaybe False $ do
       ptxo <- paramTxo
       gapd <- case txOutDatum ptxo of
         OutputDatum d ->
-          maybe (trace "failed to decode, expected AirdropAddressDatum" Nothing) pure $
-            fromBuiltinData @AirdropAddressDatum $
+          maybe (trace "failed to decode game asset policy datum" Nothing) pure $
+            fromBuiltinData @GameAssetPolicyDatum $
               getDatum d
         _ -> trace "failed to get txo inline datum containing airdrop address" Nothing
-      valueToAirdrop <-
+      v <-
         maybe (trace "failed to get value paid to airdrop address" Nothing) pure $
           valueToAddr info (airdropAddress gapd)
-      pure $ valueToAirdrop `geq` assetClassValue nftAssetClass 1
+      nftAssetClass <- mintedNftAssetClass
+      pure $ v `geq` assetClassValue nftAssetClass 1
 
-    mintsAssetNft :: Bool
-    mintsAssetNft = assetClassValueOf (txInfoMint info) nftAssetClass == 1
+    mintedNftAssetClass :: Maybe AssetClass
+    mintedNftAssetClass = case filter (\(mintedCs, _, _) -> mintedCs == ownCurrencySymbol ctx) $ flattenValue (txInfoMint info) of
+      [(mintedCs, mintedTokenName, amt)] | amt == 1 -> Just $ assetClass mintedCs mintedTokenName
+      _ -> Nothing
 
 {-# INLINEABLE mkPolicy #-}
 mkPolicy :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
