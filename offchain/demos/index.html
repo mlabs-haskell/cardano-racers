@@ -9,6 +9,21 @@
         box-sizing: border-box;
       }
 
+      /* Matte gray buttons with sensible styles */
+      button {
+        background-color: #eee;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        padding: 5px 10px;
+        margin: 5px;
+        cursor: pointer;
+      }
+
+      .btn-disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
       /* Style for the card container */
       .wallet-card {
         border: 1px solid #ccc;
@@ -61,24 +76,6 @@
       <button id="refresh-state">Refresh State</button>
     </div>
     <div id="wallets">
-      <div class="wallet-card">
-        <h2>Actor: Admin</h2>
-        <p>Address: addr_test1</p>
-        <table>
-          <thead>
-            <tr>
-              <th>Asset</th>
-              <th>Value</th>
-            </tr>
-          </thead>
-          <tbody id="balance-table-body">
-            <tr>
-              <td>ETH</td>
-              <td id="eth-balance">200</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
     </div>
 
     <div>
@@ -87,12 +84,17 @@
 
     <div>
       <h4>Actions</h4>
+      <!-- Loading -->
+      <div id="loading" style="display: none">
+        <p>Loading...</p>
+      </div>
       <button id="init">Initialise Nitro</button>
-      <button id="modify-price">Change Nitro Price</button>
+      <button id="modify-price">Change Nitro State</button>
       <button id="mint-admin">Admin Mint nitro</button>
       <button id="mint-bot">Bot Mint Nitro</button>
       <button id="buy">User Buys Nitro</button>
       <button id="reset">Reset tokens</button>
+      <button id="mint-driver" class="btn-disabled">Mint Driver</button>
     </div>
   </body>
 </html>

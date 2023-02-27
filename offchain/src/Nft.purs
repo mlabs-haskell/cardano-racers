@@ -4,6 +4,7 @@ module CardanoRacers.Nft
   ( mkNftMintingPolicy
   , mintManyNfts
   , mintNft
+  , mintNftConstraints
   ) where
 
 import Contract.Prelude

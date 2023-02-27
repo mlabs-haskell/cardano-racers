@@ -2,9 +2,25 @@ module CardanoRacers.GameAsset.Types where
 
 import Contract.Prelude
 
+import Aeson (class DecodeAeson, class EncodeAeson, (.:))
+import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
 import Contract.Address (Address)
-import Contract.PlutusData (class FromData, class HasPlutusSchema, class ToData, type (:+), type (:=), type (@@), I, PNil, S, Z, genericFromData, genericToData)
+import Contract.PlutusData
+  ( class FromData
+  , class HasPlutusSchema
+  , class ToData
+  , type (:+)
+  , type (:=)
+  , type (@@)
+  , I
+  , PNil
+  , S
+  , Z
+  , genericFromData
+  , genericToData
+  )
 import Contract.Value (CurrencySymbol, TokenName)
+import Control.Alt ((<|>))
 import Data.BigInt (BigInt)
 
 newtype Driver = Driver
@@ -14,6 +30,7 @@ newtype Driver = Driver
   , reflexes :: BigInt
   , luck :: BigInt
   }
+
 derive instance Generic Driver _
 derive instance Newtype Driver _
 derive instance Eq Driver
@@ -22,11 +39,15 @@ instance
   HasPlutusSchema Driver
     ( "Driver"
         :=
-          (  "driverId" := I String
-          :+ "aggression" := I BigInt
-          :+ "experience" := I BigInt
-          :+ "reflexes" := I BigInt
-          :+ "luck" := I BigInt
+          ( "driverId" := I String
+              :+ "aggression"
+              := I BigInt
+              :+ "experience"
+              := I BigInt
+              :+ "reflexes"
+              := I BigInt
+              :+ "luck"
+              := I BigInt
               :+ PNil
           )
         @@ Z
@@ -38,6 +59,21 @@ instance ToData Driver where
 
 instance FromData Driver where
   fromData = genericFromData
+
+instance Show Driver where
+  show = genericShow
+
+instance EncodeAeson Driver where
+  encodeAeson = wrapEncodeAeson "Driver" <<< unwrap
+
+instance DecodeAeson Driver where
+  decodeAeson = decodeWrappedAeson "Driver" \obj -> do
+    driverId <- obj .: "driverId"
+    aggression <- obj .: "aggression"
+    experience <- obj .: "experience"
+    reflexes <- obj .: "reflexes"
+    luck <- obj .: "luck"
+    pure $ Driver { driverId, aggression, experience, reflexes, luck }
 
 newtype Car = Car
   { carId :: String
@@ -55,11 +91,15 @@ instance
   HasPlutusSchema Car
     ( "Car"
         :=
-          (  "carId" := I String
-          :+ "topSpeed" := I BigInt
-          :+ "acceleration" := I BigInt
-          :+ "cornering" := I BigInt
-          :+ "aerodynamics" := I BigInt
+          ( "carId" := I String
+              :+ "topSpeed"
+              := I BigInt
+              :+ "acceleration"
+              := I BigInt
+              :+ "cornering"
+              := I BigInt
+              :+ "aerodynamics"
+              := I BigInt
               :+ PNil
           )
         @@ Z
@@ -71,6 +111,21 @@ instance ToData Car where
 
 instance FromData Car where
   fromData = genericFromData
+
+instance Show Car where
+  show = genericShow
+
+instance EncodeAeson Car where
+  encodeAeson = wrapEncodeAeson "Car" <<< unwrap
+
+instance DecodeAeson Car where
+  decodeAeson = decodeWrappedAeson "Car" \obj -> do
+    carId <- obj .: "carId"
+    topSpeed <- obj .: "topSpeed"
+    acceleration <- obj .: "acceleration"
+    cornering <- obj .: "cornering"
+    aerodynamics <- obj .: "aerodynamics"
+    pure $ Car { carId, topSpeed, acceleration, cornering, aerodynamics }
 
 data GameAsset
   = DriverAsset Driver
@@ -96,6 +151,18 @@ instance ToData GameAsset where
 instance FromData GameAsset where
   fromData = genericFromData
 
+instance Show GameAsset where
+  show = genericShow
+
+instance EncodeAeson GameAsset where
+  encodeAeson = case _ of
+    DriverAsset driver -> wrapEncodeAeson "DriverAsset" driver
+    CarAsset car -> wrapEncodeAeson "CarAsset" car
+
+instance DecodeAeson GameAsset where
+  decodeAeson aes =
+    decodeWrappedAeson "DriverAsset" (pure <<< DriverAsset) aes <|>
+      decodeWrappedAeson "CarAsset" (pure <<< CarAsset) aes
 
 newtype GameAssetPolicyParams = GameAssetPolicyParams
   { adminToken :: (CurrencySymbol /\ TokenName)
@@ -111,9 +178,11 @@ instance
   HasPlutusSchema GameAssetPolicyParams
     ( "GameAssetPolicyParams"
         :=
-          (  "adminToken" := I (CurrencySymbol /\ TokenName)
-          :+ "botToken" := I (CurrencySymbol /\ TokenName)
-          :+ "asset" := I GameAsset
+          ( "adminToken" := I (CurrencySymbol /\ TokenName)
+              :+ "botToken"
+              := I (CurrencySymbol /\ TokenName)
+              :+ "asset"
+              := I GameAsset
               :+ PNil
           )
         @@ Z
@@ -126,9 +195,8 @@ instance ToData GameAssetPolicyParams where
 instance FromData GameAssetPolicyParams where
   fromData = genericFromData
 
-
 newtype AirdropAddressDatum = AirdropAddressDatum
-  {airdropAddress :: Address}
+  { airdropAddress :: Address }
 
 derive instance Generic AirdropAddressDatum _
 derive instance Newtype AirdropAddressDatum _
@@ -138,7 +206,7 @@ instance
   HasPlutusSchema AirdropAddressDatum
     ( "AirdropAddressDatum"
         :=
-          (  "airdropAddress" := I Address
+          ( "airdropAddress" := I Address
               :+ PNil
           )
         @@ Z

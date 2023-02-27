@@ -3,6 +3,8 @@ module CardanoRacers.NitroInit where
 import Contract.Prelude
 
 import Aeson (decodeJsonString, encodeAeson)
+import CardanoRacers.GameAsset.Contract (mintNewDriverNft, mintWithMetadata)
+import CardanoRacers.GameAsset.Parameters (Rarity(..))
 import CardanoRacers.Nitro.Contract
   ( adminMintsNitroContract
   , botMintsNitroContract
@@ -28,6 +30,7 @@ import Contract.Config
   )
 import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Hashing (publicKeyHash)
+import Contract.Log (logInfo')
 import Contract.Monad
   ( Contract
   , liftContractE
@@ -97,6 +100,7 @@ type Listeners =
   , modifyNitroState :: Effect (Promise TransactionHash)
   , userBuyNitro :: Effect (Promise TransactionHash)
   , resetTokens :: Effect (Promise (Array TransactionHash))
+  , mintDriver :: Effect (Promise TransactionHash)
   }
 
 keys :: Array (Tuple String String)
@@ -126,8 +130,14 @@ main = do
     , modifyNitroState
     , userBuyNitro
     , resetTokens
+    , mintDriver
     }
   pure unit
+
+mintDriver :: Effect (Promise TransactionHash)
+mintDriver = withActor "Admin" do
+  txid <- mintNewDriverNft Common
+  pure txid
 
 initNitro :: Effect (Promise String)
 initNitro = do
@@ -190,11 +200,25 @@ modifyNitroState :: Effect (Promise TransactionHash)
 modifyNitroState = do
   pjson <- promptFor "Enter NitroScriptParams:"
   amo <- promptFor "Enter NITRO price"
+  treasuryAddrStr <- promptFor "Enter treasury address"
+  operatingAddrStr <- promptFor "Enter operating address"
   withActor "Admin" do
     nsp <- liftContractE $ decodeJsonString pjson
     a <- liftContractM "couldn't convert amount" $ BigInt.fromString amo
     (ns /\ _) <- queryNitroState nsp
-    modifyNitroStateContract nsp (wrap $ (unwrap ns) { nitroPrice = a })
+    treasuryAddr <- addressFromBech32 treasuryAddrStr <|> pure
+      (unwrap ns).treasuryAddress
+    operatingAddr <- addressFromBech32 operatingAddrStr <|> pure
+      (unwrap ns).operatingAddress
+    txId <- modifyNitroStateContract nsp
+      ( wrap $ (unwrap ns)
+          { nitroPrice = a
+          , treasuryAddress = treasuryAddr
+          , operatingAddress = operatingAddr
+          }
+      )
+    logInfo' $ "Modified nitro state: " <> show (encodeAeson ns)
+    pure txId
 
 userBuyNitro :: Effect (Promise TransactionHash)
 userBuyNitro = do

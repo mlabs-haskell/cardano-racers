@@ -18,24 +18,39 @@ const createActor = (name, address, balance) => `
 
 let selectedActor = "Admin";
 
+const wrapLoading = (p) => {
+  const setLoading = (b) => {
+    if (b) {
+      document.getElementById("loading").style.display = "block";
+    } else {
+      document.getElementById("loading").style.display = "none";
+    }
+  }
+  setLoading(true);
+  return p.then(res => {setLoading(false); return res;})
+}
+
 exports.setupListeners = handlers => () => {
+  document.getElementById("mint-driver").addEventListener("click", () => {
+    wrapLoading(handlers.mintDriver()).then(console.log)
+  });
   document.getElementById("init").addEventListener("click", () => {
-    handlers.initNitro().then(x => download("params.json", x));
+    wrapLoading(handlers.initNitro()).then(x => download("params.json", x))
   });
   document.getElementById("reset").addEventListener("click", () => {
-    handlers.resetTokens().then(console.log);
+    wrapLoading(handlers.resetTokens()).then(console.log)
   });
   document.getElementById("modify-price").addEventListener("click", () => {
-    handlers.modifyNitroState().then(console.log);
+    wrapLoading(handlers.modifyNitroState()).then(console.log);
   });
   document.getElementById("mint-admin").addEventListener("click", () => {
-    handlers.adminMintNitro().then(console.log);
+    wrapLoading(handlers.adminMintNitro()).then(console.log);
   });
   document.getElementById("mint-bot").addEventListener("click", () => {
-    handlers.botMintNitro().then(console.log);
+    wrapLoading(handlers.botMintNitro()).then(console.log);
   });
   document.getElementById("buy").addEventListener("click", () => {
-    handlers.userBuyNitro().then(console.log);
+    wrapLoading(handlers.userBuyNitro()).then(console.log);
   });
 
   document.getElementById("refresh-state").addEventListener("click", () => {
@@ -66,7 +81,7 @@ exports.setupListeners = handlers => () => {
     refreshWallets();
   });
 
-  refreshWallets();
+  // refreshWallets();
 };
 
 function download(filename, text) {

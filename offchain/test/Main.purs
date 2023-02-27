@@ -17,6 +17,8 @@ import Effect.Aff
   , effectCanceler
   , launchAff
   )
+import Mote (only)
+import Test.CardanoRacers.GameAsset (gameAssetSuite)
 import Test.CardanoRacers.Nft (adminNftSuite)
 import Test.CardanoRacers.Nitro.Contract (nitroTokenSuite)
 import Test.Spec.Runner (defaultConfig)
@@ -33,12 +35,13 @@ suite :: TestPlanM PlutipTest Unit
 suite = do
   adminNftSuite
   nitroTokenSuite
+  only gameAssetSuite
 
 config :: PlutipConfig
 config =
   { host: "127.0.0.1"
   , port: UInt.fromInt 8082
-  , logLevel: Trace
+  , logLevel: Info
   , ogmiosConfig:
       { port: UInt.fromInt 1338
       , host: "127.0.0.1"
@@ -52,7 +55,7 @@ config =
       , path: Nothing
       }
   , customLogger: Nothing
-  , suppressLogs: true
+  , suppressLogs: false
   , hooks: emptyHooks
   , clusterConfig:
       { slotLength: Seconds 0.05 }
