@@ -15,6 +15,10 @@ import Math (abs, cos, log, pi, sqrt) as Math
 
 data Rarity = Common | Rare | Epic
 
+derive instance Generic Rarity _
+instance Show Rarity where
+  show = genericShow
+
 maxParameterScore :: Int
 maxParameterScore = 10000
 
@@ -23,7 +27,7 @@ parameterCount = 4
 
 rarityMinRequirement :: Rarity -> Int
 rarityMinRequirement = case _ of
-  Common -> 0
+  Common -> 4
   Rare -> 10000
   Epic -> 20000
 

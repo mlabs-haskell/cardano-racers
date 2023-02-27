@@ -21,7 +21,6 @@ import System.Environment (getArgs, lookupEnv)
 import Prelude
 
 import DepositScript qualified
-import GameAssetPolicy qualified
 import NftPolicy qualified
 import NitroPolicy qualified
 
@@ -65,7 +64,6 @@ main = do
           , ("nitroStateValidatorScript", NitroPolicy.nitroStateValidatorScript)
           , ("adminNftMintingPolicy", NftPolicy.script)
           , ("depositScript", DepositScript.script)
-          , ("gameAssetPolicy", GameAssetPolicy.script)
           ]
   writeFile (out <> "/ScriptsFFI.js") js
   writeFile (out <> "/ScriptsFFI.purs") purs

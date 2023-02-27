@@ -62,7 +62,6 @@ library
     , NitroPolicy
     , NftPolicy
     , DepositScript
-    , GameAssetPolicy
                  
   other-modules:
     , Utils

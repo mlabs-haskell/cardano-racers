@@ -46,10 +46,6 @@ mintNftConstraints txi tkname = do
         Nothing -> TransactionOutputWithRefScript
           { output: txo, scriptRef: Nothing }
 
-  -- todo: find workaround to avoid using internal functions
-  -- ptxo <- liftContractM "Could not convert to plutus txo" $
-  --   toPlutusTxOutputWithRefScript txo
-
   mp <- mkNftMintingPolicy txi tkname
   cs <- liftContractM "couldn't get currency symbol" $ scriptCurrencySymbol mp
 
