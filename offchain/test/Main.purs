@@ -17,6 +17,8 @@ import Effect.Aff
   , effectCanceler
   , launchAff
   )
+import Mote (only)
+import Test.CardanoRacers.GameAsset (gameAssetSuite)
 import Test.CardanoRacers.Nft (adminNftSuite)
 import Test.CardanoRacers.Nitro.Contract (nitroTokenSuite)
 import Test.Spec.Runner (defaultConfig)
@@ -33,12 +35,13 @@ suite :: TestPlanM PlutipTest Unit
 suite = do
   adminNftSuite
   nitroTokenSuite
+  only gameAssetSuite
 
 config :: PlutipConfig
 config =
   { host: "127.0.0.1"
   , port: UInt.fromInt 8082
-  , logLevel: Trace
+  , logLevel: Info
   , ogmiosConfig:
       { port: UInt.fromInt 1338
       , host: "127.0.0.1"
@@ -52,8 +55,45 @@ config =
       , path: Nothing
       }
   , customLogger: Nothing
-  , suppressLogs: true
+  , suppressLogs: false
   , hooks: emptyHooks
   , clusterConfig:
       { slotLength: Seconds 0.05 }
   }
+
+-- config :: PlutipConfig
+-- config =
+--   { host: "127.0.0.1"
+--   , port: UInt.fromInt 8082
+--   , logLevel: Info
+--   , ogmiosConfig:
+--       { port: UInt.fromInt 1338
+--       , host: "127.0.0.1"
+--       , secure: false
+--       , path: Nothing
+--       }
+--   , ogmiosDatumCacheConfig:
+--       { port: UInt.fromInt 10000
+--       , host: "127.0.0.1"
+--       , secure: false
+--       , path: Nothing
+--       }
+--   , kupoConfig:
+--       { port: UInt.fromInt 1443
+--       , host: "127.0.0.1"
+--       , secure: false
+--       , path: Nothing
+--       }
+--   , postgresConfig:
+--       { host: "127.0.0.1"
+--       , port: UInt.fromInt 5433
+--       , user: "ctxlib"
+--       , password: "ctxlib"
+--       , dbname: "ctxlib"
+--       }
+--   , customLogger: Nothing
+--   , suppressLogs: false
+--   , hooks: emptyHooks
+--   , clusterConfig:
+--       { slotLength: Seconds 0.05 }
+--   }
