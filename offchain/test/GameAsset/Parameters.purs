@@ -2,7 +2,10 @@ module Test.CardanoRacers.GameAsset.Parameters where
 
 import Contract.Prelude
 
-import CardanoRacers.GameAsset.Parameters (Rarity(..), generateUniformParameters)
+import CardanoRacers.GameAsset.Parameters
+  ( Rarity(Common,Rare,Epic)
+  , generateUniformParameters
+  )
 import Contract.Test.Mote (TestPlanM)
 import Control.Apply (lift2)
 import Mote (group, test)
@@ -11,15 +14,17 @@ import Test.QuickCheck (mkSeed, quickCheckGen')
 import Test.QuickCheck.Gen (Gen, chooseInt)
 
 paramsByRarityGen :: Rarity -> Gen (Array Int)
-paramsByRarityGen rarity = chooseInt 1 lcgM <#> \i -> generateUniformParameters (mkSeed i) rarity
+paramsByRarityGen rarity = chooseInt 1 lcgM <#> \i -> generateUniformParameters
+  (mkSeed i)
+  rarity
 
 paramsGen :: Gen (Array Int)
 paramsGen = chooseInt 1 3 >>=
-              case _ of
-                  1 -> paramsByRarityGen Common
-                  2 -> paramsByRarityGen Rare
-                  3 -> paramsByRarityGen Epic
-                  _ -> pure []
+  case _ of
+    1 -> paramsByRarityGen Common
+    2 -> paramsByRarityGen Rare
+    3 -> paramsByRarityGen Epic
+    _ -> pure []
 
 suite :: TestPlanM (Aff Unit) Unit
 suite = group "Parameters" do
@@ -27,19 +32,19 @@ suite = group "Parameters" do
     liftEffect $ quickCheckGen' 10000 $ ((_ == 4) <<< length) <$> paramsGen
   test "Common params have combined score of >= 4" do
     liftEffect $ quickCheckGen' 10000 $ sum
-      >>> lift2 (&&) 
-            (_ >= 4)
-            (_ <= 40000)
+      >>> lift2 (&&)
+        (_ >= 4)
+        (_ <= 40000)
       <$> paramsByRarityGen Common
   test "Rare params have combined score of >= 10000" do
     liftEffect $ quickCheckGen' 10000 $ sum
-      >>> lift2 (&&) 
-            (_ >= 10000)
-            (_ <= 40000)
+      >>> lift2 (&&)
+        (_ >= 10000)
+        (_ <= 40000)
       <$> paramsByRarityGen Rare
   test "Epic params have combined score of >= 20000" do
     liftEffect $ quickCheckGen' 10000 $ sum
-      >>> lift2 (&&) 
-            (_ >= 20000)
-            (_ <= 40000)
+      >>> lift2 (&&)
+        (_ >= 20000)
+        (_ <= 40000)
       <$> paramsByRarityGen Epic

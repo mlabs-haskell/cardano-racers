@@ -3,6 +3,7 @@
 module CardanoRacers.Nft
   ( mkNftMintingPolicy
   , mintManyNfts
+  , mintNftConstraints
   , mintNft
   ) where
 

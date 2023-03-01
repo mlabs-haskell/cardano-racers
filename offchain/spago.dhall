@@ -12,7 +12,6 @@ You can edit this file as you like.
   , "cardano-transaction-lib"
   , "control"
   , "datetime"
-  , "debug"
   , "effect"
   , "exceptions"
   , "foreign-object"
