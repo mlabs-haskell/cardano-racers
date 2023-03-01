@@ -1,4 +1,4 @@
-module Test.CardanoRacers.Nitro.Types (nitroTypesSuite) where
+module Test.CardanoRacers.Nitro.Types (suite) where
 
 import Contract.Prelude
 
@@ -23,8 +23,8 @@ import Mote (test)
 import Partial.Unsafe (unsafePartial)
 import Test.Spec.Assertions (shouldEqual)
 
-nitroTypesSuite :: TestPlanM (Aff Unit) Unit
-nitroTypesSuite = do
+suite :: TestPlanM (Aff Unit) Unit
+suite = do
   test "Aeson Encode/Decode of NitroScriptParams" do
     let nsp /\ encodedStr = nitroScriptParamsFixture
     show (encodeAeson nsp) `shouldEqual` encodedStr
