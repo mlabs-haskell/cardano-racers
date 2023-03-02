@@ -8,6 +8,7 @@ import PlutusTx.Prelude
 
 import Utils (valueToAddr)
 
+import CommonTypes (RacersParams, RacersState, adminToken, botToken, nitroPrice, nitroToken, operatingAddress, stateToken, treasuryAddress)
 import GHC.Generics (Generic)
 import GHC.Show (Show)
 import Ledger (AssetClass, Datum (getDatum))
@@ -18,15 +19,14 @@ import Plutus.V2.Ledger.Api (
   Script,
   ScriptContext (scriptContextTxInfo),
   TxInInfo (txInInfoResolved),
-  TxInfo (txInfoReferenceInputs, txInfoMint),
+  TxInfo (txInfoMint, txInfoReferenceInputs),
   TxOut (txOutDatum, txOutValue),
   Value,
-  fromCompiledCode
+  fromCompiledCode,
  )
 import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, valueSpent)
 import PlutusTx qualified (FromData (fromBuiltinData), compile, unsafeFromBuiltinData, unstableMakeIsData)
 import PlutusTx.Ratio (truncate)
-import CommonTypes (RacersParams, RacersState, stateToken, adminToken, botToken, nitroToken, treasuryAddress, operatingAddress, nitroPrice)
 
 data NitroPolicyRedeemer
   = MintNitroToken Integer

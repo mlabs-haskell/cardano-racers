@@ -4,21 +4,20 @@ module RacersStateScript (racersStateValidatorScript) where
 
 import PlutusTx.Prelude
 
-
+import CommonTypes (RacersParams, RacersState, adminToken, stateToken)
 import Ledger (Datum (getDatum))
 import Ledger.Value (assetClassValue, geq)
 import Plutus.V2.Ledger.Api (
   OutputDatum (OutputDatum),
   Script,
   ScriptContext (scriptContextTxInfo),
-  TxInfo,
   ToData (toBuiltinData),
+  TxInfo,
   Value,
-  fromCompiledCode
+  fromCompiledCode,
  )
 import Plutus.V2.Ledger.Contexts (ownHash, scriptOutputsAt, valueSpent)
 import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
-import CommonTypes (RacersState, adminToken, stateToken, RacersParams)
 
 newtype RacersStateRedeemer = SetRacersState RacersState
 PlutusTx.unstableMakeIsData ''RacersStateRedeemer
