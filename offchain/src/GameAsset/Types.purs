@@ -2,7 +2,7 @@ module CardanoRacers.GameAsset.Types where
 
 import Contract.Prelude
 
-import Aeson (class DecodeAeson, class EncodeAeson, (.:))
+import Aeson (class DecodeAeson, class EncodeAeson, JsonDecodeError(TypeMismatch), (.:))
 import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
 import Contract.Address (Address)
 import Contract.Metadata
@@ -44,7 +44,54 @@ import Ctl.Internal.Serialization.Hash (scriptHashFromBytes, scriptHashToBytes)
 import Data.Array (catMaybes, concat)
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
+import Data.Function (on)
 import Data.Map (toUnfoldable) as Map
+
+data Rarity = Common | Rare | Epic
+
+derive instance Generic Rarity _
+derive instance Eq Rarity
+instance Show Rarity where
+  show = genericShow
+
+instance Ord Rarity where
+  compare = compare `on` toInt
+    where
+    toInt Common = 0
+    toInt Rare = 1
+    toInt Epic = 2
+
+instance EncodeAeson Rarity where
+  encodeAeson = wrapEncodeAeson "Rarity" <<< show
+
+instance DecodeAeson Rarity where
+  decodeAeson = decodeWrappedAeson "Rarity" \obj -> do
+    rarity <- obj .: "Rarity"
+    case rarity of
+      "Common" -> pure Common
+      "Rare" -> pure Rare
+      "Epic" -> pure Epic
+      _ -> Left (TypeMismatch "expected 'Common', 'Rare' or 'Epic'")
+
+instance
+  HasPlutusSchema Rarity
+    ( "Common"
+        := PNil
+        @@ Z
+        :+ "Rare"
+        := PNil
+        @@ (S Z)
+        :+ "Epic"
+        := PNil
+        @@ (S (S Z))
+        :+ PNil
+    )
+
+instance ToData Rarity where
+  toData = genericToData
+
+instance FromData Rarity where
+  fromData = genericFromData
 
 newtype Driver = Driver
   { driverId :: String
@@ -415,3 +462,4 @@ instance FromMetadata GameAssetNftMetadata where
 
 instance MetadataType GameAssetNftMetadata where
   metadataLabel _ = wrap $ BigInt.fromInt 721
+

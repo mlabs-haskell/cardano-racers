@@ -1,25 +1,19 @@
 module CardanoRacers.GameAsset.Parameters
   ( generateUniformParameters
   , generateGaussianParameters
-  , Rarity(Common, Epic, Rare)
   ) where
 
 import Contract.Prelude hiding (choose)
 
+import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
 import Control.Apply (lift2)
 import Data.Array (zip)
 import Data.Array as Array
-import Data.Int (floor, toNumber)
+import Data.Int (floor)
 import Data.List.Lazy (replicateM)
 import Math (abs, cos, log, pi, sqrt) as Math
 import Random.LCG (Seed)
-import Test.QuickCheck.Gen (Gen, choose, chooseInt, evalGen, uniform)
-
-data Rarity = Common | Rare | Epic
-
-derive instance Generic Rarity _
-instance Show Rarity where
-  show = genericShow
+import Test.QuickCheck.Gen (Gen, choose, chooseInt, evalGen)
 
 maxParameterScore :: Int
 maxParameterScore = 10000

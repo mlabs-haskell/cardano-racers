@@ -26,5 +26,5 @@ main = interruptOnSignal SIGINT =<< launchAff do
 testPlan :: TestPlanM (Aff Unit) Unit
 testPlan = do
   NitroTypes.suite
-  only GameAssetParameters.suite
+  GameAssetParameters.suite
 

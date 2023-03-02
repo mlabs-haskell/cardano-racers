@@ -2,10 +2,8 @@ module Test.CardanoRacers.GameAsset.Parameters where
 
 import Contract.Prelude
 
-import CardanoRacers.GameAsset.Parameters
-  ( Rarity(Common,Rare,Epic)
-  , generateUniformParameters
-  )
+import CardanoRacers.GameAsset.Parameters (generateUniformParameters)
+import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
 import Contract.Test.Mote (TestPlanM)
 import Control.Apply (lift2)
 import Mote (group, test)

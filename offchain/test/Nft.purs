@@ -1,4 +1,4 @@
-module Test.CardanoRacers.Nft (adminNftSuite) where
+module Test.CardanoRacers.Nft (suite) where
 
 import Contract.Prelude
 
@@ -48,8 +48,8 @@ import Data.Map (toUnfoldable)
 import Mote (group, test)
 import Test.Spec.Assertions (shouldSatisfy)
 
-adminNftSuite :: TestPlanM PlutipTest Unit
-adminNftSuite = group "AdminNft" do
+suite :: TestPlanM PlutipTest Unit
+suite = group "AdminNft" do
   test "Apply TxOutRef to script" do
     withWallets singleWalletDistribution \w ->
       withKeyWallet w do

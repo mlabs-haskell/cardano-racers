@@ -17,10 +17,10 @@ import Effect.Aff
   , effectCanceler
   , launchAff
   )
-import Mote (only)
-import Test.CardanoRacers.GameAsset (gameAssetSuite)
-import Test.CardanoRacers.Nft (adminNftSuite)
-import Test.CardanoRacers.Nitro.Contract (nitroTokenSuite)
+import Test.CardanoRacers.GameAsset (suite) as GameAsset
+import Test.CardanoRacers.Nft (suite) as Nft
+import Test.CardanoRacers.Nitro.Contract (suite) as Nitro
+import Test.CardanoRacers.RacersState.Contract (suite) as RacersState
 import Test.Spec.Runner (defaultConfig)
 
 -- Run with `npm run test`
@@ -33,9 +33,10 @@ main = interruptOnSignal SIGINT =<< launchAff do
 
 suite :: TestPlanM PlutipTest Unit
 suite = do
-  adminNftSuite
-  nitroTokenSuite
-  only gameAssetSuite
+  Nft.suite
+  Nitro.suite
+  RacersState.suite
+  GameAsset.suite
 
 config :: PlutipConfig
 config =

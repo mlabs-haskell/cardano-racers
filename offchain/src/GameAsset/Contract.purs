@@ -1,11 +1,12 @@
 module CardanoRacers.GameAsset.Contract (mintNewCarNft, mintNewDriverNft) where
 
-import CardanoRacers.GameAsset.Parameters (Rarity, generateUniformParameters)
+import CardanoRacers.GameAsset.Parameters (generateUniformParameters)
 import CardanoRacers.GameAsset.Types
   ( Car(Car)
   , Driver(Driver)
   , GameAssetNftMetadata(GameAssetNftMetadata)
   , GameAssetNftMetadataEntry(DriverNftMetadata, CarNftMetadata)
+  , Rarity
   )
 import CardanoRacers.Nft (mintNftConstraints)
 import Contract.AuxiliaryData (setTxMetadata)
@@ -123,7 +124,6 @@ mintNewDriverNft opts = do
   balancedSignedTx <- signTransaction balancedTx
   txId <- submit balancedSignedTx
   awaitTxConfirmed txId
-  logInfo' $ "Tx ID: " <> show txId
   pure txId
 
 mintNewCarNft :: MintAssetNftOptions -> Contract TransactionHash

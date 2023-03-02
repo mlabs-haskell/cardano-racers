@@ -23,6 +23,7 @@ import Prelude
 import DepositScript qualified
 import NftPolicy qualified
 import NitroPolicy qualified
+import RacersStateScript qualified
 
 data ScriptsFFI
   = ScriptsFFI
@@ -61,7 +62,7 @@ main = do
   let ScriptsFFI {js, purs} =
         mkScriptsFFI
           [ ("nitroMintingPolicyScript", NitroPolicy.nitroPolicyScript)
-          , ("nitroStateValidatorScript", NitroPolicy.nitroStateValidatorScript)
+          , ("racersStateValidatorScript", RacersStateScript.racersStateValidatorScript)
           , ("adminNftMintingPolicy", NftPolicy.script)
           , ("depositScript", DepositScript.script)
           ]

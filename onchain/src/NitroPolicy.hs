@@ -2,7 +2,7 @@
 
 -- {-# OPTIONS_GHC -w #-}
 
-module NitroPolicy (nitroPolicyScript, nitroStateValidatorScript) where
+module NitroPolicy (nitroPolicyScript) where
 
 import PlutusTx.Prelude
 
@@ -10,79 +10,23 @@ import Utils (valueToAddr)
 
 import GHC.Generics (Generic)
 import GHC.Show (Show)
-import Ledger (Address, AssetClass, Datum (getDatum))
+import Ledger (AssetClass, Datum (getDatum))
 import Ledger.Ada (lovelaceValueOf)
 import Ledger.Value (assetClass, assetClassValue, assetClassValueOf, geq)
 import Plutus.V2.Ledger.Api (
   OutputDatum (OutputDatum),
   Script,
   ScriptContext (scriptContextTxInfo),
-  ToData (toBuiltinData),
-  TokenName,
   TxInInfo (txInInfoResolved),
   TxInfo (txInfoReferenceInputs, txInfoMint),
   TxOut (txOutDatum, txOutValue),
   Value,
-  fromCompiledCode,
+  fromCompiledCode
  )
-import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, ownHash, scriptOutputsAt, valueSpent)
+import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, valueSpent)
 import PlutusTx qualified (FromData (fromBuiltinData), compile, unsafeFromBuiltinData, unstableMakeIsData)
 import PlutusTx.Ratio (truncate)
-
-data NitroState = NitroState
-  { nitroPrice :: Integer -- Nitro price in Lovelace
-  , treasuryAddress :: Address
-  , operatingAddress :: Address
-  }
-  deriving (Show, Generic)
-PlutusTx.unstableMakeIsData ''NitroState
-
-data NitroScriptParams = NitroScriptParams
-  { adminToken :: AssetClass
-  -- ^ Admin NFT AssetClass that allows free minting and state modification
-  , botToken :: AssetClass
-  -- ^ Bot NFT AssetClass that allows bot to mint Nitro tokens only
-  , stateToken :: AssetClass
-  -- ^ State NFT AssetClass that reprensents the current NitroState
-  -- | see https://github.com/Plutonomicon/plutonomicon/blob/main/statethread.md
-  , nitroToken :: TokenName
-  -- ^ TokenName of Nitro token
-  }
-  deriving (Show, Generic)
-PlutusTx.unstableMakeIsData ''NitroScriptParams
-
-newtype NitroStateRedeemer = SetNitroState NitroState
-PlutusTx.unstableMakeIsData ''NitroStateRedeemer
-
-{-# INLINEABLE mkNitroStateValidator #-}
-mkNitroStateValidator :: NitroScriptParams -> NitroStateRedeemer -> ScriptContext -> Bool
-mkNitroStateValidator nsp (SetNitroState ns) ctx =
-  traceIfFalse "Admin token not present" inputContainsAdminNft
-    && traceIfFalse "game state invalid: " (setsNitroStateTo ns)
-  where
-    info :: TxInfo
-    info = scriptContextTxInfo ctx
-
-    stateNftValue :: Value
-    stateNftValue = assetClassValue (stateToken nsp) 1
-
-    inputContainsAdminNft :: Bool
-    inputContainsAdminNft = valueSpent info `geq` assetClassValue (adminToken nsp) 1
-
-    outputsLockedByTheScript :: [(OutputDatum, Value)]
-    outputsLockedByTheScript = scriptOutputsAt (ownHash ctx) info
-
-    -- This will ensure that state is set to expected value and that stateNft
-    -- is re-locked at the script
-    setsNitroStateTo :: NitroState -> Bool
-    setsNitroStateTo gs =
-      case filter (\(_, val) -> val `geq` stateNftValue) outputsLockedByTheScript of
-        [(OutputDatum odat, _)] ->
-          traceIfFalse "game state is not equal to state provided by redeemer" $
-            getDatum odat == toBuiltinData gs
-        [(_, _)] -> traceError "game state datum must be inline"
-        [] -> traceError "game state is not re-locked at the script"
-        _ -> traceError "unexpected game state output"
+import CommonTypes (RacersParams, RacersState, stateToken, adminToken, botToken, nitroToken, treasuryAddress, operatingAddress, nitroPrice)
 
 data NitroPolicyRedeemer
   = MintNitroToken Integer
@@ -91,7 +35,7 @@ data NitroPolicyRedeemer
 PlutusTx.unstableMakeIsData ''NitroPolicyRedeemer
 
 {-# INLINEABLE mkNitroMintiingPolicy #-}
-mkNitroMintiingPolicy :: NitroScriptParams -> NitroPolicyRedeemer -> ScriptContext -> Bool
+mkNitroMintiingPolicy :: RacersParams -> NitroPolicyRedeemer -> ScriptContext -> Bool
 mkNitroMintiingPolicy nsp red ctx = case red of
   MintNitroToken i ->
     ( traceIfFalse "admin token not present" inputContainsAdminNft
@@ -106,7 +50,7 @@ mkNitroMintiingPolicy nsp red ctx = case red of
       gameStateRefInput :: Maybe TxOut
       gameStateRefInput = find ((`geq` stateNftValue) . txOutValue) . map txInInfoResolved $ txInfoReferenceInputs info
 
-      currentStateFromRefInput :: Maybe NitroState
+      currentStateFromRefInput :: Maybe RacersState
       currentStateFromRefInput = do
         outDatum <- txOutDatum <$> gameStateRefInput
         dat <- case outDatum of
@@ -170,20 +114,5 @@ mkPolicy nsp redeemer context =
    in
     if result then () else traceError "Failed verification"
 
-{-# INLINEABLE mkValidator #-}
-mkValidator :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
-mkValidator nsp _datum redeemer context =
-  let
-    result =
-      mkNitroStateValidator
-        (PlutusTx.unsafeFromBuiltinData nsp)
-        (PlutusTx.unsafeFromBuiltinData redeemer)
-        (PlutusTx.unsafeFromBuiltinData context)
-   in
-    if result then () else traceError "Failed verification"
-
 nitroPolicyScript :: Script
 nitroPolicyScript = fromCompiledCode $$(PlutusTx.compile [||mkPolicy||])
-
-nitroStateValidatorScript :: Script
-nitroStateValidatorScript = fromCompiledCode $$(PlutusTx.compile [||mkValidator||])

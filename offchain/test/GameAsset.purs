@@ -1,22 +1,16 @@
-module Test.CardanoRacers.GameAsset where
+module Test.CardanoRacers.GameAsset (suite) where
 
 import Contract.Prelude
 
 import CardanoRacers.GameAsset.Contract (mintNewDriverNft)
-import CardanoRacers.GameAsset.Parameters (Rarity(..))
-import Contract.Log (logInfo')
+import CardanoRacers.GameAsset.Types (Rarity(Common))
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip
-  ( InitialUTxOs
-  , PlutipTest
-  , withKeyWallet
-  , withWallets
-  )
+import Contract.Test.Plutip (InitialUTxOs, PlutipTest, withKeyWallet, withWallets)
 import Data.BigInt (fromInt) as BigInt
-import Mote (test)
+import Mote (group, test)
 
-gameAssetSuite :: TestPlanM PlutipTest Unit
-gameAssetSuite = do
+suite :: TestPlanM PlutipTest Unit
+suite = group "GameAsset tests" do
   test "GameAsset" do
     withWallets walletUtxoDistr \w ->
       withKeyWallet w do
@@ -29,7 +23,6 @@ gameAssetSuite = do
           , description: Just "Good old Michael Schumacher"
           , rarity: Common
           }
-        logInfo' $ "hello world"
         pure unit
   where
   walletUtxoDistr :: InitialUTxOs

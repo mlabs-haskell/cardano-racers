@@ -62,9 +62,11 @@ library
     , NitroPolicy
     , NftPolicy
     , DepositScript
+    , RacersStateScript
                  
   other-modules:
     , Utils
+    , CommonTypes
 
   build-depends:
     , plutus-ledger
