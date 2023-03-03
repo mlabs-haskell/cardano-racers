@@ -2,28 +2,19 @@
 
 module AssetRequestPolicy where
 
-import CommonTypes (GameAsset (Car, Driver), RacersParams (stateToken), RacersState, Rarity (Common, Epic, Rare), carPrices, driverPrices)
-import Ledger.Value (TokenName (unTokenName), flattenValue)
+import CommonTypes (GameAsset (Car, Driver), RacersParams (stateToken), RacersState, Rarity, carPrices, driverPrices)
+import Ledger.Value (flattenValue)
 import Plutus.V2.Ledger.Api (
-  Address,
   Script,
   ScriptContext (scriptContextTxInfo),
   TxInfo (txInfoMint),
   fromCompiledCode,
  )
 import Plutus.V2.Ledger.Contexts (ownCurrencySymbol)
-import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
+import PlutusTx qualified (compile, unsafeFromBuiltinData)
 import PlutusTx.AssocMap (lookup)
-import PlutusTx.Builtins (equalsByteString)
 import PlutusTx.Prelude
-import Utils (distributesToAddrs, findCurrentGameStateFromRefInputs, safeIndex, splitOn)
-
-data AssetRequestDatum = AssetRequestDatum
-  { airdropAddress :: Address
-  , asset :: GameAsset
-  , rarity :: Rarity
-  }
-PlutusTx.unstableMakeIsData ''AssetRequestDatum
+import Utils (distributesToAddrs, findCurrentGameStateFromRefInputs, parseToken)
 
 {-# INLINEABLE mkAssetRequestPolicy #-}
 mkAssetRequestPolicy :: RacersParams -> ScriptContext -> Bool
@@ -41,29 +32,6 @@ mkAssetRequestPolicy rp ctx = paysToCorrectAddrs
         filter (\(cs, _, _) -> cs == ownCurrencySymbol ctx) $
           flattenValue $
             txInfoMint info
-
-    parseToken :: TokenName -> Integer -> Maybe (GameAsset, Rarity, Integer)
-    parseToken tn count = do
-      let splitted = splitOn ":" $ unTokenName tn
-      r <-
-        splitted
-          `safeIndex` 0
-          >>= ( \x -> case x of
-                  _ | equalsByteString x "Common" -> Just Common
-                  _ | equalsByteString x "Rare" -> Just Rare
-                  _ | equalsByteString x "Epic" -> Just Epic
-                  _ | otherwise -> Nothing
-              )
-      a <-
-        splitted
-          `safeIndex` 1
-          >>= ( \x -> case x of
-                  _ | equalsByteString x "Driver" -> Just Driver
-                  _ | equalsByteString x "Car" -> Just Car
-                  _ | otherwise -> Nothing
-              )
-
-      pure (a, r, count)
 
     totalLovelaceDue :: [(GameAsset, Rarity, Integer)] -> Maybe Integer
     totalLovelaceDue requestEntries = do

@@ -30,6 +30,11 @@ instance Ord Rarity where
       toInt Rare = 1
       toInt Epic = 2
 
+rarityToBuiltinByteString :: Rarity -> BuiltinByteString
+rarityToBuiltinByteString Common = "Common"
+rarityToBuiltinByteString Rare = "Rare"
+rarityToBuiltinByteString Epic = "Epic"
+
 data RacersParams = RacersParams
   { adminToken :: AssetClass
   -- ^ Admin NFT AssetClass that allows free minting and state modification
@@ -59,3 +64,12 @@ data GameAsset
   | Car
   deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''GameAsset
+
+instance Eq GameAsset where
+  Driver == Driver = True
+  Car == Car = True
+  _ == _ = False
+
+gameAssetToBuiltinByteString :: GameAsset -> BuiltinByteString
+gameAssetToBuiltinByteString Driver = "Driver"
+gameAssetToBuiltinByteString Car = "Car"

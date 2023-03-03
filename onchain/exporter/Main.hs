@@ -25,6 +25,7 @@ import NftPolicy qualified
 import NitroPolicy qualified
 import RacersStateScript qualified
 import AssetRequestPolicy qualified
+import GameAssetPolicy qualified
 
 data ScriptsFFI
   = ScriptsFFI
@@ -67,6 +68,7 @@ main = do
           , ("adminNftMintingPolicy", NftPolicy.script)
           , ("depositScript", DepositScript.script)
           , ("assetRequestPolicy", AssetRequestPolicy.script)
+          , ("gameAssetPolicy", GameAssetPolicy.script)
           ]
   writeFile (out <> "/ScriptsFFI.js") js
   writeFile (out <> "/ScriptsFFI.purs") purs

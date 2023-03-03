@@ -4,23 +4,24 @@ module Utils where
 
 import PlutusTx.Prelude
 
-import CommonTypes (RacersState (operatingAddress, treasuryAddress))
+import CommonTypes (GameAsset (Car, Driver), RacersState (operatingAddress, treasuryAddress), Rarity (Common, Epic, Rare), gameAssetToBuiltinByteString, rarityToBuiltinByteString)
 import Control.Applicative ((<|>))
 import Ledger (AssetClass, toPubKeyHash, toValidatorHash)
 import Ledger.Ada (lovelaceValueOf)
-import Ledger.Value (Value, assetClassValue, geq)
+import Ledger.Value (TokenName (TokenName), Value, assetClassValue, geq)
 import Plutus.V2.Ledger.Api (
   Address,
   Datum (getDatum),
   OutputDatum (OutputDatum),
+  TokenName (unTokenName),
   TxInInfo (txInInfoResolved),
   TxInfo (txInfoReferenceInputs),
-  TxOut (txOutDatum),
-  txOutValue,
+  TxOut (txOutDatum, txOutValue),
  )
 import Plutus.V2.Ledger.Contexts (valueLockedBy, valuePaidTo)
 import PlutusTx qualified (fromBuiltinData)
 import PlutusTx.Builtins (equalsByteString)
+import PlutusTx.IsData (FromData)
 import PlutusTx.Ratio (truncate)
 
 {-# INLINEABLE valueToAddr #-}
@@ -33,11 +34,14 @@ valueToAddr info addr =
 findCurrentGameStateFromRefInputs :: TxInfo -> AssetClass -> Maybe RacersState
 findCurrentGameStateFromRefInputs info stateToken = do
   let stateNftValue = assetClassValue stateToken 1
-  outDatum <- txOutDatum <$> (find ((`geq` stateNftValue) . txOutValue) . map txInInfoResolved $ txInfoReferenceInputs info)
-  dat <- case outDatum of
-    OutputDatum d -> pure $ getDatum d
-    _ -> Nothing
-  PlutusTx.fromBuiltinData dat
+  txo <- find ((`geq` stateNftValue) . txOutValue) . map txInInfoResolved $ txInfoReferenceInputs info
+  getInlineDatum txo
+
+{-# INLINEABLE getInlineDatum #-}
+getInlineDatum :: FromData a => TxOut -> Maybe a
+getInlineDatum txo = case txOutDatum txo of
+  OutputDatum d -> withTraceM "unexpected inline datum type" $ PlutusTx.fromBuiltinData $ getDatum d
+  _ -> Nothing
 
 {-# INLINEABLE distributesToAddrs #-}
 distributesToAddrs :: TxInfo -> RacersState -> Integer -> Bool
@@ -64,6 +68,11 @@ distributesToAddrs info state totalLovelace = fromMaybe False $ do
       let floor = truncate x
        in if fromInteger floor == x then floor else floor + 1
 
+{-# INLINEABLE withTraceM #-}
+withTraceM :: BuiltinString -> Maybe a -> Maybe a
+withTraceM msg Nothing = trace msg Nothing
+withTraceM _ x = x
+
 {-# INLINEABLE safeIndex #-}
 safeIndex :: [a] -> Integer -> Maybe a
 safeIndex xs i
@@ -89,3 +98,30 @@ splitOn sep orig
           , sliceByteString (ptr + lengthOfByteString sep) (lengthOfByteString orig - ptr + lengthOfByteString sep) orig
           )
       | otherwise = span (ptr + 1)
+
+{-# INLINEABLE parseToken #-}
+parseToken :: TokenName -> Integer -> Maybe (GameAsset, Rarity, Integer)
+parseToken tn count = do
+  let splitted = splitOn ":" $ unTokenName tn
+  r <-
+    splitted
+      `safeIndex` 0
+      >>= ( \x -> case x of
+              _ | equalsByteString x "Common" -> Just Common
+              _ | equalsByteString x "Rare" -> Just Rare
+              _ | equalsByteString x "Epic" -> Just Epic
+              _ | otherwise -> Nothing
+          )
+  a <-
+    splitted
+      `safeIndex` 1
+      >>= ( \x -> case x of
+              _ | equalsByteString x "Driver" -> Just Driver
+              _ | equalsByteString x "Car" -> Just Car
+              _ | otherwise -> Nothing
+          )
+  pure (a, r, count)
+
+{-# INLINEABLE gameAssetTokenName #-}
+gameAssetTokenName :: GameAsset -> Rarity -> TokenName
+gameAssetTokenName asset rarity = TokenName $ gameAssetToBuiltinByteString asset <> rarityToBuiltinByteString rarity
