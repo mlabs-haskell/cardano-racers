@@ -62,6 +62,7 @@ library
     , NitroPolicy
     , NftPolicy
     , GameAssetPolicy
+    , AssetRequestPolicy
     , DepositScript
     , RacersStateScript
                  
@@ -75,6 +76,7 @@ library
     , plutus-script-utils
     , plutus-tx
     , plutus-tx-plugin
+    , text
 
   hs-source-dirs:  src
 

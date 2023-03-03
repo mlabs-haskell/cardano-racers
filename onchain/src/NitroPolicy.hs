@@ -2,31 +2,25 @@
 
 -- {-# OPTIONS_GHC -w #-}
 
-module NitroPolicy (nitroPolicyScript) where
+module NitroPolicy (script) where
 
 import PlutusTx.Prelude
 
-import Utils (valueToAddr)
+import Utils (distributesToAddrs, findCurrentGameStateFromRefInputs)
 
-import CommonTypes (RacersParams, RacersState, adminToken, botToken, nitroPrice, nitroToken, operatingAddress, stateToken, treasuryAddress)
+import CommonTypes (RacersParams, RacersState, adminToken, botToken, nitroPrice, nitroToken, stateToken)
 import GHC.Generics (Generic)
 import GHC.Show (Show)
-import Ledger (AssetClass, Datum (getDatum))
-import Ledger.Ada (lovelaceValueOf)
+import Ledger (AssetClass)
 import Ledger.Value (assetClass, assetClassValue, assetClassValueOf, geq)
 import Plutus.V2.Ledger.Api (
-  OutputDatum (OutputDatum),
   Script,
   ScriptContext (scriptContextTxInfo),
-  TxInInfo (txInInfoResolved),
-  TxInfo (txInfoMint, txInfoReferenceInputs),
-  TxOut (txOutDatum, txOutValue),
-  Value,
+  TxInfo (txInfoMint),
   fromCompiledCode,
  )
 import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, valueSpent)
-import PlutusTx qualified (FromData (fromBuiltinData), compile, unsafeFromBuiltinData, unstableMakeIsData)
-import PlutusTx.Ratio (truncate)
+import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
 
 data NitroPolicyRedeemer
   = MintNitroToken Integer
@@ -47,48 +41,17 @@ mkNitroMintiingPolicy nsp red ctx = case red of
       && traceIfFalse "minted amount is less than or equal to 0" (i > 0)
       && traceIfFalse "wrong amount minted" (mintedNitroToken i)
     where
-      gameStateRefInput :: Maybe TxOut
-      gameStateRefInput = find ((`geq` stateNftValue) . txOutValue) . map txInInfoResolved $ txInfoReferenceInputs info
-
       currentStateFromRefInput :: Maybe RacersState
-      currentStateFromRefInput = do
-        outDatum <- txOutDatum <$> gameStateRefInput
-        dat <- case outDatum of
-          OutputDatum d -> Just $ getDatum d
-          _ -> Nothing
-        PlutusTx.fromBuiltinData dat
-
-      threeForths, oneForth :: Rational
-      threeForths = unsafeRatio 3 4
-      oneForth = unsafeRatio 1 4
-
-      ceiling :: Rational -> Integer
-      ceiling x =
-        let floor = truncate x
-         in if fromInteger floor == x then floor else floor + 1
+      currentStateFromRefInput = findCurrentGameStateFromRefInputs info (stateToken nsp)
 
       sendsAdaToCorrectAddrs :: Integer -> Bool
       sendsAdaToCorrectAddrs mintedAmount = fromMaybe False $ do
         gameState <- currentStateFromRefInput
-        let totalPrice = fromInteger mintedAmount * fromInteger (nitroPrice gameState)
-            treasuryValue = lovelaceValueOf . ceiling $ threeForths * totalPrice
-            operatingValue = lovelaceValueOf . ceiling $ oneForth * totalPrice
-        paysToTreasury <- (`geq` treasuryValue) <$> valueToAddr info (treasuryAddress gameState)
-        paysToOperating <- (`geq` operatingValue) <$> valueToAddr info (operatingAddress gameState)
-        combinedValueCheck <- do
-          addrV <- valueToAddr info (treasuryAddress gameState)
-          operV <- valueToAddr info (operatingAddress gameState)
-          pure $ (addrV <> operV) `geq` (treasuryValue <> operatingValue)
-        pure $
-          traceIfFalse "wrong amount paid to treasury" paysToTreasury
-            && traceIfFalse "wrong amount paid to operating" paysToOperating
-            && traceIfFalse "wrong combined amount paid to treasury and operating" combinedValueCheck
+        let totalLovelace = mintedAmount * nitroPrice gameState
+        pure $ distributesToAddrs info gameState totalLovelace
   where
     info :: TxInfo
     info = scriptContextTxInfo ctx
-
-    stateNftValue :: Value
-    stateNftValue = assetClassValue (stateToken nsp) 1
 
     inputContainsAdminNft :: Bool
     inputContainsAdminNft = valueSpent info `geq` assetClassValue (adminToken nsp) 1
@@ -114,5 +77,5 @@ mkPolicy nsp redeemer context =
    in
     if result then () else traceError "Failed verification"
 
-nitroPolicyScript :: Script
-nitroPolicyScript = fromCompiledCode $$(PlutusTx.compile [||mkPolicy||])
+script :: Script
+script = fromCompiledCode $$(PlutusTx.compile [||mkPolicy||])

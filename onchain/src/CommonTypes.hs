@@ -53,3 +53,9 @@ data RacersState = RacersState
   }
   deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''RacersState
+
+data GameAsset
+  = Driver
+  | Car
+  deriving (Show, Generic)
+PlutusTx.unstableMakeIsData ''GameAsset

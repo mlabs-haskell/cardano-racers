@@ -24,6 +24,7 @@ import DepositScript qualified
 import NftPolicy qualified
 import NitroPolicy qualified
 import RacersStateScript qualified
+import AssetRequestPolicy qualified
 
 data ScriptsFFI
   = ScriptsFFI
@@ -61,10 +62,11 @@ main = do
     pure $ maybe "." id $ argOut <|> envOut
   let ScriptsFFI {js, purs} =
         mkScriptsFFI
-          [ ("nitroMintingPolicyScript", NitroPolicy.nitroPolicyScript)
-          , ("racersStateValidatorScript", RacersStateScript.racersStateValidatorScript)
+          [ ("nitroMintingPolicyScript", NitroPolicy.script)
+          , ("racersStateValidatorScript", RacersStateScript.script)
           , ("adminNftMintingPolicy", NftPolicy.script)
           , ("depositScript", DepositScript.script)
+          , ("assetRequestPolicy", AssetRequestPolicy.script)
           ]
   writeFile (out <> "/ScriptsFFI.js") js
   writeFile (out <> "/ScriptsFFI.purs") purs

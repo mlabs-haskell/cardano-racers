@@ -1,16 +1,91 @@
+{-# OPTIONS_GHC -fno-specialise #-}
+
 module Utils where
 
+import PlutusTx.Prelude
+
+import CommonTypes (RacersState (operatingAddress, treasuryAddress))
 import Control.Applicative ((<|>))
-import Ledger (Address, toPubKeyHash, toValidatorHash)
+import Ledger (AssetClass, toPubKeyHash, toValidatorHash)
+import Ledger.Ada (lovelaceValueOf)
+import Ledger.Value (Value, assetClassValue, geq)
 import Plutus.V2.Ledger.Api (
-  TxInfo,
-  Value,
+  Address,
+  Datum (getDatum),
+  OutputDatum (OutputDatum),
+  TxInInfo (txInInfoResolved),
+  TxInfo (txInfoReferenceInputs),
+  TxOut (txOutDatum),
+  txOutValue,
  )
 import Plutus.V2.Ledger.Contexts (valueLockedBy, valuePaidTo)
-import PlutusTx.Prelude
+import PlutusTx qualified (fromBuiltinData)
+import PlutusTx.Builtins (equalsByteString)
+import PlutusTx.Ratio (truncate)
 
 {-# INLINEABLE valueToAddr #-}
 valueToAddr :: TxInfo -> Address -> Maybe Value
 valueToAddr info addr =
   (fmap (valuePaidTo info) . toPubKeyHash $ addr)
     <|> (fmap (valueLockedBy info) . toValidatorHash $ addr)
+
+{-# INLINEABLE findCurrentGameStateFromRefInputs #-}
+findCurrentGameStateFromRefInputs :: TxInfo -> AssetClass -> Maybe RacersState
+findCurrentGameStateFromRefInputs info stateToken = do
+  let stateNftValue = assetClassValue stateToken 1
+  outDatum <- txOutDatum <$> (find ((`geq` stateNftValue) . txOutValue) . map txInInfoResolved $ txInfoReferenceInputs info)
+  dat <- case outDatum of
+    OutputDatum d -> pure $ getDatum d
+    _ -> Nothing
+  PlutusTx.fromBuiltinData dat
+
+{-# INLINEABLE distributesToAddrs #-}
+distributesToAddrs :: TxInfo -> RacersState -> Integer -> Bool
+distributesToAddrs info state totalLovelace = fromMaybe False $ do
+  let total = fromInteger totalLovelace
+      treasuryValue = lovelaceValueOf . ceiling $ threeForths * total
+      operatingValue = lovelaceValueOf . ceiling $ oneForth * total
+  paysToTreasury <- (`geq` treasuryValue) <$> valueToAddr info (treasuryAddress state)
+  paysToOperating <- (`geq` operatingValue) <$> valueToAddr info (operatingAddress state)
+  combinedValueCheck <- do
+    addrV <- valueToAddr info (treasuryAddress state)
+    operV <- valueToAddr info (operatingAddress state)
+    pure $ (addrV <> operV) `geq` (treasuryValue <> operatingValue)
+  pure $
+    traceIfFalse "wrong amount paid to treasury" paysToTreasury
+      && traceIfFalse "wrong amount paid to operating" paysToOperating
+      && traceIfFalse "wrong combined amount paid to treasury and operating" combinedValueCheck
+  where
+    threeForths, oneForth :: Rational
+    threeForths = unsafeRatio 3 4
+    oneForth = unsafeRatio 1 4
+    ceiling :: Rational -> Integer
+    ceiling x =
+      let floor = truncate x
+       in if fromInteger floor == x then floor else floor + 1
+
+{-# INLINEABLE safeIndex #-}
+safeIndex :: [a] -> Integer -> Maybe a
+safeIndex xs i
+  | i < 0 = Nothing
+  | otherwise = go xs i
+  where
+    go [] _ = Nothing
+    go (x : xs') i' = if i == 0 then Just x else go xs' (i' - 1)
+
+{-# INLINEABLE splitOn #-}
+splitOn :: BuiltinByteString -> BuiltinByteString -> [BuiltinByteString]
+splitOn sep orig
+  | equalsByteString orig "" = []
+  | equalsByteString sep "" = [orig]
+  | otherwise = h : splitOn sep t
+  where
+    (h, t) = span 0
+    startsWith x xs = equalsByteString x $ sliceByteString 0 (lengthOfByteString x) xs
+    span ptr
+      | ptr > lengthOfByteString orig - lengthOfByteString sep = (orig, emptyByteString)
+      | startsWith sep (sliceByteString ptr (lengthOfByteString orig) orig) =
+          ( sliceByteString 0 ptr orig
+          , sliceByteString (ptr + lengthOfByteString sep) (lengthOfByteString orig - ptr + lengthOfByteString sep) orig
+          )
+      | otherwise = span (ptr + 1)

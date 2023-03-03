@@ -2,7 +2,7 @@
 
 module GameAssetPolicy (script) where
 
-import CommonTypes (RacersParams, adminToken, botToken)
+import CommonTypes (GameAsset, RacersParams, Rarity, adminToken, botToken)
 import Ledger.Value (assetClassValue, flattenValue, geq)
 import Plutus.V2.Ledger.Api (
   Address,
@@ -21,9 +21,12 @@ import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
 import PlutusTx.Prelude
 import Utils (valueToAddr)
 
-newtype AirdropAddressDatum = AirdropAddressDatum
-  {airdropAddress :: Address}
-PlutusTx.unstableMakeIsData ''AirdropAddressDatum
+data AssetRequestDatum = AssetRequestDatum
+  { airdropAddress :: Address
+  , asset :: GameAsset
+  , rarity :: Rarity
+  }
+PlutusTx.unstableMakeIsData ''AssetRequestDatum
 
 {-# INLINEABLE mkGameAssetPolicy #-}
 mkGameAssetPolicy :: RacersParams -> ScriptContext -> Bool
@@ -62,7 +65,7 @@ mkGameAssetPolicy gapp ctx =
     getDatumAirdropAddress txIn = do
       let txOut = txInInfoResolved txIn
       case txOutDatum txOut of
-        OutputDatum d -> airdropAddress <$> fromBuiltinData @AirdropAddressDatum (getDatum d)
+        OutputDatum d -> airdropAddress <$> fromBuiltinData @AssetRequestDatum (getDatum d)
         _ -> Nothing
 
     inputContainsAdminNft :: Bool

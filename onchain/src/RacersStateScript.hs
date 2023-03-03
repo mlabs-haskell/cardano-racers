@@ -1,6 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-module RacersStateScript (racersStateValidatorScript) where
+module RacersStateScript (script) where
 
 import PlutusTx.Prelude
 
@@ -64,5 +64,5 @@ mkValidator nsp _datum redeemer context =
    in
     if result then () else traceError "Failed verification"
 
-racersStateValidatorScript :: Script
-racersStateValidatorScript = fromCompiledCode $$(PlutusTx.compile [||mkValidator||])
+script :: Script
+script = fromCompiledCode $$(PlutusTx.compile [||mkValidator||])
