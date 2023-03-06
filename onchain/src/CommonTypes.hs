@@ -5,7 +5,7 @@ module CommonTypes where
 import Data.Function (on)
 import GHC.Generics
 import GHC.Show (Show)
-import Ledger (Address, AssetClass)
+import Ledger (Address, AssetClass, ValidatorHash)
 import Plutus.V2.Ledger.Api (
   Map,
   TokenName,
@@ -55,6 +55,7 @@ data RacersState = RacersState
   , operatingAddress :: Address
   , driverPrices :: Map Rarity Integer
   , carPrices :: Map Rarity Integer
+  , depositScript :: ValidatorHash
   }
   deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''RacersState

@@ -34,7 +34,7 @@ valueToAddr info addr =
 findCurrentGameStateFromRefInputs :: TxInfo -> AssetClass -> Maybe RacersState
 findCurrentGameStateFromRefInputs info stateToken = do
   let stateNftValue = assetClassValue stateToken 1
-  txo <- find ((`geq` stateNftValue) . txOutValue) . map txInInfoResolved $ txInfoReferenceInputs info
+  txo <- withTraceM "could not find state ref input" $ find ((`geq` stateNftValue) . txOutValue) . map txInInfoResolved $ txInfoReferenceInputs info
   getInlineDatum txo
 
 {-# INLINEABLE getInlineDatum #-}
@@ -104,22 +104,24 @@ parseToken :: TokenName -> Integer -> Maybe (GameAsset, Rarity, Integer)
 parseToken tn count = do
   let splitted = splitOn ":" $ unTokenName tn
   r <-
-    splitted
-      `safeIndex` 0
-      >>= ( \x -> case x of
-              _ | equalsByteString x "Common" -> Just Common
-              _ | equalsByteString x "Rare" -> Just Rare
-              _ | equalsByteString x "Epic" -> Just Epic
-              _ | otherwise -> Nothing
-          )
+    withTraceM "could not decode rarity" $
+      splitted
+        `safeIndex` 0
+        >>= ( \x -> case x of
+                _ | equalsByteString x "Common" -> Just Common
+                _ | equalsByteString x "Rare" -> Just Rare
+                _ | equalsByteString x "Epic" -> Just Epic
+                _ | otherwise -> Nothing
+            )
   a <-
-    splitted
-      `safeIndex` 1
-      >>= ( \x -> case x of
-              _ | equalsByteString x "Driver" -> Just Driver
-              _ | equalsByteString x "Car" -> Just Car
-              _ | otherwise -> Nothing
-          )
+    withTraceM "could not decode asset type" $
+      splitted
+        `safeIndex` 1
+        >>= ( \x -> case x of
+                _ | equalsByteString x "Driver" -> Just Driver
+                _ | equalsByteString x "Car" -> Just Car
+                _ | otherwise -> Nothing
+            )
   pure (a, r, count)
 
 {-# INLINEABLE gameAssetTokenName #-}

@@ -1,7 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
 
--- {-# OPTIONS_GHC -w #-}
-
 module NitroPolicy (script) where
 
 import PlutusTx.Prelude
@@ -37,7 +35,7 @@ mkNitroMintiingPolicy nsp red ctx = case red of
     )
       && traceIfFalse "wrong amount minted" (mintedNitroToken i)
   BuyNitroToken i ->
-    traceIfFalse "wrong amount spent" (sendsAdaToCorrectAddrs i)
+    traceIfFalse "wrong ada value sent to treasury and operating" (sendsAdaToCorrectAddrs i)
       && traceIfFalse "minted amount is less than or equal to 0" (i > 0)
       && traceIfFalse "wrong amount minted" (mintedNitroToken i)
     where

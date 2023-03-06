@@ -1,27 +1,22 @@
 {-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -w #-}
 
 module DepositScript (script) where
 
-import CommonTypes (GameAsset, RacersParams, Rarity, adminToken, botToken, gameAssetToBuiltinByteString, rarityToBuiltinByteString)
+import CommonTypes (GameAsset, RacersParams, Rarity, adminToken, botToken)
 import Ledger (Address)
-import Ledger.Value (AssetClass, assetClass, assetClassValue, currencyMPSHash, flattenValue, geq, leq)
+import Ledger.Value (AssetClass, assetClass, assetClassValue, flattenValue, geq, leq)
 import Plutus.V2.Ledger.Api (
-  CurrencySymbol (CurrencySymbol),
-  MintingPolicyHash,
+  CurrencySymbol,
   Script,
   ScriptContext (scriptContextTxInfo),
-  TokenName (TokenName),
   TxInInfo (txInInfoResolved),
   TxInfo (txInfoInputs, txInfoMint),
-  TxOut (TxOut, txOutValue),
-  Value (Value),
+  TxOut (txOutValue),
+  Value,
   fromCompiledCode,
  )
 import Plutus.V2.Ledger.Contexts (valueSpent)
 import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
-import PlutusTx.AssocMap (Map)
-import PlutusTx.AssocMap qualified as Map (empty, fromList, lookup, union)
 import PlutusTx.Prelude
 import Utils (gameAssetTokenName, getInlineDatum, parseToken, valueToAddr, withTraceM)
 
@@ -38,8 +33,9 @@ PlutusTx.unstableMakeIsData ''AssetRequestDatum
 {-# INLINEABLE mkDepositValidator #-}
 mkDepositValidator :: RacersParams -> DepositValidatorParams -> ScriptContext -> Bool
 mkDepositValidator rp dps ctx =
-  (traceIfFalse "admin token not present" inputContainsAdminNft
-    || traceIfFalse "bot token not present" inputContainsBotNft)
+  ( traceIfFalse "admin token not present" inputContainsAdminNft
+      || traceIfFalse "bot token not present" inputContainsBotNft
+  )
     && traceIfFalse "not all asset nfts due are paid to airdrop address" mintsAndPaysAssetNfts
     && traceIfFalse "all input request tokens aro not burnt" burnsInputRequestTokens
   where
@@ -99,7 +95,8 @@ mkDepositValidator rp dps ctx =
         . flattenValue
 
     groupByAssetRarity :: [(GameAsset, Rarity, Integer)] -> [(GameAsset, Rarity, Integer)]
-    groupByAssetRarity ((ga, r, i) : xs) = (ga, r, i + length sames) : groupByAssetRarity rest
+    groupByAssetRarity [] = []
+    groupByAssetRarity ((ga, r, i) : xs) = (ga, r, i + sum (map (\(_, _, i') -> i') sames)) : groupByAssetRarity rest
       where
         (sames, rest) = partition (\(ga', r', _) -> ga == ga' && r == r') xs
 
