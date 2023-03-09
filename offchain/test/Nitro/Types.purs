@@ -3,24 +3,18 @@ module Test.CardanoRacers.Nitro.Types (suite) where
 import Contract.Prelude
 
 import Aeson (decodeJsonString, encodeAeson)
-import CardanoRacers.Common.Types
-  ( RacersParams(RacersParams)
-  )
-import CardanoRacers.RacersState.Types (
-   RacersState(RacersState)
-  , RacersStateRedeemer(SetRacersState)
-)
-import CardanoRacers.Nitro.Types
-  ( NitroPolicyRedeemer(MintNitroToken, BuyNitroToken)
-  )
+import CardanoRacers.Common.Types (RacersParams(RacersParams))
+import CardanoRacers.Nitro.Types (NitroPolicyRedeemer(MintNitroToken, BuyNitroToken))
+import CardanoRacers.RacersState.Types (RacersState(RacersState), RacersStateRedeemer(SetRacersState))
 import Contract.Address (PubKeyHash(PubKeyHash))
 import Contract.AssocMap as Map
 import Contract.Credential (Credential(PubKeyCredential))
 import Contract.Prim.ByteArray (hexToByteArrayUnsafe)
+import Contract.Scripts (ValidatorHash(..))
 import Contract.Test.Mote (TestPlanM)
 import Contract.Value (mkCurrencySymbol, mkTokenName)
 import Ctl.Internal.Plutus.Types.Address (Address(Address))
-import Ctl.Internal.Serialization.Hash (ed25519KeyHashFromBech32)
+import Ctl.Internal.Serialization.Hash (ed25519KeyHashFromBech32, scriptHashFromBytes)
 import Data.Bifunctor (lmap)
 import Data.BigInt (fromInt) as BigInt
 import Effect.Aff (error)
@@ -96,12 +90,16 @@ nitroStateFixture =
             )
         , addressStakingCredential: Nothing
         }
+    depositScriptHash :: ValidatorHash
+    depositScriptHash = ValidatorHash $ unsafePartial $ fromJust $ scriptHashFromBytes $ hexToByteArrayUnsafe "1f6f394b032b42d1be3abb7bf6db1355ec6753f30d56d265fb826aa8"
+
     ns = RacersState
       { nitroPrice: BigInt.fromInt 1000000
       , treasuryAddress
       , operatingAddress: treasuryAddress
       , driverPrices: Map.empty
       , carPrices: Map.empty
+      , depositScript: depositScriptHash
       }
   in
     ns /\ jsonStr

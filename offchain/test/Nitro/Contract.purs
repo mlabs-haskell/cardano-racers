@@ -2,43 +2,30 @@ module Test.CardanoRacers.Nitro.Contract (suite) where
 
 import Contract.Prelude
 
-import CardanoRacers.Common.Types
-  ( RacersParams(RacersParams)
-  , RacersState(RacersState)
-  )
-import CardanoRacers.Nitro.Contract
-  ( adminMintsNitroContract
-  , botMintsNitroContract
-  , buyNitroContract
-  , mkNitroPolicy
-  ) as Nitro
+import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy)
+import CardanoRacers.Common.Types (RacersParams(RacersParams))
+import CardanoRacers.Deposit.Contract (mkDepositValidator)
+import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
+import CardanoRacers.Nitro.Contract (adminMintsNitroContract, botMintsNitroContract, buyNitroContract, mkNitroPolicy) as Nitro
 import CardanoRacers.Nitro.Helpers (createRacersParams, mintBotNft) as NitroHelpers
 import CardanoRacers.Nitro.Types (NitroPolicyRedeemer(BuyNitroToken))
 import CardanoRacers.RacersState.Contract (initRacersStateContract, queryRacersState) as RacersState
+import CardanoRacers.RacersState.Types (RacersState(..))
 import Contract.Address (Address, getWalletAddresses)
 import Contract.AssocMap as AssocMap
 import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData (Redeemer(Redeemer), toData, unitDatum)
 import Contract.ScriptLookups as Lookups
-import Contract.Test.Assert
-  ( checkGainAtAddress'
-  , checkTokenGainAtAddress'
-  , label
-  , runChecks
-  )
+import Contract.Scripts (ValidatorHash(..), validatorHash)
+import Contract.Test.Assert (checkGainAtAddress', checkTokenGainAtAddress', label, runChecks)
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip
-  ( InitialUTxOs
-  , PlutipTest
-  , withKeyWallet
-  , withWallets
-  )
+import Contract.Test.Plutip (InitialUTxOs, PlutipTest, withKeyWallet, withWallets)
 import Contract.Transaction (submitTxFromConstraints)
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletUtxos)
-import Contract.Value (CurrencySymbol, TokenName, Value)
+import Contract.Value (CurrencySymbol, TokenName, Value, scriptCurrencySymbol)
 import Contract.Value (lovelaceValueOf, scriptCurrencySymbol, singleton) as Value
 import Contract.Wallet (KeyWallet)
 import Control.Monad.Error.Class (try)
@@ -112,7 +99,7 @@ suite = group "NitroToken script" do
             $ Array.head
             <$> getWalletAddresses
           nsp <- withKeyWallet admin createNitroParamsHelper
-          initNitroPolicyWithAdminAndTreasury (admin /\ treasury) nsp nitroPrice
+          _ <- initNitroPolicyWithAdminAndTreasury (admin /\ treasury) nsp nitroPrice
           nitroCs <- liftedM "Could not get currency symbol"
             $ Value.scriptCurrencySymbol
             <$> Nitro.mkNitroPolicy nsp
@@ -145,7 +132,7 @@ suite = group "NitroToken script" do
           \(admin /\ treasury /\ bob) -> do
             nsp <- withKeyWallet admin do
               nsp <- createNitroParamsHelper
-              initNitroPolicyWithAdminAndTreasury (admin /\ treasury) nsp
+              _ <- initNitroPolicyWithAdminAndTreasury (admin /\ treasury) nsp
                 (BigInt.fromInt 1000000)
               pure nsp
 
@@ -239,12 +226,22 @@ suite = group "NitroToken script" do
       Map.toUnfoldable utxos
     NitroHelpers.createRacersParams txi "NITRO"
 
+  depositScriptHashHelper :: RacersParams -> Contract ValidatorHash
+  depositScriptHashHelper rp = do
+      assetRequestPolicySymbol <- liftedM "could not get asset request symbol" $ mkAssetRequestPolicy rp <#> scriptCurrencySymbol
+      assetPolicySymbol <- liftedM "could not get game asset symbol" $ mkGameAssetPolicy rp <#> scriptCurrencySymbol
+      depositVal <- mkDepositValidator rp $
+                      wrap { assetPolicySymbol
+                      , assetRequestPolicySymbol
+                      }
+      pure $ validatorHash depositVal
+
   initNitroPolicyWithAdminAndTreasury
     :: (KeyWallet /\ KeyWallet)
     -> RacersParams
     -> BigInt
-    -> Contract Unit
-  initNitroPolicyWithAdminAndTreasury (admin /\ treasury) nsp nitroPrice = do
+    -> Contract RacersState
+  initNitroPolicyWithAdminAndTreasury (admin /\ treasury) rp nitroPrice = do
     treasuryAddr <- withKeyWallet treasury
       $ liftedM "Could not get address"
       $ Array.head
@@ -252,12 +249,15 @@ suite = group "NitroToken script" do
     withKeyWallet admin do
       ownAddr <- liftedM "Could not get address" $ Array.head <$>
         getWalletAddresses
+      depositScriptHash <- depositScriptHashHelper rp
       let
-        ns = RacersState
+        rs = RacersState
           { nitroPrice: nitroPrice
           , treasuryAddress: treasuryAddr
           , operatingAddress: ownAddr
           , driverPrices: AssocMap.empty
           , carPrices: AssocMap.empty
+          , depositScript: depositScriptHash
           }
-      void $ RacersState.initRacersStateContract nsp ns
+      _ <- RacersState.initRacersStateContract rp rs
+      pure rs

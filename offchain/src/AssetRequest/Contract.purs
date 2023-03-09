@@ -31,7 +31,7 @@ import Effect.Exception (error)
 
 requestAssetByRarity :: RacersParams -> Rarity -> Contract TransactionHash
 requestAssetByRarity rp rarity = do
-  assetRequestPolicy <- mkAssetRequestValidator rp
+  assetRequestPolicy <- mkAssetRequestPolicy rp
   ownAddr <- liftedM "could not get first address" (Array.head <$> getWalletAddresses)
   rs /\ stateTxi /\ stateTxo <- queryRacersState rp
   cs <- liftContractM "Could not get currency symbol"
@@ -83,8 +83,8 @@ requestAssetByRarity rp rarity = do
   awaitTxConfirmed txId
   pure txId
   
-mkAssetRequestValidator :: RacersParams -> Contract MintingPolicy
-mkAssetRequestValidator params = do
+mkAssetRequestPolicy :: RacersParams -> Contract MintingPolicy
+mkAssetRequestPolicy params = do
   v2script <- liftContractM "Could not decode applied script" do
     envelope <- decodeTextEnvelope depositScript
     plutusScriptV2FromEnvelope envelope

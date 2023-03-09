@@ -11,7 +11,7 @@ import Contract.PlutusData (Datum(Datum), OutputDatum(OutputDatum), Redeemer(Red
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (Validator(Validator), applyArgs, validatorHash)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
-import Contract.Transaction (TransactionHash, TransactionInput, TransactionOutputWithRefScript, awaitTxConfirmed, submitTxFromConstraints)
+import Contract.Transaction (TransactionHash(..), TransactionInput, TransactionOutputWithRefScript, awaitTxConfirmed, submitTxFromConstraints)
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletUtxos, utxosAt)
 import Contract.Value (geq)
@@ -52,19 +52,21 @@ initRacersStateContract np ns = do
 -- | not already locked at script
 modifyRacersStateContract
   :: RacersParams -> RacersState -> Contract TransactionHash
-modifyRacersStateContract np ns = do
-  ownUtxos <- liftedM "Could not get wallet utxos" getWalletUtxos
+modifyRacersStateContract np rs = do
   racersVal <- mkRacersStateValidator np
   let
     vhash = validatorHash racersVal
-    datum = Datum $ toData ns
-    red = Redeemer $ toData $ SetRacersState ns
+    datum = Datum $ toData $ rs
+    red = Redeemer $ toData $ SetRacersState $ rs
     stateVal = uncurry Value.singleton (unwrap np).stateToken one
     adminVal = uncurry Value.singleton (unwrap np).adminToken one
+
+  ownUtxos <- liftedM "Could not get wallet utxos" getWalletUtxos
+  (_ /\ stateTxi /\ stateTxo) <- queryRacersState np
   (adminTxi /\ _) <- liftContractM "Could not find admin token in wallet"
     $ find (\(_ /\ txo) -> (unwrap (unwrap txo).output).amount `geq` adminVal)
     $ (Map.toUnfoldable ownUtxos :: Array _)
-  (_ /\ stateTxi /\ stateTxo) <- queryRacersState np
+
   let
     constraints :: Constraints.TxConstraints Void Void
     constraints = Constraints.mustSpendPubKeyOutput adminTxi
@@ -97,6 +99,7 @@ queryRacersState nsp = do
     liftContractM "Could not find utxos with state token"
       $ find (\(_ /\ txo) -> (unwrap (unwrap txo).output).amount `geq` stateVal)
       $ (Map.toUnfoldable scriptUtxos :: Array _)
+
   dat <-
     liftContractM "State UTxO does not contain datum or datum is not inline" $
       case (unwrap (unwrap stateTxo).output).datum of

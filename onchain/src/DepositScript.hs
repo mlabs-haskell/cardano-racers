@@ -26,9 +26,9 @@ data DepositValidatorParams = DepositValidatorParams
   }
 PlutusTx.unstableMakeIsData ''DepositValidatorParams
 
-newtype AssetRequestDatum = AssetRequestDatum
+newtype AirdropAddressDatum = AirdropAddressDatum
   {airdropAddress :: Address}
-PlutusTx.unstableMakeIsData ''AssetRequestDatum
+PlutusTx.unstableMakeIsData ''AirdropAddressDatum
 
 {-# INLINEABLE mkDepositValidator #-}
 mkDepositValidator :: RacersParams -> DepositValidatorParams -> ScriptContext -> Bool

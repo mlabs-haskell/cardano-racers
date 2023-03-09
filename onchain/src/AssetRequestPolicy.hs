@@ -26,6 +26,7 @@ mkAssetRequestPolicy rp red ctx =
     UserMintRequestToken ->
       traceIfFalse "wrong ada value sent to treasury and operating" paysAdaDueToCorrectAddrs
         && traceIfFalse "does not lock minted request tokens at deposit script" locksRequestTokensAtDeposit
+        -- todo: require attaching of airdrop address when paying to deposit -- script
     AdminMintRequestTokens ->
       traceIfFalse "Admin token not present in inputs" inputContainsAdminNft
     || traceIfFalse "Bot token not present in inputs" inputContainsBotNft
