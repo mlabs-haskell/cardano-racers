@@ -5,9 +5,11 @@ import Contract.Prelude
 import Aeson (decodeJsonString, encodeAeson)
 import CardanoRacers.Common.Types
   ( RacersParams(RacersParams)
-  , RacersState(RacersState)
-  , RacersStateRedeemer(SetRacersState)
   )
+import CardanoRacers.RacersState.Types (
+   RacersState(RacersState)
+  , RacersStateRedeemer(SetRacersState)
+)
 import CardanoRacers.Nitro.Types
   ( NitroPolicyRedeemer(MintNitroToken, BuyNitroToken)
   )

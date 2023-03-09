@@ -8,9 +8,8 @@ module CardanoRacers.Nitro.Contract
 import Contract.Prelude
 
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.Nitro.Types
-  ( NitroPolicyRedeemer(BuyNitroToken, MintNitroToken)
-  )
+import CardanoRacers.Nitro.Types (NitroPolicyRedeemer(BuyNitroToken, MintNitroToken))
+import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.ScriptsFFI (nitroMintingPolicyScript)
 import Contract.Address (Address)
@@ -20,21 +19,11 @@ import Contract.PlutusData (Redeemer(Redeemer), toData, unitDatum)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), applyArgs)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
-import Contract.Transaction
-  ( TransactionHash
-  , awaitTxConfirmed
-  , submitTxFromConstraints
-  )
+import Contract.Transaction (TransactionHash, awaitTxConfirmed, submitTxFromConstraints)
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletUtxos)
-import Contract.Value
-  ( CurrencySymbol
-  , TokenName
-  , Value
-  , geq
-  , scriptCurrencySymbol
-  )
+import Contract.Value (CurrencySymbol, TokenName, Value, geq, scriptCurrencySymbol)
 import Contract.Value (lovelaceValueOf, singleton) as Value
 import Data.Array (singleton) as Array
 import Data.BigInt (BigInt)
@@ -114,14 +103,6 @@ buyNitroContract np nitroAmount = do
     operatingAmt = BigInt.fromInt <<< ceil $ BigInt.toNumber totalAmount * 0.25
     treasuryVal = Value.lovelaceValueOf treasuryAmt
     operatingVal = Value.lovelaceValueOf operatingAmt
-
-    paysToAddrConstraint
-      :: Address -> Value -> Constraints.TxConstraints Void Void
-    paysToAddrConstraint a v = case (unwrap a).addressCredential of
-      PubKeyCredential pkh ->
-        Constraints.mustPayToPubKey (wrap pkh) v
-      ScriptCredential vh ->
-        Constraints.mustPayToScript vh unitDatum DatumWitness v
 
     constraints :: Constraints.TxConstraints Void Void
     constraints =

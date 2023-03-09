@@ -2,38 +2,14 @@ module CardanoRacers.GameAsset.Types where
 
 import Contract.Prelude
 
-import Aeson (class DecodeAeson, class EncodeAeson, JsonDecodeError(TypeMismatch), (.:))
+import Aeson (class DecodeAeson, class EncodeAeson, (.:))
 import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
 import Contract.Address (Address)
-import Contract.Metadata
-  ( Cip25String
-  , Cip25TokenName
-  , TransactionMetadatum(MetadataMap)
-  )
-import Contract.PlutusData
-  ( class FromData
-  , class HasPlutusSchema
-  , class ToData
-  , type (:+)
-  , type (:=)
-  , type (@@)
-  , I
-  , PNil
-  , S
-  , Z
-  , genericFromData
-  , genericToData
-  )
+import Contract.Metadata (Cip25String, Cip25TokenName, TransactionMetadatum(MetadataMap))
+import Contract.PlutusData (class FromData, class HasPlutusSchema, class ToData, type (:+), type (:=), type (@@), I, PNil, S, Z, genericFromData, genericToData)
 import Contract.Prim.ByteArray (byteArrayToHex, hexToByteArray, rawBytesToHex)
 import Contract.Scripts (MintingPolicyHash)
-import Contract.Value
-  ( CurrencySymbol
-  , TokenName
-  , currencyMPSHash
-  , getTokenName
-  , mkTokenName
-  , mpsSymbol
-  )
+import Contract.Value (CurrencySymbol, TokenName, currencyMPSHash, getTokenName, mkTokenName, mpsSymbol)
 import Control.Alt ((<|>))
 import Ctl.Internal.Metadata.Cip25.Cip25String (toMetadataString)
 import Ctl.Internal.Metadata.FromMetadata (class FromMetadata, fromMetadata)
@@ -46,6 +22,7 @@ import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.Function (on)
 import Data.Map (toUnfoldable) as Map
+import Foreign.Object (Object)
 
 data Rarity = Common | Rare | Epic
 
@@ -62,16 +39,18 @@ instance Ord Rarity where
     toInt Epic = 2
 
 instance EncodeAeson Rarity where
-  encodeAeson = wrapEncodeAeson "Rarity" <<< show
+  encodeAeson Common = wrapEncodeAeson "Common" {}
+  encodeAeson Rare = wrapEncodeAeson "Rare" {}
+  encodeAeson Epic = wrapEncodeAeson "Epic" {}
 
 instance DecodeAeson Rarity where
-  decodeAeson = decodeWrappedAeson "Rarity" \obj -> do
-    rarity <- obj .: "Rarity"
-    case rarity of
-      "Common" -> pure Common
-      "Rare" -> pure Rare
-      "Epic" -> pure Epic
-      _ -> Left (TypeMismatch "expected 'Common', 'Rare' or 'Epic'")
+  decodeAeson aes = 
+      decodeWrappedAeson "Common" (constMono $ pure Common) aes
+       <|> decodeWrappedAeson "Rare" (constMono $ pure Rare) aes
+       <|> decodeWrappedAeson "Epic" (constMono $ pure Epic) aes
+      where 
+        constMono :: forall a. a -> Object {} -> a
+        constMono a _ = a
 
 instance
   HasPlutusSchema Rarity
@@ -196,6 +175,48 @@ instance DecodeAeson Car where
     cornering <- obj .: "cornering"
     aerodynamics <- obj .: "aerodynamics"
     pure $ Car { carId, topSpeed, acceleration, cornering, aerodynamics }
+
+data GameAssetType = DriverType | CarType
+
+derive instance Generic GameAssetType _
+derive instance Eq GameAssetType
+
+instance Ord GameAssetType where
+  compare = compare `on` toInt
+    where
+    toInt DriverType = 0
+    toInt CarType = 1
+
+instance Show GameAssetType where
+  show = genericShow
+
+instance HasPlutusSchema GameAssetType
+    ( "DriverType"
+        := PNil
+        @@ Z
+        :+ "CarType"
+        := PNil
+        @@ (S Z)
+        :+ PNil
+    )
+
+instance ToData GameAssetType where
+  toData = genericToData
+
+instance FromData GameAssetType where
+  fromData = genericFromData
+
+instance EncodeAeson GameAssetType where
+  encodeAeson DriverType = wrapEncodeAeson "DriverType" {}
+  encodeAeson CarType = wrapEncodeAeson "CarType" {}
+
+instance DecodeAeson GameAssetType where
+  decodeAeson aes = 
+      decodeWrappedAeson "DriverType" (constMono $ pure DriverType) aes
+       <|> decodeWrappedAeson "CarType" (constMono $ pure CarType) aes
+      where 
+        constMono :: forall a. a -> Object {} -> a
+        constMono a _ = a
 
 data GameAsset
   = DriverAsset Driver
@@ -462,4 +483,3 @@ instance FromMetadata GameAssetNftMetadata where
 
 instance MetadataType GameAssetNftMetadata where
   metadataLabel _ = wrap $ BigInt.fromInt 721
-

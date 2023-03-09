@@ -2,11 +2,8 @@ module CardanoRacers.RacersState.Contract where
 
 import Contract.Prelude
 
-import CardanoRacers.Common.Types
-  ( RacersParams
-  , RacersState
-  , RacersStateRedeemer(SetRacersState)
-  )
+import CardanoRacers.Common.Types (RacersParams)
+import CardanoRacers.RacersState.Types (RacersState, RacersStateRedeemer(..))
 import CardanoRacers.ScriptsFFI (racersStateValidatorScript)
 import Contract.Address (scriptHashAddress)
 import Contract.Monad (Contract, liftContractM, liftedM)
@@ -14,13 +11,7 @@ import Contract.PlutusData (Datum(Datum), OutputDatum(OutputDatum), Redeemer(Red
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (Validator(Validator), applyArgs, validatorHash)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
-import Contract.Transaction
-  ( TransactionHash
-  , TransactionInput
-  , TransactionOutputWithRefScript
-  , awaitTxConfirmed
-  , submitTxFromConstraints
-  )
+import Contract.Transaction (TransactionHash, TransactionInput, TransactionOutputWithRefScript, awaitTxConfirmed, submitTxFromConstraints)
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletUtxos, utxosAt)
 import Contract.Value (geq)
@@ -117,11 +108,11 @@ queryRacersState nsp = do
   pure $ ns /\ stateTxi /\ stateTxo
 
 mkRacersStateValidator :: RacersParams -> Contract Validator
-mkRacersStateValidator np = do
+mkRacersStateValidator params = do
   v2script <- liftContractM "Could not decode applied script" do
     envelope <- decodeTextEnvelope racersStateValidatorScript
     plutusScriptV2FromEnvelope envelope
   appliedScript <- liftEither $ left (error <<< show) $ applyArgs v2script
     $ Array.singleton
-    $ toData np
+    $ toData params
   pure $ Validator $ appliedScript

@@ -4,9 +4,8 @@ import Contract.Prelude
 
 import CardanoRacers.Common.Types
   ( RacersParams(RacersParams)
-  , RacersState(RacersState)
-  , RacersStateRedeemer(SetRacersState)
   )
+import CardanoRacers.RacersState.Types (RacersState(RacersState), RacersStateRedeemer(SetRacersState))
 import CardanoRacers.Nitro.Helpers (createRacersParams, mintBotNft) as NitroHelpers
 import CardanoRacers.RacersState.Contract
   ( initRacersStateContract

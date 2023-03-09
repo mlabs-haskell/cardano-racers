@@ -1,51 +1,30 @@
-module CardanoRacers.GameAsset.Contract (mintNewCarNft, mintNewDriverNft) where
+module CardanoRacers.GameAsset.Contract (mintNewCarNft, mintNewDriverNft, mkGameAssetPolicy) where
 
+import Contract.Prelude
+
+import CardanoRacers.Common.Types (RacersParams(..))
 import CardanoRacers.GameAsset.Parameters (generateUniformParameters)
-import CardanoRacers.GameAsset.Types
-  ( Car(Car)
-  , Driver(Driver)
-  , GameAssetNftMetadata(GameAssetNftMetadata)
-  , GameAssetNftMetadataEntry(DriverNftMetadata, CarNftMetadata)
-  , Rarity
-  )
+import CardanoRacers.GameAsset.Types (Car(Car), Driver(Driver), GameAssetNftMetadata(GameAssetNftMetadata), GameAssetNftMetadataEntry(DriverNftMetadata, CarNftMetadata), Rarity)
 import CardanoRacers.Nft (mintNftConstraints)
+import CardanoRacers.ScriptsFFI (gameAssetPolicy)
 import Contract.AuxiliaryData (setTxMetadata)
 import Contract.Log (logInfo')
 import Contract.Metadata (mkCip25String)
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
-import Contract.Prelude
-  ( Effect
-  , Maybe
-  , bind
-  , discard
-  , fst
-  , liftEffect
-  , map
-  , pure
-  , show
-  , ($)
-  , (/\)
-  , (<#>)
-  , (<=<)
-  , (<>)
-  , (>>=)
-  , (>>>)
-  )
+import Contract.PlutusData (toData)
+import Contract.Prelude (Effect, Maybe, bind, discard, fst, liftEffect, map, pure, show, ($), (/\), (<#>), (<=<), (<>), (>>=), (>>>))
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups (mkUnbalancedTx)
-import Contract.Transaction
-  ( TransactionHash
-  , awaitTxConfirmed
-  , balanceTx
-  , signTransaction
-  , submit
-  )
+import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), applyArgs)
+import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
+import Contract.Transaction (TransactionHash, awaitTxConfirmed, balanceTx, signTransaction, submit)
 import Contract.Utxos (getWalletUtxos)
 import Contract.Value (mkTokenName)
 import Control.Monad.Error.Class (throwError)
-import Data.Array (head) as Array
+import Data.Array (head, singleton) as Array
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (toUnfoldable) as Map
+import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
 import Random.LCG (randomSeed)
 
@@ -156,3 +135,14 @@ mintNewCarNft opts = do
   awaitTxConfirmed txId
   logInfo' $ "Tx ID: " <> show txId
   pure txId
+
+
+mkGameAssetPolicy :: RacersParams -> Contract MintingPolicy
+mkGameAssetPolicy np = do
+  v2script <- liftContractM "Could not decode applied script" do
+    envelope <- decodeTextEnvelope gameAssetPolicy
+    plutusScriptV2FromEnvelope envelope
+  appliedScript <- liftEither $ left (error <<< show) $ applyArgs v2script
+    $ Array.singleton
+    $ toData np
+  pure $ PlutusMintingPolicy $ appliedScript
