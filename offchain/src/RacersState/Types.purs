@@ -7,7 +7,19 @@ import CardanoRacers.GameAsset.Types (Rarity)
 import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
 import Contract.Address (Address)
 import Contract.AssocMap (Map)
-import Contract.PlutusData (class FromData, class HasPlutusSchema, class ToData, type (:+), type (:=), type (@@), I, PNil, Z, genericFromData, genericToData)
+import Contract.PlutusData
+  ( class FromData
+  , class HasPlutusSchema
+  , class ToData
+  , type (:+)
+  , type (:=)
+  , type (@@)
+  , I
+  , PNil
+  , Z
+  , genericFromData
+  , genericToData
+  )
 import Contract.Scripts (ValidatorHash)
 import Data.BigInt (BigInt)
 
@@ -66,13 +78,13 @@ instance DecodeAeson RacersState where
     carPrices <- obj .: "carPrices"
     depositScript <- obj .: "depositScript"
     pure $ RacersState
-            { nitroPrice
-            , treasuryAddress
-            , operatingAddress
-            , driverPrices
-            , carPrices
-            , depositScript 
-            }
+      { nitroPrice
+      , treasuryAddress
+      , operatingAddress
+      , driverPrices
+      , carPrices
+      , depositScript
+      }
 
 newtype RacersStateRedeemer = SetRacersState RacersState
 

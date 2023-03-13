@@ -7,11 +7,23 @@ import CardanoRacers.RacersState.Types (RacersState, RacersStateRedeemer(..))
 import CardanoRacers.ScriptsFFI (racersStateValidatorScript)
 import Contract.Address (scriptHashAddress)
 import Contract.Monad (Contract, liftContractM, liftedM)
-import Contract.PlutusData (Datum(Datum), OutputDatum(OutputDatum), Redeemer(Redeemer), fromData, toData)
+import Contract.PlutusData
+  ( Datum(Datum)
+  , OutputDatum(OutputDatum)
+  , Redeemer(Redeemer)
+  , fromData
+  , toData
+  )
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (Validator(Validator), applyArgs, validatorHash)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
-import Contract.Transaction (TransactionHash(..), TransactionInput, TransactionOutputWithRefScript, awaitTxConfirmed, submitTxFromConstraints)
+import Contract.Transaction
+  ( TransactionHash(..)
+  , TransactionInput
+  , TransactionOutputWithRefScript
+  , awaitTxConfirmed
+  , submitTxFromConstraints
+  )
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletUtxos, utxosAt)
 import Contract.Value (geq)

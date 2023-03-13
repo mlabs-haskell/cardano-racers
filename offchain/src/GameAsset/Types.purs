@@ -5,11 +5,35 @@ import Contract.Prelude
 import Aeson (class DecodeAeson, class EncodeAeson, (.:))
 import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
 import Contract.Address (Address)
-import Contract.Metadata (Cip25String, Cip25TokenName, TransactionMetadatum(MetadataMap))
-import Contract.PlutusData (class FromData, class HasPlutusSchema, class ToData, type (:+), type (:=), type (@@), I, PNil, S, Z, genericFromData, genericToData)
+import Contract.Metadata
+  ( Cip25String
+  , Cip25TokenName
+  , TransactionMetadatum(MetadataMap)
+  )
+import Contract.PlutusData
+  ( class FromData
+  , class HasPlutusSchema
+  , class ToData
+  , type (:+)
+  , type (:=)
+  , type (@@)
+  , I
+  , PNil
+  , S
+  , Z
+  , genericFromData
+  , genericToData
+  )
 import Contract.Prim.ByteArray (byteArrayToHex, hexToByteArray, rawBytesToHex)
 import Contract.Scripts (MintingPolicyHash)
-import Contract.Value (CurrencySymbol, TokenName, currencyMPSHash, getTokenName, mkTokenName, mpsSymbol)
+import Contract.Value
+  ( CurrencySymbol
+  , TokenName
+  , currencyMPSHash
+  , getTokenName
+  , mkTokenName
+  , mpsSymbol
+  )
 import Control.Alt ((<|>))
 import Ctl.Internal.Metadata.Cip25.Cip25String (toMetadataString)
 import Ctl.Internal.Metadata.FromMetadata (class FromMetadata, fromMetadata)
@@ -44,13 +68,13 @@ instance EncodeAeson Rarity where
   encodeAeson Epic = wrapEncodeAeson "Epic" {}
 
 instance DecodeAeson Rarity where
-  decodeAeson aes = 
-      decodeWrappedAeson "Common" (constMono $ pure Common) aes
-       <|> decodeWrappedAeson "Rare" (constMono $ pure Rare) aes
-       <|> decodeWrappedAeson "Epic" (constMono $ pure Epic) aes
-      where 
-        constMono :: forall a. a -> Object {} -> a
-        constMono a _ = a
+  decodeAeson aes =
+    decodeWrappedAeson "Common" (constMono $ pure Common) aes
+      <|> decodeWrappedAeson "Rare" (constMono $ pure Rare) aes
+      <|> decodeWrappedAeson "Epic" (constMono $ pure Epic) aes
+    where
+    constMono :: forall a. a -> Object {} -> a
+    constMono a _ = a
 
 instance
   HasPlutusSchema Rarity
@@ -190,7 +214,8 @@ instance Ord GameAssetType where
 instance Show GameAssetType where
   show = genericShow
 
-instance HasPlutusSchema GameAssetType
+instance
+  HasPlutusSchema GameAssetType
     ( "DriverType"
         := PNil
         @@ Z
@@ -211,12 +236,12 @@ instance EncodeAeson GameAssetType where
   encodeAeson CarType = wrapEncodeAeson "CarType" {}
 
 instance DecodeAeson GameAssetType where
-  decodeAeson aes = 
-      decodeWrappedAeson "DriverType" (constMono $ pure DriverType) aes
-       <|> decodeWrappedAeson "CarType" (constMono $ pure CarType) aes
-      where 
-        constMono :: forall a. a -> Object {} -> a
-        constMono a _ = a
+  decodeAeson aes =
+    decodeWrappedAeson "DriverType" (constMono $ pure DriverType) aes
+      <|> decodeWrappedAeson "CarType" (constMono $ pure CarType) aes
+    where
+    constMono :: forall a. a -> Object {} -> a
+    constMono a _ = a
 
 data GameAsset
   = DriverAsset Driver

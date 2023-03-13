@@ -2,40 +2,53 @@
 
 module AssetRequestPolicy where
 
-import CommonTypes (GameAsset (Car, Driver), RacersParams (stateToken), RacersState, Rarity, adminToken, botToken, carPrices, depositScript, driverPrices, rarityToBuiltinByteString)
+import CommonTypes (GameAsset (Car, Driver), RacersParams (stateToken), RacersState (depositScript), Rarity, airdropAddress, carPrices, depositScript, driverPrices, rarityToBuiltinByteString)
 import Ledger.Value (Value, assetClass, assetClassValue, flattenValue, geq)
 import Plutus.V2.Ledger.Api (
+  Datum (getDatum),
+  OutputDatum (OutputDatum),
   Script,
   ScriptContext (scriptContextTxInfo),
   TxInfo (txInfoMint),
   fromCompiledCode,
  )
-import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, valueLockedBy, valueSpent)
-import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
+import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, scriptOutputsAt, valueLockedBy)
+import PlutusTx qualified (FromData (fromBuiltinData), compile, unsafeFromBuiltinData)
 import PlutusTx.AssocMap (lookup)
 import PlutusTx.Prelude
 import Utils (distributesToAddrs, findCurrentGameStateFromRefInputs, parseToken, withTraceM)
 
-data AssetRequestRedeemer = UserMintRequestToken | AdminMintRequestTokens
-PlutusTx.unstableMakeIsData ''AssetRequestRedeemer
-
 {-# INLINEABLE mkAssetRequestPolicy #-}
-mkAssetRequestPolicy :: RacersParams -> AssetRequestRedeemer -> ScriptContext -> Bool
-mkAssetRequestPolicy rp red ctx =
-  case red of
-    UserMintRequestToken ->
-      traceIfFalse "wrong ada value sent to treasury and operating" paysAdaDueToCorrectAddrs
-        && traceIfFalse "does not lock minted request tokens at deposit script" locksRequestTokensAtDeposit
-        -- todo: require attaching of airdrop address when paying to deposit -- script
-    AdminMintRequestTokens ->
-      traceIfFalse "Admin token not present in inputs" inputContainsAdminNft
-    || traceIfFalse "Bot token not present in inputs" inputContainsBotNft
+mkAssetRequestPolicy :: RacersParams -> ScriptContext -> Bool
+mkAssetRequestPolicy rp ctx =
+  traceIfFalse "wrong ada value sent to treasury and operating" paysAdaDueToCorrectAddrs
+    && traceIfFalse "does not lock minted request tokens at deposit script" locksRequestTokensAtDeposit
+    && traceIfFalse "outputs at deposit with request token must have airdrop address datum" attachesAirdropAddrToDepositOutputs
   where
     info :: TxInfo
     info = scriptContextTxInfo ctx
 
     currentStateFromRefInput :: Maybe RacersState
     currentStateFromRefInput = findCurrentGameStateFromRefInputs info (stateToken rp)
+
+    attachesAirdropAddrToDepositOutputs :: Bool
+    attachesAirdropAddrToDepositOutputs = isJust $ do
+      st <- currentStateFromRefInput
+      let depositOutputsWithRequest =
+            filter
+              ( \(_, v) ->
+                  elem
+                    (ownCurrencySymbol ctx)
+                    $ map (\(cs, _, _) -> cs)
+                    $ flattenValue v
+              )
+              $ scriptOutputsAt (depositScript st) info
+      traverse
+        ( \case
+            (OutputDatum odat, _) -> fmap airdropAddress $ PlutusTx.fromBuiltinData $ getDatum odat
+            _ -> Nothing
+        )
+        depositOutputsWithRequest
 
     mintedRequestTokensValue :: Value
     mintedRequestTokensValue =
@@ -73,20 +86,13 @@ mkAssetRequestPolicy rp red ctx =
                 lookup r (carPrices st)
       sum <$> traverse lovelaceOfEntry requestEntries
 
-    inputContainsAdminNft :: Bool
-    inputContainsAdminNft = valueSpent info `geq` assetClassValue (adminToken rp) 1
-
-    inputContainsBotNft :: Bool
-    inputContainsBotNft = valueSpent info `geq` assetClassValue (botToken rp) 1
-
 {-# INLINEABLE mkPolicy #-}
 mkPolicy :: BuiltinData -> BuiltinData -> BuiltinData -> ()
-mkPolicy gapp redeemer context =
+mkPolicy gapp _red context =
   let
     result =
       mkAssetRequestPolicy
         (PlutusTx.unsafeFromBuiltinData gapp)
-        (PlutusTx.unsafeFromBuiltinData redeemer)
         (PlutusTx.unsafeFromBuiltinData context)
    in
     if result then () else traceError "Failed verification"

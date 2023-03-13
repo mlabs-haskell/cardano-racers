@@ -26,6 +26,7 @@ You can edit this file as you like.
   , "prelude"
   , "profunctor"
   , "quickcheck"
+  , "strings"
   , "spec"
   , "transformers"
   , "uint"

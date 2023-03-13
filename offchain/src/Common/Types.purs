@@ -4,7 +4,19 @@ import Contract.Prelude
 
 import Aeson (class DecodeAeson, class EncodeAeson, (.:))
 import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
-import Contract.PlutusData (class FromData, class HasPlutusSchema, class ToData, type (:+), type (:=), type (@@), I, PNil, Z, genericFromData, genericToData)
+import Contract.PlutusData
+  ( class FromData
+  , class HasPlutusSchema
+  , class ToData
+  , type (:+)
+  , type (:=)
+  , type (@@)
+  , I
+  , PNil
+  , Z
+  , genericFromData
+  , genericToData
+  )
 import Contract.Value (CurrencySymbol, TokenName)
 
 newtype RacersParams = RacersParams

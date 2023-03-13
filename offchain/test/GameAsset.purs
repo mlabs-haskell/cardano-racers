@@ -5,7 +5,12 @@ import Contract.Prelude
 import CardanoRacers.GameAsset.Contract (mintNewDriverNft)
 import CardanoRacers.GameAsset.Types (Rarity(Common))
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip (InitialUTxOs, PlutipTest, withKeyWallet, withWallets)
+import Contract.Test.Plutip
+  ( InitialUTxOs
+  , PlutipTest
+  , withKeyWallet
+  , withWallets
+  )
 import Data.BigInt (fromInt) as BigInt
 import Mote (group, test)
 

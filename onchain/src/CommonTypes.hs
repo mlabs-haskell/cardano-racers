@@ -74,3 +74,7 @@ instance Eq GameAsset where
 gameAssetToBuiltinByteString :: GameAsset -> BuiltinByteString
 gameAssetToBuiltinByteString Driver = "Driver"
 gameAssetToBuiltinByteString Car = "Car"
+
+newtype AirdropAddressDatum = AirdropAddressDatum
+  {airdropAddress :: Address}
+PlutusTx.unstableMakeIsData ''AirdropAddressDatum

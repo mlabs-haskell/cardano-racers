@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -fno-specialise #-}
 
 module Utils where
@@ -80,7 +81,7 @@ safeIndex xs i
   | otherwise = go xs i
   where
     go [] _ = Nothing
-    go (x : xs') i' = if i == 0 then Just x else go xs' (i' - 1)
+    go (x' : xs') i' = if i' == 0 then Just x' else go xs' (i' - 1)
 
 {-# INLINEABLE splitOn #-}
 splitOn :: BuiltinByteString -> BuiltinByteString -> [BuiltinByteString]
@@ -102,7 +103,8 @@ splitOn sep orig
 {-# INLINEABLE parseToken #-}
 parseToken :: TokenName -> Integer -> Maybe (GameAsset, Rarity, Integer)
 parseToken tn count = do
-  let splitted = splitOn ":" $ unTokenName tn
+  let tnStr = decodeUtf8 $ unTokenName tn
+      splitted = splitOn ":" $ unTokenName tn
   r <-
     withTraceM "could not decode rarity" $
       splitted
@@ -114,12 +116,12 @@ parseToken tn count = do
                 _ | otherwise -> Nothing
             )
   a <-
-    withTraceM "could not decode asset type" $
+    withTraceM ("could not decode asset type" <> tnStr) $
       splitted
         `safeIndex` 1
-        >>= ( \x -> case x of
-                _ | equalsByteString x "Driver" -> Just Driver
-                _ | equalsByteString x "Car" -> Just Car
+        >>= ( \case
+                s | equalsByteString s "Driver" -> Just Driver
+                s | equalsByteString s "Car" -> Just Car
                 _ | otherwise -> Nothing
             )
   pure (a, r, count)

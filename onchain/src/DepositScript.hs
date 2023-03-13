@@ -2,7 +2,7 @@
 
 module DepositScript (script) where
 
-import CommonTypes (GameAsset, RacersParams, Rarity, adminToken, botToken)
+import CommonTypes (AirdropAddressDatum (airdropAddress), GameAsset, RacersParams, Rarity, adminToken, botToken)
 import Ledger (Address)
 import Ledger.Value (AssetClass, assetClass, assetClassValue, flattenValue, geq, leq)
 import Plutus.V2.Ledger.Api (
@@ -26,10 +26,6 @@ data DepositValidatorParams = DepositValidatorParams
   }
 PlutusTx.unstableMakeIsData ''DepositValidatorParams
 
-newtype AirdropAddressDatum = AirdropAddressDatum
-  {airdropAddress :: Address}
-PlutusTx.unstableMakeIsData ''AirdropAddressDatum
-
 {-# INLINEABLE mkDepositValidator #-}
 mkDepositValidator :: RacersParams -> DepositValidatorParams -> ScriptContext -> Bool
 mkDepositValidator rp dps ctx =
@@ -50,7 +46,7 @@ mkDepositValidator rp dps ctx =
     inputsWithAirdropAddr =
       mapMaybe
         ( ( \txo ->
-              (,) <$> getInlineDatum txo <*> getRequestEntriesGrouped (txOutValue txo)
+              (,) <$> (airdropAddress <$> getInlineDatum txo) <*> getRequestEntriesGrouped (txOutValue txo)
           )
             . txInInfoResolved
         )

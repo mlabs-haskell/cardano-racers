@@ -6,10 +6,18 @@ import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy)
 import CardanoRacers.Common.Types (RacersParams(RacersParams))
 import CardanoRacers.Deposit.Contract (mkDepositValidator)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
-import CardanoRacers.Nitro.Contract (adminMintsNitroContract, botMintsNitroContract, buyNitroContract, mkNitroPolicy) as Nitro
+import CardanoRacers.Nitro.Contract
+  ( adminMintsNitroContract
+  , botMintsNitroContract
+  , buyNitroContract
+  , mkNitroPolicy
+  ) as Nitro
 import CardanoRacers.Nitro.Helpers (createRacersParams, mintBotNft) as NitroHelpers
 import CardanoRacers.Nitro.Types (NitroPolicyRedeemer(BuyNitroToken))
-import CardanoRacers.RacersState.Contract (initRacersStateContract, queryRacersState) as RacersState
+import CardanoRacers.RacersState.Contract
+  ( initRacersStateContract
+  , queryRacersState
+  ) as RacersState
 import CardanoRacers.RacersState.Types (RacersState(..))
 import Contract.Address (Address, getWalletAddresses)
 import Contract.AssocMap as AssocMap
@@ -18,9 +26,19 @@ import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData (Redeemer(Redeemer), toData, unitDatum)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (ValidatorHash(..), validatorHash)
-import Contract.Test.Assert (checkGainAtAddress', checkTokenGainAtAddress', label, runChecks)
+import Contract.Test.Assert
+  ( checkGainAtAddress'
+  , checkTokenGainAtAddress'
+  , label
+  , runChecks
+  )
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip (InitialUTxOs, PlutipTest, withKeyWallet, withWallets)
+import Contract.Test.Plutip
+  ( InitialUTxOs
+  , PlutipTest
+  , withKeyWallet
+  , withWallets
+  )
 import Contract.Transaction (submitTxFromConstraints)
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
@@ -99,7 +117,8 @@ suite = group "NitroToken script" do
             $ Array.head
             <$> getWalletAddresses
           nsp <- withKeyWallet admin createNitroParamsHelper
-          _ <- initNitroPolicyWithAdminAndTreasury (admin /\ treasury) nsp nitroPrice
+          _ <- initNitroPolicyWithAdminAndTreasury (admin /\ treasury) nsp
+            nitroPrice
           nitroCs <- liftedM "Could not get currency symbol"
             $ Value.scriptCurrencySymbol
             <$> Nitro.mkNitroPolicy nsp
@@ -228,13 +247,18 @@ suite = group "NitroToken script" do
 
   depositScriptHashHelper :: RacersParams -> Contract ValidatorHash
   depositScriptHashHelper rp = do
-      assetRequestPolicySymbol <- liftedM "could not get asset request symbol" $ mkAssetRequestPolicy rp <#> scriptCurrencySymbol
-      assetPolicySymbol <- liftedM "could not get game asset symbol" $ mkGameAssetPolicy rp <#> scriptCurrencySymbol
-      depositVal <- mkDepositValidator rp $
-                      wrap { assetPolicySymbol
-                      , assetRequestPolicySymbol
-                      }
-      pure $ validatorHash depositVal
+    assetRequestPolicySymbol <- liftedM "could not get asset request symbol"
+      $ mkAssetRequestPolicy rp
+      <#> scriptCurrencySymbol
+    assetPolicySymbol <- liftedM "could not get game asset symbol"
+      $ mkGameAssetPolicy rp
+      <#> scriptCurrencySymbol
+    depositVal <- mkDepositValidator rp $
+      wrap
+        { assetPolicySymbol
+        , assetRequestPolicySymbol
+        }
+    pure $ validatorHash depositVal
 
   initNitroPolicyWithAdminAndTreasury
     :: (KeyWallet /\ KeyWallet)

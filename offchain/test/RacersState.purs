@@ -7,8 +7,16 @@ import CardanoRacers.Common.Types (RacersParams(RacersParams))
 import CardanoRacers.Deposit.Contract (mkDepositValidator)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.Nitro.Helpers (createRacersParams, mintBotNft) as NitroHelpers
-import CardanoRacers.RacersState.Contract (initRacersStateContract, mkRacersStateValidator, modifyRacersStateContract, queryRacersState) as RacersState
-import CardanoRacers.RacersState.Types (RacersState(RacersState), RacersStateRedeemer(SetRacersState))
+import CardanoRacers.RacersState.Contract
+  ( initRacersStateContract
+  , mkRacersStateValidator
+  , modifyRacersStateContract
+  , queryRacersState
+  ) as RacersState
+import CardanoRacers.RacersState.Types
+  ( RacersState(RacersState)
+  , RacersStateRedeemer(SetRacersState)
+  )
 import CardanoRacers.ScriptsFFI (assetRequestPolicy, gameAssetPolicy)
 import Contract.Address (getWalletAddresses)
 import Contract.AssocMap as AssocMap
@@ -17,7 +25,12 @@ import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (ValidatorHash(..), mintingPolicyHash, validatorHash)
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip (InitialUTxOs, PlutipTest, withKeyWallet, withWallets)
+import Contract.Test.Plutip
+  ( InitialUTxOs
+  , PlutipTest
+  , withKeyWallet
+  , withWallets
+  )
 import Contract.Transaction (submitTxFromConstraints)
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletUtxos)
@@ -48,7 +61,8 @@ suite = group "RacersState script:" do
             $ Array.head
             <$> getWalletAddresses
           rp <- withKeyWallet admin createRacersParamsHelper
-          _ <- initRacersStateWithAdminAndTreasury (admin /\ treasury) rp nitroPrice
+          _ <- initRacersStateWithAdminAndTreasury (admin /\ treasury) rp
+            nitroPrice
           depositScriptHash <- depositScriptHashHelper rp
           let
             expectedRacersState = RacersState
@@ -65,13 +79,16 @@ suite = group "RacersState script:" do
       withWallets (walletUtxoDistr /\ walletUtxoDistr) \(admin /\ treasury) ->
         do
           rp <- withKeyWallet admin createRacersParamsHelper
-          prevState <- initRacersStateWithAdminAndTreasury (admin /\ treasury) rp $
-            BigInt.fromInt
-              1000000
+          prevState <-
+            initRacersStateWithAdminAndTreasury (admin /\ treasury) rp $
+              BigInt.fromInt
+                1000000
           withKeyWallet admin do
             addr <- liftedM "Could not get address" $ Array.head <$>
               getWalletAddresses
-            let newState = wrap $ (unwrap prevState) {nitroPrice = BigInt.fromInt 2000000}
+            let
+              newState = wrap $ (unwrap prevState)
+                { nitroPrice = BigInt.fromInt 2000000 }
             void $ RacersState.modifyRacersStateContract rp newState
             updatedRacersState /\ _ <- RacersState.queryRacersState rp
             newState `shouldEqual` updatedRacersState
@@ -88,10 +105,11 @@ suite = group "RacersState script:" do
         withKeyWallet eve do
           nitroVal <- RacersState.mkRacersStateValidator rp
           botAddress <- liftedM "Could not get address"
-              $ Array.head
-              <$> getWalletAddresses
+            $ Array.head
+            <$> getWalletAddresses
           let
-            newState = wrap $ (unwrap prevState) {nitroPrice = BigInt.fromInt 2000000}
+            newState = wrap $ (unwrap prevState)
+              { nitroPrice = BigInt.fromInt 2000000 }
             vhash = validatorHash nitroVal
             datum = Datum $ toData newState
             red = Redeemer $ toData $ SetRacersState newState
@@ -151,13 +169,18 @@ suite = group "RacersState script:" do
 
   depositScriptHashHelper :: RacersParams -> Contract ValidatorHash
   depositScriptHashHelper rp = do
-      assetRequestPolicySymbol <- liftedM "could not get asset request symbol" $ mkAssetRequestPolicy rp <#> scriptCurrencySymbol
-      assetPolicySymbol <- liftedM "could not get game asset symbol" $ mkGameAssetPolicy rp <#> scriptCurrencySymbol
-      depositVal <- mkDepositValidator rp $
-                      wrap { assetPolicySymbol
-                      , assetRequestPolicySymbol
-                      }
-      pure $ validatorHash depositVal
+    assetRequestPolicySymbol <- liftedM "could not get asset request symbol"
+      $ mkAssetRequestPolicy rp
+      <#> scriptCurrencySymbol
+    assetPolicySymbol <- liftedM "could not get game asset symbol"
+      $ mkGameAssetPolicy rp
+      <#> scriptCurrencySymbol
+    depositVal <- mkDepositValidator rp $
+      wrap
+        { assetPolicySymbol
+        , assetRequestPolicySymbol
+        }
+    pure $ validatorHash depositVal
 
   initRacersStateWithAdminAndTreasury
     :: (KeyWallet /\ KeyWallet)

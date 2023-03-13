@@ -1,10 +1,20 @@
-module CardanoRacers.GameAsset.Contract (mintNewCarNft, mintNewDriverNft, mkGameAssetPolicy) where
+module CardanoRacers.GameAsset.Contract
+  ( mintNewCarNft
+  , mintNewDriverNft
+  , mkGameAssetPolicy
+  ) where
 
 import Contract.Prelude
 
 import CardanoRacers.Common.Types (RacersParams(..))
 import CardanoRacers.GameAsset.Parameters (generateUniformParameters)
-import CardanoRacers.GameAsset.Types (Car(Car), Driver(Driver), GameAssetNftMetadata(GameAssetNftMetadata), GameAssetNftMetadataEntry(DriverNftMetadata, CarNftMetadata), Rarity)
+import CardanoRacers.GameAsset.Types
+  ( Car(Car)
+  , Driver(Driver)
+  , GameAssetNftMetadata(GameAssetNftMetadata)
+  , GameAssetNftMetadataEntry(DriverNftMetadata, CarNftMetadata)
+  , Rarity
+  )
 import CardanoRacers.Nft (mintNftConstraints)
 import CardanoRacers.ScriptsFFI (gameAssetPolicy)
 import Contract.AuxiliaryData (setTxMetadata)
@@ -12,12 +22,35 @@ import Contract.Log (logInfo')
 import Contract.Metadata (mkCip25String)
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
 import Contract.PlutusData (toData)
-import Contract.Prelude (Effect, Maybe, bind, discard, fst, liftEffect, map, pure, show, ($), (/\), (<#>), (<=<), (<>), (>>=), (>>>))
+import Contract.Prelude
+  ( Effect
+  , Maybe
+  , bind
+  , discard
+  , fst
+  , liftEffect
+  , map
+  , pure
+  , show
+  , ($)
+  , (/\)
+  , (<#>)
+  , (<=<)
+  , (<>)
+  , (>>=)
+  , (>>>)
+  )
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups (mkUnbalancedTx)
 import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), applyArgs)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
-import Contract.Transaction (TransactionHash, awaitTxConfirmed, balanceTx, signTransaction, submit)
+import Contract.Transaction
+  ( TransactionHash
+  , awaitTxConfirmed
+  , balanceTx
+  , signTransaction
+  , submit
+  )
 import Contract.Utxos (getWalletUtxos)
 import Contract.Value (mkTokenName)
 import Control.Monad.Error.Class (throwError)
@@ -135,7 +168,6 @@ mintNewCarNft opts = do
   awaitTxConfirmed txId
   logInfo' $ "Tx ID: " <> show txId
   pure txId
-
 
 mkGameAssetPolicy :: RacersParams -> Contract MintingPolicy
 mkGameAssetPolicy np = do

@@ -11,7 +11,12 @@ import Contract.Test.Utils (exitCode, interruptOnSignal)
 import Data.Posix.Signal (Signal(SIGINT))
 import Data.Time.Duration (Seconds(Seconds))
 import Data.UInt (fromInt) as UInt
-import Effect.Aff (Milliseconds(Milliseconds), cancelWith, effectCanceler, launchAff)
+import Effect.Aff
+  ( Milliseconds(Milliseconds)
+  , cancelWith
+  , effectCanceler
+  , launchAff
+  )
 import Mote (only)
 import Test.CardanoRacers.AssetRequest (suite) as AssetRequest
 import Test.CardanoRacers.GameAsset (suite) as GameAsset
