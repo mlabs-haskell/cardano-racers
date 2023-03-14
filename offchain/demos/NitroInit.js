@@ -31,9 +31,9 @@ const wrapLoading = (p) => {
 }
 
 exports.setupListeners = handlers => () => {
-  document.getElementById("mint-driver").addEventListener("click", () => {
-    wrapLoading(handlers.mintDriver()).then(console.log)
-  });
+  // document.getElementById("mint-driver").addEventListener("click", () => {
+  //   wrapLoading(handlers.mintDriver()).then(console.log)
+  // });
   document.getElementById("init").addEventListener("click", () => {
     wrapLoading(handlers.initNitro()).then(x => download("params.json", x))
   });

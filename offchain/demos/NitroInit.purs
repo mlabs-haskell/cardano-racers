@@ -100,7 +100,7 @@ type Listeners =
   , modifyNitroState :: Effect (Promise TransactionHash)
   , userBuyNitro :: Effect (Promise TransactionHash)
   , resetTokens :: Effect (Promise (Array TransactionHash))
-  , mintDriver :: Effect (Promise TransactionHash)
+--   , mintDriver :: Effect (Promise TransactionHash)
   }
 
 keys :: Array (Tuple String String)
@@ -130,14 +130,14 @@ main = do
     , modifyNitroState
     , userBuyNitro
     , resetTokens
-    , mintDriver
+--     , mintDriver
     }
   pure unit
 
-mintDriver :: Effect (Promise TransactionHash)
-mintDriver = withActor "Admin" do
-  txid <- mintNewDriverNft Common
-  pure txid
+-- mintDriver :: Effect (Promise TransactionHash)
+-- mintDriver = withActor "Admin" do
+--   txid <- mintNewDriverNft Common
+--   pure txid
 
 initNitro :: Effect (Promise String)
 initNitro = do
@@ -313,6 +313,7 @@ actorAddress actor = do
       pubPayKey = publicKeyFromPrivateKey (unwrap payKey)
     in
       pubPayKey # publicKeyHash
+        >>> unwrap
         >>> keyHashCredential
         >>> { network, paymentCred: _ }
         >>> enterpriseAddress
