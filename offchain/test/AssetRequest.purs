@@ -8,7 +8,8 @@ import CardanoRacers.AssetRequest.Contract
   )
 import CardanoRacers.Common.Types (RacersParams(RacersParams))
 import CardanoRacers.Deposit.Contract
-  ( mkDepositValidator
+  ( consumeAndRedeemRequests
+  , mkDepositValidator
   , queryRequestsWithAirdropAddress
   )
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
@@ -63,22 +64,17 @@ suite = group "AssetRequest" do
       \(adminKey /\ treasuryKey /\ userKey) -> do
         rp <- withKeyWallet adminKey createRacersParamsHelper
         let
-          carPrices = foldl (flip $ uncurry AssocMap.insert) AssocMap.empty
+          assetPrices = foldl (flip $ uncurry AssocMap.insert) AssocMap.empty
             [ (Common /\ BigInt.fromInt 5_000_000)
             , (Rare /\ BigInt.fromInt 10_000_000)
             , (Epic /\ BigInt.fromInt 20_000_000)
             ]
-          driverPrices = foldl (flip $ uncurry AssocMap.insert) AssocMap.empty
-            [ (Common /\ BigInt.fromInt 1_000_000)
-            , (Rare /\ BigInt.fromInt 2_000_000)
-            , (Epic /\ BigInt.fromInt 4_000_000)
-            ]
         st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey) rp
-          carPrices
-          driverPrices
+          assetPrices
         _ <- withKeyWallet userKey $ requestAssetByRarity rp Common
         withKeyWallet adminKey $ do
-          reqs <- queryRequestsWithAirdropAddress rp
+          reqs <- queryRequestsWithAirdropAddress rp st
+          _ <- consumeAndRedeemRequests rp st
           -- utxos <- utxosAt $ scriptHashAddress (unwrap st).depositScript Nothing
           logInfo' $ "Utxos at deposit script: " <> show reqs
         pure unit
@@ -116,13 +112,11 @@ suite = group "AssetRequest" do
     :: (KeyWallet /\ KeyWallet)
     -> RacersParams
     -> Map Rarity BigInt
-    -> Map Rarity BigInt
     -> Contract RacersState
   initRacersStateWithAdminAndTreasury
     (admin /\ treasury)
     rp
-    carPrices
-    driverPrices = do
+    assetPrices = do
     treasuryAddr <- withKeyWallet treasury
       $ liftedM "Could not get address"
       $ Array.head
@@ -138,8 +132,7 @@ suite = group "AssetRequest" do
           { nitroPrice: BigInt.fromInt 1_000_000
           , treasuryAddress: treasuryAddr
           , operatingAddress: ownAddr
-          , driverPrices: driverPrices
-          , carPrices: carPrices
+          , assetPrices: assetPrices
           , depositScript: depositScriptHash
           }
       _ <- RacersState.initRacersStateContract rp rs

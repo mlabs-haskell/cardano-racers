@@ -16,6 +16,7 @@ import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.PlutusData (unitDatum)
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
+import Contract.Utxos (getWalletUtxos)
 import Contract.Value (Value)
 import Foreign.Object (singleton)
 

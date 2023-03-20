@@ -1,4 +1,15 @@
-module CardanoRacers.GameAsset.Types where
+module CardanoRacers.GameAsset.Types 
+  ( Rarity(Common, Rare, Epic)
+  , DriverAttributes(DriverAttributes)
+  , CarAttributes(CarAttributes)
+  , GameAssetType(DriverType, CarType)
+  , GameAssetAttributes(DriverAttrs, CarAttrs)
+  , GameAsset
+  , mkGameAsset
+  , GameAssetNftMetadataEntry(GameAssetNftMetadataEntry)
+  , GameAssetNftMetadata(GameAssetNftMetadata)
+  )
+  where
 
 import Contract.Prelude
 
@@ -35,7 +46,6 @@ import Contract.Value
   , mpsSymbol
   )
 import Control.Alt ((<|>))
-import Ctl.Internal.Metadata.Cip25.Cip25String (toMetadataString)
 import Ctl.Internal.Metadata.FromMetadata (class FromMetadata, fromMetadata)
 import Ctl.Internal.Metadata.Helpers (lookupMetadata)
 import Ctl.Internal.Metadata.MetadataType (class MetadataType)
@@ -96,24 +106,22 @@ instance ToData Rarity where
 instance FromData Rarity where
   fromData = genericFromData
 
-newtype Driver = Driver
-  { driverId :: String
-  , aggression :: BigInt
+newtype DriverAttributes = DriverAttributes
+  { aggression :: BigInt
   , experience :: BigInt
   , reflexes :: BigInt
   , luck :: BigInt
   }
 
-derive instance Generic Driver _
-derive instance Newtype Driver _
-derive instance Eq Driver
+derive instance Generic DriverAttributes _
+derive instance Newtype DriverAttributes _
+derive instance Eq DriverAttributes
 
 instance
-  HasPlutusSchema Driver
-    ( "Driver"
+  HasPlutusSchema DriverAttributes
+    ( "DriverAttributes"
         :=
-          ( "driverId" := I String
-              :+ "aggression"
+          ( "aggression"
               := I BigInt
               :+ "experience"
               := I BigInt
@@ -127,45 +135,42 @@ instance
         :+ PNil
     )
 
-instance ToData Driver where
+instance ToData DriverAttributes where
   toData = genericToData
 
-instance FromData Driver where
+instance FromData DriverAttributes where
   fromData = genericFromData
 
-instance Show Driver where
+instance Show DriverAttributes where
   show = genericShow
 
-instance EncodeAeson Driver where
-  encodeAeson = wrapEncodeAeson "Driver" <<< unwrap
+instance EncodeAeson DriverAttributes where
+  encodeAeson = wrapEncodeAeson "DriverAttributes" <<< unwrap
 
-instance DecodeAeson Driver where
-  decodeAeson = decodeWrappedAeson "Driver" \obj -> do
-    driverId <- obj .: "driverId"
+instance DecodeAeson DriverAttributes where
+  decodeAeson = decodeWrappedAeson "DriverAttributes" \obj -> do
     aggression <- obj .: "aggression"
     experience <- obj .: "experience"
     reflexes <- obj .: "reflexes"
     luck <- obj .: "luck"
-    pure $ Driver { driverId, aggression, experience, reflexes, luck }
+    pure $ DriverAttributes { aggression, experience, reflexes, luck }
 
-newtype Car = Car
-  { carId :: String
-  , topSpeed :: BigInt
+newtype CarAttributes = CarAttributes
+  { topSpeed :: BigInt
   , acceleration :: BigInt
   , cornering :: BigInt
   , aerodynamics :: BigInt
   }
 
-derive instance Generic Car _
-derive instance Newtype Car _
-derive instance Eq Car
+derive instance Generic CarAttributes _
+derive instance Newtype CarAttributes _
+derive instance Eq CarAttributes
 
 instance
-  HasPlutusSchema Car
-    ( "Car"
+  HasPlutusSchema CarAttributes
+    ( "CarAttributes"
         :=
-          ( "carId" := I String
-              :+ "topSpeed"
+          ( "topSpeed"
               := I BigInt
               :+ "acceleration"
               := I BigInt
@@ -179,26 +184,25 @@ instance
         :+ PNil
     )
 
-instance ToData Car where
+instance ToData CarAttributes where
   toData = genericToData
 
-instance FromData Car where
+instance FromData CarAttributes where
   fromData = genericFromData
 
-instance Show Car where
+instance Show CarAttributes where
   show = genericShow
 
-instance EncodeAeson Car where
-  encodeAeson = wrapEncodeAeson "Car" <<< unwrap
+instance EncodeAeson CarAttributes where
+  encodeAeson = wrapEncodeAeson "CarAttributes" <<< unwrap
 
-instance DecodeAeson Car where
-  decodeAeson = decodeWrappedAeson "Car" \obj -> do
-    carId <- obj .: "carId"
+instance DecodeAeson CarAttributes where
+  decodeAeson = decodeWrappedAeson "CarAttributes" \obj -> do
     topSpeed <- obj .: "topSpeed"
     acceleration <- obj .: "acceleration"
     cornering <- obj .: "cornering"
     aerodynamics <- obj .: "aerodynamics"
-    pure $ Car { carId, topSpeed, acceleration, cornering, aerodynamics }
+    pure $ CarAttributes { topSpeed, acceleration, cornering, aerodynamics }
 
 data GameAssetType = DriverType | CarType
 
@@ -243,73 +247,52 @@ instance DecodeAeson GameAssetType where
     constMono :: forall a. a -> Object {} -> a
     constMono a _ = a
 
-data GameAsset
-  = DriverAsset Driver
-  | CarAsset Car
+data GameAssetAttributes
+  = DriverAttrs DriverAttributes
+  | CarAttrs CarAttributes
 
-derive instance Generic GameAsset _
-derive instance Eq GameAsset
+driverAttrsFromAttributes :: GameAssetAttributes -> Maybe DriverAttributes
+driverAttrsFromAttributes = case _ of
+  DriverAttrs driver -> Just driver
+  CarAttrs _ -> Nothing
+
+carAttrsFromAttributes :: GameAssetAttributes -> Maybe CarAttributes
+carAttrsFromAttributes = case _ of
+  DriverAttrs _ -> Nothing
+  CarAttrs car -> Just car
+
+derive instance Generic GameAssetAttributes _
+derive instance Eq GameAssetAttributes
 
 instance
-  HasPlutusSchema GameAsset
-    ( "DriverAsset"
+  HasPlutusSchema GameAssetAttributes
+    ( "DriverAttrs"
         := PNil
         @@ Z
-        :+ "CarAsset"
+        :+ "CarAttrs"
         := PNil
         @@ (S Z)
         :+ PNil
     )
 
-instance ToData GameAsset where
+instance ToData GameAssetAttributes where
   toData = genericToData
 
-instance FromData GameAsset where
+instance FromData GameAssetAttributes where
   fromData = genericFromData
 
-instance Show GameAsset where
+instance Show GameAssetAttributes where
   show = genericShow
 
-instance EncodeAeson GameAsset where
+instance EncodeAeson GameAssetAttributes where
   encodeAeson = case _ of
-    DriverAsset driver -> wrapEncodeAeson "DriverAsset" driver
-    CarAsset car -> wrapEncodeAeson "CarAsset" car
+    DriverAttrs driver -> wrapEncodeAeson "DriverAttrs" driver
+    CarAttrs car -> wrapEncodeAeson "CarAttrs" car
 
-instance DecodeAeson GameAsset where
+instance DecodeAeson GameAssetAttributes where
   decodeAeson aes =
-    decodeWrappedAeson "DriverAsset" (pure <<< DriverAsset) aes <|>
-      decodeWrappedAeson "CarAsset" (pure <<< CarAsset) aes
-
-newtype GameAssetPolicyParams = GameAssetPolicyParams
-  { adminToken :: (CurrencySymbol /\ TokenName)
-  , botToken :: (CurrencySymbol /\ TokenName)
-  , asset :: GameAsset
-  }
-
-derive instance Generic GameAssetPolicyParams _
-derive instance Newtype GameAssetPolicyParams _
-derive instance Eq GameAssetPolicyParams
-
-instance
-  HasPlutusSchema GameAssetPolicyParams
-    ( "GameAssetPolicyParams"
-        :=
-          ( "adminToken" := I (CurrencySymbol /\ TokenName)
-              :+ "botToken"
-              := I (CurrencySymbol /\ TokenName)
-              :+ "asset"
-              := I GameAsset
-              :+ PNil
-          )
-        @@ Z
-        :+ PNil
-    )
-
-instance ToData GameAssetPolicyParams where
-  toData = genericToData
-
-instance FromData GameAssetPolicyParams where
-  fromData = genericFromData
+    decodeWrappedAeson "DriverAttrs" (pure <<< DriverAttrs) aes <|>
+      decodeWrappedAeson "CarAttrs" (pure <<< CarAttrs) aes
 
 newtype AirdropAddressDatum = AirdropAddressDatum
   { airdropAddress :: Address }
@@ -344,80 +327,111 @@ type CommonAssetNftMetadata r =
   | r
   }
 
-data GameAssetNftMetadataEntry
-  = DriverNftMetadata
-      { driver :: Driver
-      , assetClass :: CurrencySymbol /\ TokenName
-      , name :: Cip25String
-      , image :: String
-      , mediaType :: Maybe Cip25String
-      , description :: Maybe String
-      }
-  | CarNftMetadata
-      { car :: Car
-      , assetClass :: CurrencySymbol /\ TokenName
-      , name :: Cip25String
-      , image :: String
-      , mediaType :: Maybe Cip25String
-      , description :: Maybe String
-      }
+-- todo: don't export constructor, implement smart constructors to check that
+-- assetType and attributes match
+newtype GameAsset = GameAsset
+  { assetType :: GameAssetType
+  , attributes :: GameAssetAttributes
+  , imageUrl :: String
+  , mediaType :: Maybe String
+  , name :: String
+  , description :: String
+  }
+mkGameAsset :: { assetType :: GameAssetType
+  , attributes :: GameAssetAttributes
+  , imageUrl :: String
+  , mediaType :: Maybe String
+  , name :: String
+  , description :: String
+  } -> Maybe GameAsset
+mkGameAsset { assetType, attributes, imageUrl, mediaType, name, description }
+  | assetType == DriverType && isJust (driverAttrsFromAttributes attributes) = Just $ GameAsset
+    { assetType
+    , attributes
+    , imageUrl
+    , mediaType
+    , name
+    , description
+    }
+  | assetType == CarType && isJust (carAttrsFromAttributes attributes) = Just $ GameAsset
+    { assetType
+    , attributes
+    , imageUrl
+    , mediaType
+    , name
+    , description
+    }
+  | otherwise = Nothing
+
+derive instance Eq GameAsset
+
+instance Show GameAsset where
+  show (GameAsset ga)= "(GameAsset " <> show ga <> ")"
+
+instance EncodeAeson GameAsset where
+  encodeAeson (GameAsset ga) = wrapEncodeAeson "GameAsset" ga
+
+instance DecodeAeson GameAsset where
+  decodeAeson = decodeWrappedAeson "GameAsset" \obj -> do
+    assetType <- obj .: "assetType"
+    attributes <- obj .: "attributes"
+    imageUrl <- obj .: "imageUrl"
+    mediaType <- obj .: "mediaType"
+    name <- obj .: "name"
+    description <- obj .: "description"
+    pure $ GameAsset
+      { assetType, attributes, imageUrl, mediaType, name, description }
+
+type GameAssetMeta =
+  { asset :: GameAsset
+  , assetClass :: CurrencySymbol /\ TokenName
+  }
+
+newtype GameAssetNftMetadataEntry = GameAssetNftMetadataEntry
+  { asset :: GameAsset
+  , assetClass :: CurrencySymbol /\ TokenName
+  }
 
 gameAssetMetadataEntryToKeyValue
   :: GameAssetNftMetadataEntry -> Array (String /\ TransactionMetadatum)
-gameAssetMetadataEntryToKeyValue ganme = case ganme of
-  DriverNftMetadata dnm -> aux dnm attributeEntries
-    where
-    attributeEntries =
-      [ "driverId" /\ toMetadata (unwrap dnm.driver).driverId
-      , "aggression" /\ toMetadata (unwrap dnm.driver).aggression
-      , "experience" /\ toMetadata (unwrap dnm.driver).experience
-      , "reflexes" /\ toMetadata (unwrap dnm.driver).reflexes
-      , "luck" /\ toMetadata (unwrap dnm.driver).luck
-      ]
-
-  CarNftMetadata cnm -> aux cnm attributeEntries
-    where
-    attributeEntries =
-      [ "carId" /\ toMetadata (unwrap cnm.car).carId
-      , "acceleration" /\ toMetadata (unwrap cnm.car).acceleration
-      , "cornering" /\ toMetadata (unwrap cnm.car).cornering
-      , "topSpeed" /\ toMetadata (unwrap cnm.car).topSpeed
-      , "aerodynamics" /\ toMetadata (unwrap cnm.car).aerodynamics
-      ]
-
+gameAssetMetadataEntryToKeyValue
+  (GameAssetNftMetadataEntry { asset: GameAsset asset, assetClass }) =
+  policyEntry
   where
-  aux
-    :: forall (r :: Row Type)
-     . CommonAssetNftMetadata r
-    -> Array (String /\ TransactionMetadatum)
-    -> Array (String /\ TransactionMetadatum)
-  aux nm attributeEntries =
-    let
-      dataEntry = [ "attributes" /\ toMetadata attributeEntries ]
-      cip25metadata =
-        [ "name" /\ toMetadata nm.name
-        , "image" /\ toMetadataString nm.image
-        ]
-          <>
-            ( fold $ nm.mediaType <#> \mediaType ->
-                [ "mediaType" /\ toMetadata mediaType ]
-            )
-          <>
-            ( fold $ nm.description <#> \description ->
-                [ "description" /\ toMetadataString description ]
-            )
-      assetEntry =
-        [ (byteArrayToHex $ getTokenName $ snd nm.assetClass) /\ toMetadata
-            (dataEntry <> cip25metadata)
-        ]
-      policyEntry =
-        [ ( rawBytesToHex $ scriptHashToBytes $ unwrap $ currencyMPSHash
-              (fst nm.assetClass)
-          ) /\ toMetadata assetEntry
-        ]
+  policyEntry =
+    [ ( rawBytesToHex $ scriptHashToBytes $ unwrap $ currencyMPSHash
+          (fst assetClass)
+      ) /\ toMetadata assetEntry
+    ]
+  assetEntry =
+    [ (byteArrayToHex $ getTokenName $ snd assetClass) /\ toMetadata dataEntry
+    ]
+  dataEntry =
+    [ "name" /\ toMetadata (asset.name)
+    , "image" /\ toMetadata (asset.imageUrl)
+    , "description" /\ toMetadata (asset.description)
+    , "attributes" /\ toMetadata attributesEntry
+    , "type" /\ toMetadata
+        ( case asset.assetType of
+            DriverType -> "Driver"
+            CarType -> "Car"
+        )
+    ] <> fromMaybe []
+      (asset.mediaType <#> \mt -> [ "mediaType" /\ toMetadata mt ])
 
-    in
-      policyEntry
+  attributesEntry = case asset.attributes of
+    DriverAttrs (DriverAttributes driver) ->
+      [ "aggression" /\ toMetadata (driver.aggression)
+      , "experience" /\ toMetadata (driver.experience)
+      , "reflexes" /\ toMetadata (driver.reflexes)
+      , "luck" /\ toMetadata (driver.luck)
+      ]
+    CarAttrs (CarAttributes car) ->
+      [ "topSpeed" /\ toMetadata (car.topSpeed)
+      , "acceleration" /\ toMetadata (car.acceleration)
+      , "cornering" /\ toMetadata (car.cornering)
+      , "aerodynamics" /\ toMetadata (car.aerodynamics)
+      ]
 
 gameAssetMetadataEntryFromMetadata
   :: MintingPolicyHash
@@ -426,47 +440,52 @@ gameAssetMetadataEntryFromMetadata
   -> Maybe GameAssetNftMetadataEntry
 gameAssetMetadataEntryFromMetadata policy tk md = do
   name <- lookupMetadata "name" md >>= fromMetadata
-  image <- lookupMetadata "image" md >>= fromMetadata
+  imageUrl <- lookupMetadata "image" md >>= fromMetadata
+  assetType <- lookupMetadata "type" md >>= fromMetadata >>= case _ of
+    "Driver" -> pure DriverType
+    "Car" -> pure CarType
+    _ -> Nothing
+  description <- lookupMetadata "description" md >>= fromMetadata
   mbMediaType <- for (lookupMetadata "mediaType" md) fromMetadata
-  mbDescription <- for (lookupMetadata "description" md) fromMetadata
-  attrsMd <- lookupMetadata "attributes" md >>= fromMetadata
   cs <- mpsSymbol policy
-  let
-    decodeDriverAttributes attrs = do
-      driverId <- lookupMetadata "driverId" attrs >>= fromMetadata
-      aggression <- lookupMetadata "aggression" attrs >>= fromMetadata
-      experience <- lookupMetadata "experience" attrs >>= fromMetadata
-      reflexes <- lookupMetadata "reflexes" attrs >>= fromMetadata
-      luck <- lookupMetadata "luck" attrs >>= fromMetadata
-      pure $ DriverNftMetadata
-        { driver: Driver { driverId, aggression, experience, reflexes, luck }
-        , assetClass: cs /\ unwrap tk
-        , name
-        , image
+  attrsMd <- lookupMetadata "attributes" md >>= fromMetadata >>=
+    ( \attrs ->
+        case assetType of
+          DriverType -> DriverAttrs <$> decodeDriverAttrs attrs
+          CarType -> CarAttrs <$> decodeCarAttrs attrs
+    )
+  pure $ GameAssetNftMetadataEntry
+    { asset: GameAsset
+        { assetType
+        , attributes: attrsMd
+        , imageUrl
         , mediaType: mbMediaType
-        , description: mbDescription
-        }
-    decodeCarAttributes attrs = do
-      carId <- lookupMetadata "carId" attrs >>= fromMetadata
-      acceleration <- lookupMetadata "acceleration" attrs >>= fromMetadata
-      cornering <- lookupMetadata "cornering" attrs >>= fromMetadata
-      topSpeed <- lookupMetadata "topSpeed" attrs >>= fromMetadata
-      aerodynamics <- lookupMetadata "aerodynamics" attrs >>= fromMetadata
-      pure $ CarNftMetadata
-        { car: Car { carId, acceleration, cornering, topSpeed, aerodynamics }
-        , assetClass: cs /\ unwrap tk
         , name
-        , image
-        , mediaType: mbMediaType
-        , description: mbDescription
+        , description
         }
-  decodeDriverAttributes attrsMd <|> decodeCarAttributes attrsMd
+    , assetClass: cs /\ (unwrap tk)
+    }
+  where
+  decodeDriverAttrs :: TransactionMetadatum -> Maybe DriverAttributes
+  decodeDriverAttrs attrs = do
+    aggression <- lookupMetadata "aggression" attrs >>= fromMetadata
+    experience <- lookupMetadata "experience" attrs >>= fromMetadata
+    reflexes <- lookupMetadata "reflexes" attrs >>= fromMetadata
+    luck <- lookupMetadata "luck" attrs >>= fromMetadata
+    pure $ DriverAttributes { aggression, experience, reflexes, luck }
+
+  decodeCarAttrs :: TransactionMetadatum -> Maybe CarAttributes
+  decodeCarAttrs attrs = do
+    acceleration <- lookupMetadata "acceleration" attrs >>= fromMetadata
+    cornering <- lookupMetadata "cornering" attrs >>= fromMetadata
+    topSpeed <- lookupMetadata "topSpeed" attrs >>= fromMetadata
+    aerodynamics <- lookupMetadata "aerodynamics" attrs >>= fromMetadata
+    pure $ CarAttributes { acceleration, cornering, topSpeed, aerodynamics }
 
 newtype GameAssetNftMetadata = GameAssetNftMetadata
   (Array GameAssetNftMetadataEntry)
 
 derive instance Newtype GameAssetNftMetadata _
-
 instance ToMetadata GameAssetNftMetadata where
   toMetadata (GameAssetNftMetadata ganmes) = toMetadata $
     let

@@ -279,8 +279,7 @@ suite = group "NitroToken script" do
           { nitroPrice: nitroPrice
           , treasuryAddress: treasuryAddr
           , operatingAddress: ownAddr
-          , driverPrices: AssocMap.empty
-          , carPrices: AssocMap.empty
+          , assetPrices: AssocMap.empty
           , depositScript: depositScriptHash
           }
       _ <- RacersState.initRacersStateContract rp rs

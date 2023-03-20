@@ -109,8 +109,7 @@ nitroStateFixture =
       { nitroPrice: BigInt.fromInt 1000000
       , treasuryAddress
       , operatingAddress: treasuryAddress
-      , driverPrices: Map.empty
-      , carPrices: Map.empty
+      , assetPrices: Map.empty
       , depositScript: depositScriptHash
       }
   in

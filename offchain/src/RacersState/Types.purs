@@ -27,8 +27,7 @@ newtype RacersState = RacersState
   { nitroPrice :: BigInt -- Nitro price in Lovelace
   , treasuryAddress :: Address
   , operatingAddress :: Address
-  , driverPrices :: Map Rarity BigInt
-  , carPrices :: Map Rarity BigInt
+  , assetPrices :: Map Rarity BigInt
   , depositScript :: ValidatorHash
   }
 
@@ -45,9 +44,7 @@ instance
               := I Address
               :+ "operatingAddress"
               := I Address
-              :+ "driverPrices"
-              := I (Map Rarity BigInt)
-              :+ "carPrices"
+              :+ "assetPrices"
               := I (Map Rarity BigInt)
               :+ "depositScript"
               := I ValidatorHash
@@ -74,15 +71,13 @@ instance DecodeAeson RacersState where
     nitroPrice <- obj .: "nitroPrice"
     treasuryAddress <- obj .: "treasuryAddress"
     operatingAddress <- obj .: "operatingAddress"
-    driverPrices <- obj .: "driverPrices"
-    carPrices <- obj .: "carPrices"
+    assetPrices <- obj .: "assetPrices"
     depositScript <- obj .: "depositScript"
     pure $ RacersState
       { nitroPrice
       , treasuryAddress
       , operatingAddress
-      , driverPrices
-      , carPrices
+      , assetPrices
       , depositScript
       }
 

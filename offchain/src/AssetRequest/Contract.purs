@@ -2,7 +2,10 @@ module CardanoRacers.AssetRequest.Contract where
 
 import Contract.Prelude
 
-import CardanoRacers.AssetRequest.Types (AirdropAddressDatum(..), AssetRequestRedeemer(..))
+import CardanoRacers.AssetRequest.Types
+  ( AirdropAddressDatum(..)
+  , AssetRequestRedeemer(..)
+  )
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.GameAsset.Types (GameAssetType(..), Rarity)
 import CardanoRacers.Helpers (paysToAddrConstraint)
@@ -12,15 +15,31 @@ import Contract.Address (getWalletAddresses)
 import Contract.AssocMap as AssocMap
 import Contract.Log (logInfo')
 import Contract.Monad (Contract, liftContractM, liftedM)
-import Contract.PlutusData (Datum(..), OutputDatum(..), Redeemer(..), toData, unitDatum, unitRedeemer)
+import Contract.PlutusData
+  ( Datum(..)
+  , OutputDatum(..)
+  , Redeemer(..)
+  , toData
+  , unitDatum
+  , unitRedeemer
+  )
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (MintingPolicy(..), applyArgs)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
-import Contract.Transaction (TransactionHash, awaitTxConfirmed, submitTxFromConstraints)
+import Contract.Transaction
+  ( TransactionHash
+  , awaitTxConfirmed
+  , submitTxFromConstraints
+  )
 import Contract.TxConstraints (DatumPresence(..))
 import Contract.TxConstraints as Constraints
-import Contract.Value (lovelaceValueOf, mkTokenName, scriptCurrencySymbol, singleton) as Value
+import Contract.Value
+  ( lovelaceValueOf
+  , mkTokenName
+  , scriptCurrencySymbol
+  , singleton
+  ) as Value
 import Control.Alt ((<|>))
 import Control.Monad.Error.Class (liftMaybe)
 import Data.Array (head, singleton) as Array
@@ -42,23 +61,19 @@ requestAssetByRarity rp rarity = do
 
   -- given that only one asset class per rarity is available at a time, we try
   -- to retrieve it through both  carPrices and driverPrices
-  (totalAdaDue /\ assetType) <-
+  totalAdaDue <-
     liftMaybe
       ( error $ show rarity <>
           " is unavailable for purchase. Could not find rarity in state"
       )
-      $ (AssocMap.lookup rarity (unwrap rs).carPrices <#> (_ /\ CarType))
-      <|>
-        (AssocMap.lookup rarity (unwrap rs).driverPrices <#> (_ /\ DriverType))
+      $ AssocMap.lookup rarity (unwrap rs).assetPrices
+  --  AssocMap.lookup rarity (unwrap rs).assetPrices <#> (_ /\ CarType)
+  -- <|>
+  --  (AssocMap.lookup rarity (unwrap rs).driverPrices <#> (_ /\ DriverType))
 
+  -- todo:  pull out into helper for resue
   let
-    tokenNameStr =
-      ( show rarity <> ":" <>
-          ( case assetType of
-              CarType -> "Car"
-              DriverType -> "Driver"
-          )
-      )
+    tokenNameStr = show rarity
   requestTokenName <- liftContractM "Could not make required token names" $
     (Value.mkTokenName <=< byteArrayFromAscii) tokenNameStr
 
