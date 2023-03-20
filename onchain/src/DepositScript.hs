@@ -2,9 +2,9 @@
 
 module DepositScript (script) where
 
-import CommonTypes (AirdropAddressDatum (airdropAddress), GameAsset, RacersParams, Rarity, adminToken, botToken)
+import CommonTypes (AirdropAddressDatum (airdropAddress), RacersParams, Rarity, adminToken, botToken)
 import Ledger (Address)
-import Ledger.Value (AssetClass, assetClass, assetClassValue, flattenValue, geq, leq)
+import Ledger.Value (assetClass, assetClassValue, flattenValue, geq, leq)
 import Plutus.V2.Ledger.Api (
   CurrencySymbol,
   Script,
@@ -18,7 +18,7 @@ import Plutus.V2.Ledger.Api (
 import Plutus.V2.Ledger.Contexts (valueSpent)
 import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
 import PlutusTx.Prelude
-import Utils (gameAssetTokenName, getInlineDatum, parseToken, valueToAddr, withTraceM)
+import Utils (getInlineDatum, parseToken, valueToAddr, withTraceM)
 
 data DepositValidatorParams = DepositValidatorParams
   { assetPolicySymbol :: CurrencySymbol
@@ -36,13 +36,16 @@ mkDepositValidator rp dps ctx =
     && traceIfFalse "all input request tokens aro not burnt" burnsInputRequestTokens
   where
     info :: TxInfo
-    info = scriptContextTxInfo ctx
+    !info = scriptContextTxInfo ctx
+
+    spentValue :: Value
+    !spentValue = valueSpent info
 
     -- Filter out inputs that have airdrop address inline datum and get their
     -- locked request tokens parsed
     -- This is to ensure that all inputs that have an airdrop address receive
     -- their corresponding minted AssetNfts
-    inputsWithAirdropAddr :: [(Address, [(GameAsset, Rarity, Integer)])]
+    inputsWithAirdropAddr :: [(Address, [(Rarity, Integer)])]
     inputsWithAirdropAddr =
       mapMaybe
         ( ( \txo ->
@@ -55,15 +58,21 @@ mkDepositValidator rp dps ctx =
 
     -- Checks that all request tokens are burnt
     burnsInputRequestTokens :: Bool
-    burnsInputRequestTokens = txInfoMint info `leq` negate combinedRequestValue
+    burnsInputRequestTokens = assetRequestValueMint `leq` negate combinedRequestValue
       where
+        assetRequestValueMint :: Value
+        assetRequestValueMint = 
+          foldMap (\(cs, tk, i) -> assetClassValue (assetClass cs tk) i) 
+          $ filter (\(cs, _, _) -> cs == assetRequestPolicySymbol dps) 
+          $ flattenValue 
+          $ txInfoMint info
         combinedRequestValue :: Value
         combinedRequestValue =
           foldMap (\(cs, tk, i) -> assetClassValue (assetClass cs tk) i)
             . filter (\(cs, _, _) -> cs == assetRequestPolicySymbol dps)
             . flattenValue
-            . valueSpent
-            $ info
+            $ spentValue
+
 
     -- Checks that request tokens are fulfilled with AssetNfts
     mintsAndPaysAssetNfts :: Bool
@@ -73,34 +82,31 @@ mkDepositValidator rp dps ctx =
           inputsWithAirdropAddr
           ( \(addr, assetsDue) -> do
               vToAddr <- valueToAddr info addr
-              let expectedVToAddr = foldl (<>) mempty $ map (\(ga, r, i) -> assetClassValue (gameAssetClass ga r) i) assetsDue
-              pure $ vToAddr `geq` expectedVToAddr
+              let
+                actualAssetsPaid = sum $ map (\(_, _, i) -> i) $ filter (\(cs, _, _) -> cs == assetPolicySymbol dps) $ flattenValue vToAddr
+                expectedAssetsPaid = sum $ map snd assetsDue
+              -- expectedAssetsPaid = foldl (<>) mempty $ map (\(_, _, i) -> assetClassValue (gameAssetClass ga r) i) assetsDue
+              pure $ actualAssetsPaid >= expectedAssetsPaid
           )
 
-    -- Assuming Token name are of the format: <Rarity><GameAsset> e.g. -- CommonDriver
-    -- we create the AssetClass using parameter assetPolicySymobl and
-    -- corresponding tokennames
-    gameAssetClass :: GameAsset -> Rarity -> AssetClass
-    gameAssetClass ga r = assetClass (assetPolicySymbol dps) (gameAssetTokenName ga r)
-
-    getRequestEntriesGrouped :: Value -> Maybe [(GameAsset, Rarity, Integer)]
+    getRequestEntriesGrouped :: Value -> Maybe [(Rarity, Integer)]
     getRequestEntriesGrouped =
       fmap groupByAssetRarity
-        . traverse (\(_, tk, i) -> withTraceM "could not parse token name" $ parseToken tk i)
+        . traverse (\(_, tk, i) -> withTraceM "could not parse token name" $ (,i) <$> parseToken tk)
         . filter (\(cs, _, _) -> cs == assetRequestPolicySymbol dps)
         . flattenValue
 
-    groupByAssetRarity :: [(GameAsset, Rarity, Integer)] -> [(GameAsset, Rarity, Integer)]
+    groupByAssetRarity :: [(Rarity, Integer)] -> [(Rarity, Integer)]
     groupByAssetRarity [] = []
-    groupByAssetRarity ((ga, r, i) : xs) = (ga, r, i + sum (map (\(_, _, i') -> i') sames)) : groupByAssetRarity rest
+    groupByAssetRarity ((r, i) : xs) = (r, i + sum (map snd sames)) : groupByAssetRarity rest
       where
-        (sames, rest) = partition (\(ga', r', _) -> ga == ga' && r == r') xs
+        (sames, rest) = partition ((== r) . fst) xs
 
     inputContainsAdminNft :: Bool
-    inputContainsAdminNft = valueSpent info `geq` assetClassValue (adminToken rp) 1
+    inputContainsAdminNft = spentValue `geq` assetClassValue (adminToken rp) 1
 
     inputContainsBotNft :: Bool
-    inputContainsBotNft = valueSpent info `geq` assetClassValue (botToken rp) 1
+    inputContainsBotNft = spentValue `geq` assetClassValue (botToken rp) 1
 
 {-# INLINEABLE mkValidator #-}
 mkValidator :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()

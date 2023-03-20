@@ -53,8 +53,7 @@ data RacersState = RacersState
   { nitroPrice :: Integer -- Nitro price in Lovelace
   , treasuryAddress :: Address
   , operatingAddress :: Address
-  , driverPrices :: Map Rarity Integer
-  , carPrices :: Map Rarity Integer
+  , assetPrices :: Map Rarity Integer
   , depositScript :: ValidatorHash
   }
   deriving (Show, Generic)

@@ -5,7 +5,7 @@ module Utils where
 
 import PlutusTx.Prelude
 
-import CommonTypes (GameAsset (Car, Driver), RacersState (operatingAddress, treasuryAddress), Rarity (Common, Epic, Rare), gameAssetToBuiltinByteString, rarityToBuiltinByteString)
+import CommonTypes (GameAsset, RacersState (operatingAddress, treasuryAddress), Rarity (Common, Epic, Rare), gameAssetToBuiltinByteString, rarityToBuiltinByteString)
 import Control.Applicative ((<|>))
 import Ledger (AssetClass, toPubKeyHash, toValidatorHash)
 import Ledger.Ada (lovelaceValueOf)
@@ -101,30 +101,13 @@ splitOn sep orig
       | otherwise = span (ptr + 1)
 
 {-# INLINEABLE parseToken #-}
-parseToken :: TokenName -> Integer -> Maybe (GameAsset, Rarity, Integer)
-parseToken tn count = do
-  let tnStr = decodeUtf8 $ unTokenName tn
-      splitted = splitOn ":" $ unTokenName tn
-  r <-
-    withTraceM "could not decode rarity" $
-      splitted
-        `safeIndex` 0
-        >>= ( \x -> case x of
-                _ | equalsByteString x "Common" -> Just Common
-                _ | equalsByteString x "Rare" -> Just Rare
-                _ | equalsByteString x "Epic" -> Just Epic
-                _ | otherwise -> Nothing
-            )
-  a <-
-    withTraceM ("could not decode asset type" <> tnStr) $
-      splitted
-        `safeIndex` 1
-        >>= ( \case
-                s | equalsByteString s "Driver" -> Just Driver
-                s | equalsByteString s "Car" -> Just Car
-                _ | otherwise -> Nothing
-            )
-  pure (a, r, count)
+parseToken :: TokenName -> Maybe Rarity
+parseToken tn = do
+  case unTokenName tn of
+      x | equalsByteString x "Common" -> Just Common
+      x | equalsByteString x "Rare" -> Just Rare
+      x | equalsByteString x "Epic" -> Just Epic
+      _ -> Nothing
 
 {-# INLINEABLE gameAssetTokenName #-}
 gameAssetTokenName :: GameAsset -> Rarity -> TokenName
