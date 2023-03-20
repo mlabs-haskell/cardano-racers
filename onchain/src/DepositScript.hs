@@ -41,10 +41,14 @@ mkDepositValidator rp dps ctx =
     spentValue :: Value
     !spentValue = valueSpent info
 
+    inputContainsAdminNft :: Bool
+    inputContainsAdminNft = spentValue `geq` assetClassValue (adminToken rp) 1
+
+    inputContainsBotNft :: Bool
+    inputContainsBotNft = spentValue `geq` assetClassValue (botToken rp) 1
+
     -- Filter out inputs that have airdrop address inline datum and get their
     -- locked request tokens parsed
-    -- This is to ensure that all inputs that have an airdrop address receive
-    -- their corresponding minted AssetNfts
     inputsWithAirdropAddr :: [(Address, [(Rarity, Integer)])]
     inputsWithAirdropAddr =
       mapMaybe
@@ -60,12 +64,14 @@ mkDepositValidator rp dps ctx =
     burnsInputRequestTokens :: Bool
     burnsInputRequestTokens = assetRequestValueMint `leq` negate combinedRequestValue
       where
+        -- Request tokens minted (burned)
         assetRequestValueMint :: Value
-        assetRequestValueMint = 
-          foldMap (\(cs, tk, i) -> assetClassValue (assetClass cs tk) i) 
-          $ filter (\(cs, _, _) -> cs == assetRequestPolicySymbol dps) 
-          $ flattenValue 
-          $ txInfoMint info
+        assetRequestValueMint =
+          foldMap (\(cs, tk, i) -> assetClassValue (assetClass cs tk) i) $
+            filter (\(cs, _, _) -> cs == assetRequestPolicySymbol dps) $
+              flattenValue $
+                txInfoMint info
+        -- Request tokens in inputs
         combinedRequestValue :: Value
         combinedRequestValue =
           foldMap (\(cs, tk, i) -> assetClassValue (assetClass cs tk) i)
@@ -73,8 +79,7 @@ mkDepositValidator rp dps ctx =
             . flattenValue
             $ spentValue
 
-
-    -- Checks that request tokens are fulfilled with AssetNfts
+    -- Checks that request tokens are fulfilled with Game Assets
     mintsAndPaysAssetNfts :: Bool
     mintsAndPaysAssetNfts =
       maybe False and $
@@ -96,17 +101,13 @@ mkDepositValidator rp dps ctx =
         . filter (\(cs, _, _) -> cs == assetRequestPolicySymbol dps)
         . flattenValue
 
+    -- helper to group like rarity class requests into single entry with
+    -- corresponding counts
     groupByAssetRarity :: [(Rarity, Integer)] -> [(Rarity, Integer)]
     groupByAssetRarity [] = []
     groupByAssetRarity ((r, i) : xs) = (r, i + sum (map snd sames)) : groupByAssetRarity rest
       where
         (sames, rest) = partition ((== r) . fst) xs
-
-    inputContainsAdminNft :: Bool
-    inputContainsAdminNft = spentValue `geq` assetClassValue (adminToken rp) 1
-
-    inputContainsBotNft :: Bool
-    inputContainsBotNft = spentValue `geq` assetClassValue (botToken rp) 1
 
 {-# INLINEABLE mkValidator #-}
 mkValidator :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()

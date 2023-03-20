@@ -5,11 +5,11 @@ module Utils where
 
 import PlutusTx.Prelude
 
-import CommonTypes (GameAsset, RacersState (operatingAddress, treasuryAddress), Rarity (Common, Epic, Rare), gameAssetToBuiltinByteString, rarityToBuiltinByteString)
+import CommonTypes (RacersState (operatingAddress, treasuryAddress), Rarity (Common, Epic, Rare))
 import Control.Applicative ((<|>))
 import Ledger (AssetClass, toPubKeyHash, toValidatorHash)
 import Ledger.Ada (lovelaceValueOf)
-import Ledger.Value (TokenName (TokenName), Value, assetClassValue, geq)
+import Ledger.Value (Value, assetClassValue, geq)
 import Plutus.V2.Ledger.Api (
   Address,
   Datum (getDatum),
@@ -44,6 +44,9 @@ getInlineDatum txo = case txOutDatum txo of
   OutputDatum d -> withTraceM "unexpected inline datum type" $ PlutusTx.fromBuiltinData $ getDatum d
   _ -> Nothing
 
+-- common helper that checks correct disitrbution of lovelace
+-- 3/4 to treasury
+-- 1/4 to operating
 {-# INLINEABLE distributesToAddrs #-}
 distributesToAddrs :: TxInfo -> RacersState -> Integer -> Bool
 distributesToAddrs info state totalLovelace = fromMaybe False $ do
@@ -74,41 +77,11 @@ withTraceM :: BuiltinString -> Maybe a -> Maybe a
 withTraceM msg Nothing = trace msg Nothing
 withTraceM _ x = x
 
-{-# INLINEABLE safeIndex #-}
-safeIndex :: [a] -> Integer -> Maybe a
-safeIndex xs i
-  | i < 0 = Nothing
-  | otherwise = go xs i
-  where
-    go [] _ = Nothing
-    go (x' : xs') i' = if i' == 0 then Just x' else go xs' (i' - 1)
-
-{-# INLINEABLE splitOn #-}
-splitOn :: BuiltinByteString -> BuiltinByteString -> [BuiltinByteString]
-splitOn sep orig
-  | equalsByteString orig "" = []
-  | equalsByteString sep "" = [orig]
-  | otherwise = h : splitOn sep t
-  where
-    (h, t) = span 0
-    startsWith x xs = equalsByteString x $ sliceByteString 0 (lengthOfByteString x) xs
-    span ptr
-      | ptr > lengthOfByteString orig - lengthOfByteString sep = (orig, emptyByteString)
-      | startsWith sep (sliceByteString ptr (lengthOfByteString orig) orig) =
-          ( sliceByteString 0 ptr orig
-          , sliceByteString (ptr + lengthOfByteString sep) (lengthOfByteString orig - ptr + lengthOfByteString sep) orig
-          )
-      | otherwise = span (ptr + 1)
-
 {-# INLINEABLE parseToken #-}
 parseToken :: TokenName -> Maybe Rarity
 parseToken tn = do
   case unTokenName tn of
-      x | equalsByteString x "Common" -> Just Common
-      x | equalsByteString x "Rare" -> Just Rare
-      x | equalsByteString x "Epic" -> Just Epic
-      _ -> Nothing
-
-{-# INLINEABLE gameAssetTokenName #-}
-gameAssetTokenName :: GameAsset -> Rarity -> TokenName
-gameAssetTokenName asset rarity = TokenName $ gameAssetToBuiltinByteString asset <> rarityToBuiltinByteString rarity
+    x | equalsByteString x "Common" -> Just Common
+    x | equalsByteString x "Rare" -> Just Rare
+    x | equalsByteString x "Epic" -> Just Epic
+    _ -> Nothing
