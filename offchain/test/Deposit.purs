@@ -1,4 +1,4 @@
-module Test.CardanoRacers.AssetRequest (suite) where
+module Test.CardanoRacers.Deposit (suite) where
 
 import Contract.Prelude
 
@@ -9,6 +9,7 @@ import CardanoRacers.AssetRequest.Contract
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Deposit.Contract
   ( consumeAndRedeemRequests
+  , createDepositReferenceScriptOutput
   , mkDepositValidator
   , queryRequestsWithAirdropAddress
   )
@@ -17,7 +18,7 @@ import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
 import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
 import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
 import CardanoRacers.RacersState.Types (RacersState(RacersState))
-import Contract.Address (getWalletAddresses)
+import Contract.Address (getWalletAddresses, scriptHashAddress)
 import Contract.AssocMap (Map)
 import Contract.AssocMap (empty, insert) as AssocMap
 import Contract.Log (logInfo')
@@ -30,13 +31,13 @@ import Contract.Test.Plutip
   , withKeyWallet
   , withWallets
   )
-import Contract.Utxos (getWalletUtxos)
+import Contract.Utxos (getWalletUtxos, utxosAt)
 import Contract.Value (scriptCurrencySymbol)
 import Contract.Wallet (KeyWallet)
 import Data.Array (head) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
-import Data.Map (toUnfoldable) as Map
+import Data.Map (empty, toUnfoldable) as Map
 import Mote (group, test)
 
 suite :: TestPlanM PlutipTest Unit
@@ -54,11 +55,14 @@ suite = group "AssetRequest" do
         st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey) rp
           assetPrices
         _ <- withKeyWallet userKey $ requestAssetByRarity rp Common
-        withKeyWallet adminKey $ do
+        let scriptAddr = scriptHashAddress (unwrap st).depositScript Nothing
+        depRefOref <- withKeyWallet adminKey $
+          createDepositReferenceScriptOutput rp
+        -- logInfo' $ show depRefOref
+        -- utxosAt scriptAddr >>= logInfo' <<< show
+        _ <- withKeyWallet adminKey $ do
           reqs <- queryRequestsWithAirdropAddress rp st
-          _ <- consumeAndRedeemRequests rp st Nothing
-          -- utxos <- utxosAt $ scriptHashAddress (unwrap st).depositScript Nothing
-          logInfo' $ "Utxos at deposit script: " <> show reqs
+          consumeAndRedeemRequests rp st $ Just depRefOref
         pure unit
 
   where
@@ -119,4 +123,3 @@ suite = group "AssetRequest" do
           }
       _ <- RacersState.initRacersStateContract rp rs
       pure rs
-

@@ -1,15 +1,14 @@
-module CardanoRacers.GameAsset.Types 
+module CardanoRacers.GameAsset.Types
   ( Rarity(Common, Rare, Epic)
   , DriverAttributes(DriverAttributes)
   , CarAttributes(CarAttributes)
   , GameAssetType(DriverType, CarType)
   , GameAssetAttributes(DriverAttrs, CarAttrs)
   , GameAsset
-  , mkGameAsset
   , GameAssetNftMetadataEntry(GameAssetNftMetadataEntry)
   , GameAssetNftMetadata(GameAssetNftMetadata)
-  )
-  where
+  , mkGameAsset
+  ) where
 
 import Contract.Prelude
 
@@ -337,36 +336,41 @@ newtype GameAsset = GameAsset
   , name :: String
   , description :: String
   }
-mkGameAsset :: { assetType :: GameAssetType
-  , attributes :: GameAssetAttributes
-  , imageUrl :: String
-  , mediaType :: Maybe String
-  , name :: String
-  , description :: String
-  } -> Maybe GameAsset
+
+mkGameAsset
+  :: { assetType :: GameAssetType
+     , attributes :: GameAssetAttributes
+     , imageUrl :: String
+     , mediaType :: Maybe String
+     , name :: String
+     , description :: String
+     }
+  -> Maybe GameAsset
 mkGameAsset { assetType, attributes, imageUrl, mediaType, name, description }
-  | assetType == DriverType && isJust (driverAttrsFromAttributes attributes) = Just $ GameAsset
-    { assetType
-    , attributes
-    , imageUrl
-    , mediaType
-    , name
-    , description
-    }
-  | assetType == CarType && isJust (carAttrsFromAttributes attributes) = Just $ GameAsset
-    { assetType
-    , attributes
-    , imageUrl
-    , mediaType
-    , name
-    , description
-    }
+  | assetType == DriverType && isJust (driverAttrsFromAttributes attributes) =
+      Just $ GameAsset
+        { assetType
+        , attributes
+        , imageUrl
+        , mediaType
+        , name
+        , description
+        }
+  | assetType == CarType && isJust (carAttrsFromAttributes attributes) = Just $
+      GameAsset
+        { assetType
+        , attributes
+        , imageUrl
+        , mediaType
+        , name
+        , description
+        }
   | otherwise = Nothing
 
 derive instance Eq GameAsset
 
 instance Show GameAsset where
-  show (GameAsset ga)= "(GameAsset " <> show ga <> ")"
+  show (GameAsset ga) = "(GameAsset " <> show ga <> ")"
 
 instance EncodeAeson GameAsset where
   encodeAeson (GameAsset ga) = wrapEncodeAeson "GameAsset" ga

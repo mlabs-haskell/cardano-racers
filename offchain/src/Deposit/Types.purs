@@ -1,11 +1,11 @@
-module CardanoRacers.Deposit.Types where
+module CardanoRacers.Deposit.Types
+  ( DepositValidatorParams(DepositValidatorParams)
+  ) where
 
 import Contract.Prelude
 
 import Aeson (class DecodeAeson, class EncodeAeson, (.:))
-import CardanoRacers.GameAsset.Types (GameAssetType, Rarity)
 import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
-import Contract.Address (Address)
 import Contract.PlutusData
   ( class FromData
   , class HasPlutusSchema

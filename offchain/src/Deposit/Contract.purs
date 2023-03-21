@@ -1,5 +1,6 @@
 module CardanoRacers.Deposit.Contract
   ( queryRequestsWithAirdropAddress
+  , createDepositReferenceScriptOutput
   , consumeAndRedeemRequests
   , mkDepositValidator
   ) where
@@ -17,41 +18,73 @@ import CardanoRacers.GameAsset.Contract
   , mkGameAssetPolicy
   )
 import CardanoRacers.GameAsset.Types
-  ( GameAssetNftMetadata(..)
-  , GameAssetType(..)
-  , Rarity(..)
+  ( GameAssetNftMetadata
+  , GameAssetType(CarType, DriverType)
+  , Rarity(Common, Rare, Epic)
   )
-import CardanoRacers.RacersState.Types (RacersState)
-import CardanoRacers.ScriptsFFI (depositScript, gameAssetPolicy)
+import CardanoRacers.RacersState.Types (RacersState(..))
+import CardanoRacers.ScriptsFFI (depositScript)
 import Contract.Address (Address, scriptHashAddress)
 import Contract.AuxiliaryData (setTxMetadata)
+import Contract.CborBytes (cborBytesToByteArray)
 import Contract.Log (logInfo')
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
-import Contract.PlutusData (OutputDatum(..), fromData, toData, unitRedeemer)
-import Contract.Prim.ByteArray (byteArrayFromAscii, byteArrayToIntArray)
+import Contract.PlutusData
+  ( OutputDatum(..)
+  , PlutusData
+  , fromData
+  , toData
+  , unitDatum
+  , unitRedeemer
+  )
+import Contract.Prim.ByteArray
+  ( byteArrayFromAscii
+  , byteArrayToIntArray
+  , byteLength
+  )
 import Contract.ScriptLookups (mkUnbalancedTx)
 import Contract.ScriptLookups as Lookup
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (Validator(..), applyArgs)
+import Contract.Scripts
+  ( Validator(..)
+  , ValidatorHash(..)
+  , applyArgs
+  , validatorHash
+  )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
-  ( TransactionHash
-  , TransactionInput
+  ( ScriptRef(..)
+  , TransactionHash
+  , TransactionInput(..)
   , TransactionOutputWithRefScript
   , awaitTxConfirmed
   , balanceTx
+  , mkTxUnspentOut
   , signTransaction
   , submit
   , submitTxFromConstraints
   )
+import Contract.TxConstraints (DatumPresence(..), InputWithScriptRef(..))
 import Contract.TxConstraints as Constraints
-import Contract.Utxos (getWalletUtxos, utxosAt)
-import Contract.Value (TokenName, Value, flattenValue, geq, getTokenName)
-import Contract.Value (mkTokenName, negation, scriptCurrencySymbol, singleton) as Value
+import Contract.Utxos (getUtxo, getWalletUtxos, utxosAt)
+import Contract.Value (TokenName, Value)
+import Contract.Value
+  ( flattenValue
+  , geq
+  , getTokenName
+  , lovelaceValueOf
+  , mkTokenName
+  , negation
+  , scriptCurrencySymbol
+  , singleton
+  ) as Value
 import Control.Apply (lift2)
 import Control.Monad.Error.Class (liftMaybe)
-import Data.Array (catMaybes, concat, concatMap)
-import Data.Array (elem, filter, find, index) as Array
+import Ctl.Internal.Contract.QueryHandle (getQueryHandle)
+import Ctl.Internal.Plutus.Conversion (toPlutusTxOutputWithRefScript)
+import Ctl.Internal.Serialization (convertTransaction, toBytes)
+import Data.Array (catMaybes, concatMap)
+import Data.Array (elem, filter, find) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt, toInt) as BigInt
 import Data.Char (fromCharCode)
@@ -60,7 +93,6 @@ import Data.List.Lazy as List
 import Data.Map (Map)
 import Data.Map (fromFoldable, singleton, toUnfoldable) as Map
 import Data.Profunctor.Choice (left)
-import Data.String (Pattern(..), split)
 import Data.String.CodeUnits (fromCharArray)
 import Effect.Exception (error)
 
@@ -86,7 +118,7 @@ queryRequestsWithAirdropAddress rp st = do
   let
     requestUtxos =
       Array.filter
-        ( Array.elem assetRequestSymmol <<< map fst <<< flattenValue
+        ( Array.elem assetRequestSymmol <<< map fst <<< Value.flattenValue
             <<< _.amount
             <<< unwrap
             <<< _.output
@@ -105,7 +137,7 @@ queryRequestsWithAirdropAddress rp st = do
                     r <- parseRequestToken tk
                     in r /\ a
                 )
-            $ flattenValue (unwrap requestOutput).amount
+            $ Value.flattenValue (unwrap requestOutput).amount
         airdropAddress <- case (unwrap requestOutput).datum of
           OutputDatum d -> (_.airdropAddress <<< unwrap) <$>
             (fromData (unwrap d) :: Maybe AirdropAddressDatum)
@@ -119,7 +151,7 @@ queryRequestsWithAirdropAddress rp st = do
   parseRequestToken :: TokenName -> Maybe Rarity
   parseRequestToken tk = do
     let
-      tkBytes = getTokenName tk
+      tkBytes = Value.getTokenName tk
       ia = byteArrayToIntArray tkBytes
     tkStr <- fromCharArray <$> traverse fromCharCode ia
     case tkStr of
@@ -128,10 +160,8 @@ queryRequestsWithAirdropAddress rp st = do
       "Common" -> pure Common
       _ -> Nothing
 
-consumeAndRedeemRequests
-  :: RacersParams -> RacersState -> Contract TransactionHash
-consumeAndRedeemRequests rp st = do
-
+createDepositReferenceScriptOutput :: RacersParams -> Contract TransactionInput
+createDepositReferenceScriptOutput rp = do
   assetRequestMP <- mkAssetRequestPolicy rp
   assetRequestSymbol <-
     liftContractM "could not get currency symbol of asset request policy"
@@ -147,14 +177,46 @@ consumeAndRedeemRequests rp st = do
         , assetRequestPolicySymbol: assetRequestSymbol
         }
 
-  x <- liftEffect $ generateAsset
-    { name: "Billy"
-    , assetType: DriverType
-    , imageUrl:
-        "https://cdn.pixabay.com/photo/2017/01/31/19/17/comic-2026591_1280.png"
-    , description: "Cool driver with lots of experience"
+  let
+    vhash :: ValidatorHash
+    vhash = validatorHash depositValidator
+
+    scriptRef :: ScriptRef
+    scriptRef = PlutusScriptRef (unwrap depositValidator)
+
+    constraints :: Constraints.TxConstraints Unit Unit
+    constraints =
+      Constraints.mustPayToScriptWithScriptRef vhash unitDatum DatumWitness
+        scriptRef
+        (Value.lovelaceValueOf $ BigInt.fromInt 2_000_000)
+
+    lookups :: Lookups.ScriptLookups PlutusData
+    lookups = mempty
+
+  txHash <- submitTxFromConstraints lookups constraints
+  awaitTxConfirmed txHash
+  pure $ wrap
+    { transactionId: txHash
+    , index: zero
     }
-    Common
+
+-- todo: _ <- parametrize by array of queried request tokens, so its the tx is easily
+-- split based on chunks of txs returned by query contract
+consumeAndRedeemRequests
+  :: RacersParams
+  -> RacersState
+  -> Maybe TransactionInput
+  -> Contract TransactionHash
+consumeAndRedeemRequests rp st mDepScriptRef = do
+
+  assetRequestMP <- mkAssetRequestPolicy rp
+  assetRequestSymbol <-
+    liftContractM "could not get currency symbol of asset request policy"
+      $ Value.scriptCurrencySymbol assetRequestMP
+
+  gameAssetMP <- mkGameAssetPolicy rp
+  gameAssetSymbol <- liftContractM "Could not get currency symbol" $
+    Value.scriptCurrencySymbol gameAssetMP
 
   pendingRequests <- queryRequestsWithAirdropAddress rp st
   utxosAtDeposit <- utxosAt $ scriptHashAddress (unwrap st).depositScript
@@ -170,7 +232,7 @@ consumeAndRedeemRequests rp st = do
       :: Effect (Constraints.TxConstraints Void Void /\ GameAssetNftMetadata)
     payAssetConstraintsAndMetadata = do
       cs <- for (Map.toUnfoldable pendingRequests)
-        \(txIn /\ { airdropAddress, requestedAssets }) -> do
+        \(_ /\ { airdropAddress, requestedAssets }) -> do
           cs' <- map join $ for requestedAssets $ \(rarity /\ count) -> do
             countInt <- liftMaybe (error "could not convert BigInt to Int") $
               BigInt.toInt count
@@ -199,11 +261,40 @@ consumeAndRedeemRequests rp st = do
     burnsRequestTokensM
   logInfo' $ show burnsRequestTokens
 
+  spendsRequestTokenHandle <- maybe
+    (pure $ \txIn -> Constraints.mustSpendScriptOutput txIn unitRedeemer)
+    ( \scriptRefIn -> do
+        queryHandle <- getQueryHandle
+        txo <- liftedM "could not get script ref from txin" $ liftedE $ liftAff
+          $ queryHandle.getUtxoByOref scriptRefIn
+        txoWithScriptRef <-
+          liftContractM
+            "could not convert TransactionOutput to TransactionOutputWithScriptRef"
+            $ toPlutusTxOutputWithRefScript txo
+        pure $ \txIn ->
+          Constraints.mustSpendScriptOutputUsingScriptRef
+            txIn
+            unitRedeemer
+            (RefInput $ mkTxUnspentOut scriptRefIn txoWithScriptRef)
+    )
+    mDepScriptRef
+
+  depositScriptLookups <- maybe
+    ( do
+        depositValidator <- mkDepositValidator rp
+          $ wrap
+              { assetPolicySymbol: gameAssetSymbol
+              , assetRequestPolicySymbol: assetRequestSymbol
+              }
+        pure $ Lookup.validator depositValidator
+    )
+    (const $ pure mempty)
+    mDepScriptRef
+
   let
-    spendsRequestTokens :: Constraints.TxConstraints Void Void
     spendsRequestTokens =
       foldMap
-        (\(txIn /\ _) -> Constraints.mustSpendScriptOutput txIn unitRedeemer)
+        (\(txIn /\ _) -> spendsRequestTokenHandle txIn)
         $ (Map.toUnfoldable pendingRequests :: Array _)
 
     constraints :: Constraints.TxConstraints Void Void
@@ -214,16 +305,18 @@ consumeAndRedeemRequests rp st = do
 
     lookups :: Lookups.ScriptLookups Void
     lookups = Lookup.unspentOutputs utxosAtDeposit
-      <> Lookup.validator depositValidator
       <> Lookup.mintingPolicy gameAssetMP
       <> Lookup.mintingPolicy assetRequestMP
       <> Lookup.unspentOutputs (Map.singleton authTxi authTxo)
+      <> depositScriptLookups
 
   unbalancedTx <- liftedE $ mkUnbalancedTx lookups constraints
   unbalancedTxWithMetadata <- setTxMetadata unbalancedTx allMetadata
   balancedTx <- liftedE $ balanceTx unbalancedTxWithMetadata
   balancedSignedTx <- signTransaction balancedTx
-  logInfo' $ show balancedSignedTx
+  tx <- liftEffect $ convertTransaction $ unwrap balancedSignedTx
+  logInfo' $ show $ byteLength $ cborBytesToByteArray $ toBytes tx
+  -- logInfo' $ show balancedSignedTx
   txId <- submit balancedSignedTx
   awaitTxConfirmed txId
   pure txId
@@ -272,7 +365,8 @@ findOwnAuthUtxo rp = do
     botValue = uncurry Value.singleton (unwrap rp).botToken $ BigInt.fromInt 1
     mUtxo =
       Array.find
-        ( \(_ /\ txo) -> lift2 (||) (_ `geq` adminValue) (_ `geq` botValue)
+        ( \(_ /\ txo) -> lift2 (||) (_ `Value.geq` adminValue)
+            (_ `Value.geq` botValue)
             (unwrap (unwrap txo).output).amount
         ) $ Map.toUnfoldable utxos
   pure mUtxo

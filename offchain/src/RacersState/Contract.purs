@@ -18,7 +18,7 @@ import Contract.ScriptLookups as Lookups
 import Contract.Scripts (Validator(Validator), applyArgs, validatorHash)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
-  ( TransactionHash(..)
+  ( TransactionHash
   , TransactionInput
   , TransactionOutputWithRefScript
   , awaitTxConfirmed

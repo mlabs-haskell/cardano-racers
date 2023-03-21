@@ -11,7 +11,6 @@ import Effect.Aff
   , effectCanceler
   , launchAff
   )
-import Mote (only)
 import Test.CardanoRacers.GameAsset.Parameters as GameAssetParameters
 import Test.CardanoRacers.Nitro.Types as NitroTypes
 import Test.Spec.Runner (defaultConfig)

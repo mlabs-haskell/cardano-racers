@@ -1,4 +1,6 @@
-module CardanoRacers.AssetRequest.Types where
+module CardanoRacers.AssetRequest.Types
+  ( AirdropAddressDatum(AirdropAddressDatum)
+  ) where
 
 import Contract.Prelude
 
@@ -14,53 +16,10 @@ import Contract.PlutusData
   , type (@@)
   , I
   , PNil
-  , S
   , Z
   , genericFromData
   , genericToData
   )
-import Control.Alt ((<|>))
-import Foreign.Object (Object)
-
-data AssetRequestRedeemer = UserMintRequestToken | AdminMintRequestTokens
-
-derive instance Generic AssetRequestRedeemer _
-derive instance Eq AssetRequestRedeemer
-
-instance
-  HasPlutusSchema AssetRequestRedeemer
-    ( "UserMintRequestToken" := PNil @@ Z
-        :+ "AdminMintRequestTokens"
-        := PNil
-        @@ (S Z)
-        :+ PNil
-    )
-
-instance ToData AssetRequestRedeemer where
-  toData = genericToData
-
-instance FromData AssetRequestRedeemer where
-  fromData = genericFromData
-
-instance Show AssetRequestRedeemer where
-  show = genericShow
-
-instance EncodeAeson AssetRequestRedeemer where
-  encodeAeson UserMintRequestToken = wrapEncodeAeson "UserMintRequestToken" {}
-  encodeAeson AdminMintRequestTokens = wrapEncodeAeson "AdminMintRequestTokens"
-    {}
-
-instance DecodeAeson AssetRequestRedeemer where
-  decodeAeson aes =
-    decodeWrappedAeson "UserMintRequestToken"
-      (constMono $ pure UserMintRequestToken)
-      aes
-      <|> decodeWrappedAeson "AdminMintRequestTokens"
-        (constMono $ pure AdminMintRequestTokens)
-        aes
-    where
-    constMono :: forall a. a -> Object {} -> a
-    constMono a _ = a
 
 newtype AirdropAddressDatum = AirdropAddressDatum
   { airdropAddress :: Address }

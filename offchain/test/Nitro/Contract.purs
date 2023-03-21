@@ -25,7 +25,7 @@ import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData (Redeemer(Redeemer), toData, unitDatum)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (ValidatorHash(..), validatorHash)
+import Contract.Scripts (ValidatorHash, validatorHash)
 import Contract.Test.Assert
   ( checkGainAtAddress'
   , checkTokenGainAtAddress'

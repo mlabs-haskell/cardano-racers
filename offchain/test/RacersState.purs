@@ -17,13 +17,12 @@ import CardanoRacers.RacersState.Types
   ( RacersState(RacersState)
   , RacersStateRedeemer(SetRacersState)
   )
-import CardanoRacers.ScriptsFFI (assetRequestPolicy, gameAssetPolicy)
 import Contract.Address (getWalletAddresses)
 import Contract.AssocMap as AssocMap
 import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (ValidatorHash(..), mintingPolicyHash, validatorHash)
+import Contract.Scripts (ValidatorHash, validatorHash)
 import Contract.Test.Mote (TestPlanM)
 import Contract.Test.Plutip
   ( InitialUTxOs
@@ -37,7 +36,7 @@ import Contract.Utxos (getWalletUtxos)
 import Contract.Value (CurrencySymbol, TokenName, scriptCurrencySymbol)
 import Contract.Value (geq, singleton) as Value
 import Contract.Wallet (KeyWallet)
-import Control.Monad.Error.Class (liftMaybe, try)
+import Control.Monad.Error.Class (try)
 import Data.Array (head) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
@@ -83,8 +82,6 @@ suite = group "RacersState script:" do
               BigInt.fromInt
                 1000000
           withKeyWallet admin do
-            addr <- liftedM "Could not get address" $ Array.head <$>
-              getWalletAddresses
             let
               newState = wrap $ (unwrap prevState)
                 { nitroPrice = BigInt.fromInt 2000000 }
@@ -103,9 +100,6 @@ suite = group "RacersState script:" do
             1000000
         withKeyWallet eve do
           nitroVal <- RacersState.mkRacersStateValidator rp
-          botAddress <- liftedM "Could not get address"
-            $ Array.head
-            <$> getWalletAddresses
           let
             newState = wrap $ (unwrap prevState)
               { nitroPrice = BigInt.fromInt 2000000 }

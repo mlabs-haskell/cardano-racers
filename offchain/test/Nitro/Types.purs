@@ -89,7 +89,7 @@ nitroStateFixture :: RacersState /\ String
 nitroStateFixture =
   let
     jsonStr =
-      "{\"RacersState\":{\"treasuryAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"operatingAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"nitroPrice\":1000000,\"driverPrices\":[],\"carPrices\":[]}}"
+      "{\"RacersState\":{\"treasuryAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"operatingAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"nitroPrice\":1000000,\"depositScript\":\"1f6f394b032b42d1be3abb7bf6db1355ec6753f30d56d265fb826aa8\",\"assetPrices\":[]}}"
     treasuryAddress =
       Address
         { addressCredential: PubKeyCredential
@@ -130,6 +130,6 @@ nitroStateRedeemerFixture =
   let
     ns = fst nitroStateFixture
     setNsRedStr =
-      "{\"SetRacersState\":{\"RacersState\":{\"treasuryAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"operatingAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"nitroPrice\":1000000,\"driverPrices\":[],\"carPrices\":[]}}}"
+      "{\"SetRacersState\":{\"RacersState\":{\"treasuryAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"operatingAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"nitroPrice\":1000000,\"depositScript\":\"1f6f394b032b42d1be3abb7bf6db1355ec6753f30d56d265fb826aa8\",\"assetPrices\":[]}}}"
   in
     SetRacersState ns /\ setNsRedStr

@@ -10,14 +10,27 @@ import Contract.Prelude
 import Aeson (encodeAeson, stringifyAeson)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.GameAsset.Parameters (generateUniformParameters)
-import CardanoRacers.GameAsset.Types (CarAttributes(CarAttributes), DriverAttributes(DriverAttributes), GameAsset, GameAssetAttributes(..), GameAssetNftMetadataEntry(..), GameAssetType(..), Rarity, mkGameAsset)
+import CardanoRacers.GameAsset.Types
+  ( CarAttributes(CarAttributes)
+  , DriverAttributes(DriverAttributes)
+  , GameAsset
+  , GameAssetAttributes(..)
+  , GameAssetNftMetadataEntry(..)
+  , GameAssetType(..)
+  , Rarity
+  , mkGameAsset
+  )
 import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.ScriptsFFI (gameAssetPolicy)
 import Contract.Address (Address)
 import Contract.Hashing (sha256Hash)
 import Contract.Monad (Contract, liftContractM)
 import Contract.PlutusData (toData)
-import Contract.Prim.ByteArray (byteArrayFromAscii, byteArrayFromIntArray, byteArrayToIntArray)
+import Contract.Prim.ByteArray
+  ( byteArrayFromAscii
+  , byteArrayFromIntArray
+  , byteArrayToIntArray
+  )
 import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), applyArgs)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.TxConstraints as Constraints
@@ -45,15 +58,16 @@ generateAsset ao rarity = do
     CarType -> CarAttrs <$> generateNewCar rarity
     DriverType -> DriverAttrs <$> generateNewDriver rarity
 
-  ga <- liftMaybe (error "invalid game asset params, could not create game asset")
-     $ mkGameAsset
-      { assetType: ao.assetType
-      , attributes: attrs
-      , name: ao.name
-      , imageUrl: ao.imageUrl
-      , mediaType: Nothing
-      , description: ao.description
-      }
+  ga <-
+    liftMaybe (error "invalid game asset params, could not create game asset")
+      $ mkGameAsset
+          { assetType: ao.assetType
+          , attributes: attrs
+          , name: ao.name
+          , imageUrl: ao.imageUrl
+          , mediaType: Nothing
+          , description: ao.description
+          }
 
   hashedGameAssetByteArray <- liftMaybe (error "could not hash game asset")
     $ sha256Hash
