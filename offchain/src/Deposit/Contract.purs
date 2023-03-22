@@ -101,7 +101,6 @@ type PendingAssetRequest =
   , requestedAssets :: Array (Rarity /\ BigInt)
   }
 
--- todo: take racers state as parameter to avoid unnecsary queries
 queryRequestsWithAirdropAddress
   :: RacersParams
   -> RacersState
@@ -160,6 +159,8 @@ queryRequestsWithAirdropAddress rp st = do
       "Common" -> pure Common
       _ -> Nothing
 
+-- todo: this contract does not need to computer scripts by itself as its
+-- essentially a hepler, deposit validator params should be passed in
 createDepositReferenceScriptOutput :: RacersParams -> Contract TransactionInput
 createDepositReferenceScriptOutput rp = do
   assetRequestMP <- mkAssetRequestPolicy rp
@@ -200,7 +201,7 @@ createDepositReferenceScriptOutput rp = do
     , index: zero
     }
 
--- todo: _ <- parametrize by array of queried request tokens, so its the tx is easily
+-- todo: parametrize by array of queried request tokens, so its the tx is easily
 -- split based on chunks of txs returned by query contract
 consumeAndRedeemRequests
   :: RacersParams

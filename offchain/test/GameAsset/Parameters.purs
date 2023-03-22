@@ -28,6 +28,8 @@ suite :: TestPlanM (Aff Unit) Unit
 suite = group "Parameters" do
   test "Params generated have fixed length of 4" do
     liftEffect $ quickCheckGen' 10000 $ ((_ == 4) <<< length) <$> paramsGen
+  test "All params have value greater than 0"
+    $ liftEffect $ quickCheckGen' 10000 $ all (_ > 0) <$> paramsGen
   test "Common params have combined score of >= 4" do
     liftEffect $ quickCheckGen' 10000 $ sum
       >>> lift2 (&&)

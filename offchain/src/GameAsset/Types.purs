@@ -326,8 +326,6 @@ type CommonAssetNftMetadata r =
   | r
   }
 
--- todo: don't export constructor, implement smart constructors to check that
--- assetType and attributes match
 newtype GameAsset = GameAsset
   { assetType :: GameAssetType
   , attributes :: GameAssetAttributes
