@@ -39,7 +39,7 @@ suite = do
   Nft.suite
   Nitro.suite
   RacersState.suite
-  -- only AssetRequest.suite
+  AssetRequest.suite
   only Deposit.suite
   GameAsset.suite
 

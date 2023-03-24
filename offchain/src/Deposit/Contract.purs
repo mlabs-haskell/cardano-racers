@@ -11,23 +11,20 @@ import Contract.Prelude
 import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy)
 import CardanoRacers.AssetRequest.Types
   ( AirdropAddressDatum
-  , AssetRequestRedeemer(..)
+  , AssetRequestRedeemer(BurnRequestToken)
   )
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Deposit.Types (DepositValidatorParams)
 import CardanoRacers.GameAsset.Contract
-  ( generateAsset
-  , mintAvailableAssetByRarity
+  ( mintAvailableAssetByRarity
   , mkGameAssetPolicy
   )
 import CardanoRacers.GameAsset.Types
   ( AssetOption
   , GameAssetNftMetadata
-  , GameAssetNftMetadataEntry(..)
-  , GameAssetType(CarType, DriverType)
-  , Rarity(Common, Rare, Epic)
+  , Rarity(Epic, Rare, Common)
   )
-import CardanoRacers.RacersState.Types (RacersState(..))
+import CardanoRacers.RacersState.Types (RacersState)
 import CardanoRacers.ScriptsFFI (depositScript)
 import Contract.Address (Address, scriptHashAddress)
 import Contract.AuxiliaryData (setTxMetadata)
@@ -35,9 +32,9 @@ import Contract.CborBytes (cborBytesToByteArray)
 import Contract.Log (logInfo')
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
 import Contract.PlutusData
-  ( OutputDatum(..)
+  ( OutputDatum(OutputDatum)
   , PlutusData
-  , Redeemer(..)
+  , Redeemer(Redeemer)
   , fromData
   , toData
   , unitDatum
@@ -52,18 +49,17 @@ import Contract.ScriptLookups (mkUnbalancedTx)
 import Contract.ScriptLookups as Lookup
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts
-  ( Validator(..)
-  , ValidatorHash(..)
+  ( Validator(Validator)
+  , ValidatorHash
   , applyArgs
   , validatorHash
   )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
-  ( Redeemer
-  , ScriptRef(..)
+  ( ScriptRef(PlutusScriptRef)
   , TransactionHash
-  , TransactionInput(..)
-  , TransactionOutputWithRefScript(..)
+  , TransactionInput
+  , TransactionOutputWithRefScript
   , awaitTxConfirmed
   , balanceTx
   , mkTxUnspentOut
@@ -71,9 +67,12 @@ import Contract.Transaction
   , submit
   , submitTxFromConstraints
   )
-import Contract.TxConstraints (DatumPresence(..), InputWithScriptRef(..))
+import Contract.TxConstraints
+  ( DatumPresence(DatumWitness)
+  , InputWithScriptRef(RefInput)
+  )
 import Contract.TxConstraints as Constraints
-import Contract.Utxos (getUtxo, getWalletUtxos, utxosAt)
+import Contract.Utxos (getWalletUtxos, utxosAt)
 import Contract.Value (TokenName, Value)
 import Contract.Value
   ( flattenValue
@@ -90,9 +89,7 @@ import Control.Monad.Error.Class (liftMaybe)
 import Ctl.Internal.Contract.QueryHandle (getQueryHandle)
 import Ctl.Internal.Plutus.Conversion (toPlutusTxOutputWithRefScript)
 import Ctl.Internal.Serialization (convertTransaction, toBytes)
-import Ctl.Internal.TxOutput (txOutRefToTransactionInput)
-import Data.Array (catMaybes, concatMap)
-import Data.Array (elem, filter, find) as Array
+import Data.Array (catMaybes, elem, filter, find) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt, toInt) as BigInt
 import Data.Char (fromCharCode)
@@ -136,10 +133,10 @@ queryRequestsWithAirdropAddress rp st = do
         $ Map.toUnfoldable utxosAtDeposit
 
     (pendingRequests :: Array (TransactionInput /\ PendingAssetRequest)) =
-      catMaybes $ requestUtxos <#> \(requestTxIn /\ requestTxOut) -> do
+      Array.catMaybes $ requestUtxos <#> \(requestTxIn /\ requestTxOut) -> do
         let
           requestOutput = (unwrap requestTxOut).output
-          parsedRequestedAssets = catMaybes
+          parsedRequestedAssets = Array.catMaybes
             $ map
                 ( \(_ /\ tk /\ a) -> ado
                     r <- parseRequestToken tk
@@ -279,6 +276,10 @@ redeemGameAsset
   spendsRequestToken <- maybe
     (pure $ Constraints.mustSpendScriptOutput requestTxi unitRedeemer)
     ( \scriptRefIn -> do
+        -- Need to use internal functions here to get
+        -- a TransactionOutputWithRefScript
+        -- otherwise, getUtxo uses toPlutusTxOutput which drops the script ref
+        -- and attaches a script ref hash
         queryHandle <- getQueryHandle
         txo <- liftedM "could not get script ref from txin" $ liftedE $ liftAff
           $ queryHandle.getUtxoByOref scriptRefIn
@@ -286,6 +287,7 @@ redeemGameAsset
           liftContractM
             "could not convert TransactionOutput to TransactionOutputWithScriptRef"
             $ toPlutusTxOutputWithRefScript txo
+
         pure $
           Constraints.mustSpendScriptOutputUsingScriptRef
             requestTxi

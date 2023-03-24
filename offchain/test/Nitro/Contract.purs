@@ -18,7 +18,7 @@ import CardanoRacers.RacersState.Contract
   ( initRacersStateContract
   , queryRacersState
   ) as RacersState
-import CardanoRacers.RacersState.Types (RacersState(..))
+import CardanoRacers.RacersState.Types (RacersState(RacersState))
 import Contract.Address (Address, getWalletAddresses)
 import Contract.AssocMap as AssocMap
 import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))

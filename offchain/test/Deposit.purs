@@ -16,18 +16,14 @@ import CardanoRacers.Deposit.Contract
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types
   ( AssetOption
-  , GameAssetType(..)
+  , GameAssetType(CarType, DriverType)
   , Rarity(Common, Rare, Epic)
   )
 import CardanoRacers.Helpers (counterNonce)
 import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
 import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
 import CardanoRacers.RacersState.Types (RacersState(RacersState))
-import Contract.Address
-  ( getWalletAddresses
-  , getWalletCollateral
-  , scriptHashAddress
-  )
+import Contract.Address (getWalletAddresses)
 import Contract.AssocMap (Map, empty, insert) as AssocMap
 import Contract.Log (logInfo')
 import Contract.Monad (Contract, liftContractM, liftedM)
@@ -39,7 +35,7 @@ import Contract.Test.Plutip
   , withKeyWallet
   , withWallets
   )
-import Contract.Utxos (getWalletBalance, getWalletUtxos, utxosAt)
+import Contract.Utxos (getWalletBalance, getWalletUtxos)
 import Contract.Value (scriptCurrencySymbol)
 import Contract.Wallet (KeyWallet)
 import Data.Array (concatMap)

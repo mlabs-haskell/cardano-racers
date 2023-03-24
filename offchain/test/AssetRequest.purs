@@ -7,10 +7,7 @@ import CardanoRacers.AssetRequest.Contract
   , requestAssetByRarity
   )
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.Deposit.Contract
-  ( mkDepositValidator
-  , queryRequestsWithAirdropAddress
-  )
+import CardanoRacers.Deposit.Contract (mkDepositValidator)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
 import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
@@ -49,7 +46,7 @@ suite = group "AssetRequest" do
             , (Rare /\ BigInt.fromInt 10_000_000)
             , (Epic /\ BigInt.fromInt 20_000_000)
             ]
-        st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey) rp
+        _ <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey) rp
           assetPrices
         _ <- withKeyWallet userKey $ requestAssetByRarity rp Common
         -- withKeyWallet adminKey $ do

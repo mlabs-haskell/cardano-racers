@@ -6,7 +6,6 @@ module CardanoRacers.GameAsset.Contract
 
 import Contract.Prelude
 
-import Aeson (encodeAeson, stringifyAeson)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.GameAsset.Parameters (generateUniformParameters)
 import CardanoRacers.GameAsset.Types
@@ -14,30 +13,25 @@ import CardanoRacers.GameAsset.Types
   , CarAttributes(CarAttributes)
   , DriverAttributes(DriverAttributes)
   , GameAsset
-  , GameAssetAttributes(..)
-  , GameAssetNftMetadataEntry(..)
-  , GameAssetType(..)
+  , GameAssetAttributes(DriverAttrs, CarAttrs)
+  , GameAssetNftMetadataEntry(GameAssetNftMetadataEntry)
+  , GameAssetType(CarType, DriverType)
   , Rarity
   , mkGameAsset
   )
 import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.ScriptsFFI (gameAssetPolicy)
 import Contract.Address (Address)
-import Contract.Hashing (sha256Hash)
 import Contract.Monad (Contract, liftContractM)
 import Contract.PlutusData (toData)
-import Contract.Prim.ByteArray
-  ( byteArrayFromAscii
-  , byteArrayFromIntArray
-  , byteArrayToIntArray
-  )
+import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), applyArgs)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.TxConstraints as Constraints
 import Contract.Value (CurrencySymbol, TokenName, mkTokenName)
 import Contract.Value as Value
 import Control.Monad.Error.Class (liftMaybe, throwError)
-import Data.Array (drop, singleton) as Array
+import Data.Array (singleton) as Array
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (Map)
 import Data.Map (lookup) as Map

@@ -3,7 +3,10 @@ module CardanoRacers.RacersState.Contract where
 import Contract.Prelude
 
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.RacersState.Types (RacersState, RacersStateRedeemer(..))
+import CardanoRacers.RacersState.Types
+  ( RacersState
+  , RacersStateRedeemer(SetRacersState)
+  )
 import CardanoRacers.ScriptsFFI (racersStateValidatorScript)
 import Contract.Address (scriptHashAddress)
 import Contract.Monad (Contract, liftContractM, liftedM)

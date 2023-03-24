@@ -4,30 +4,27 @@ import Contract.Prelude
 
 import CardanoRacers.AssetRequest.Types
   ( AirdropAddressDatum(AirdropAddressDatum)
-  , AssetRequestRedeemer(..)
+  , AssetRequestRedeemer(MintRequestToken)
   )
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.Deposit.Types (DepositValidatorParams(..))
 import CardanoRacers.GameAsset.Types (Rarity)
 import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.ScriptsFFI (assetRequestPolicy)
 import Contract.Address (getWalletAddresses)
 import Contract.AssocMap as AssocMap
-import Contract.Log (logInfo')
 import Contract.Monad (Contract, liftContractM, liftedM)
-import Contract.PlutusData (Datum(..), Redeemer(..), toData, unitRedeemer)
+import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (MintingPolicy(..), applyArgs, mintingPolicyHash)
+import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), applyArgs)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
-  ( Redeemer
-  , TransactionHash
+  ( TransactionHash
   , awaitTxConfirmed
   , submitTxFromConstraints
   )
-import Contract.TxConstraints (DatumPresence(..))
+import Contract.TxConstraints (DatumPresence(DatumInline))
 import Contract.TxConstraints as Constraints
 import Contract.Value
   ( lovelaceValueOf

@@ -14,10 +14,8 @@ import CardanoRacers.Nitro.Types
   )
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.ScriptsFFI (nitroMintingPolicyScript)
-import Contract.Address (Address)
-import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Monad (Contract, liftContractM, liftedM)
-import Contract.PlutusData (Redeemer(Redeemer), toData, unitDatum)
+import Contract.PlutusData (Redeemer(Redeemer), toData)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), applyArgs)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
@@ -26,16 +24,9 @@ import Contract.Transaction
   , awaitTxConfirmed
   , submitTxFromConstraints
   )
-import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletUtxos)
-import Contract.Value
-  ( CurrencySymbol
-  , TokenName
-  , Value
-  , geq
-  , scriptCurrencySymbol
-  )
+import Contract.Value (CurrencySymbol, TokenName, geq, scriptCurrencySymbol)
 import Contract.Value (lovelaceValueOf, singleton) as Value
 import Data.Array (singleton) as Array
 import Data.BigInt (BigInt)
