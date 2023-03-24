@@ -8,8 +8,7 @@ import CardanoRacers.AssetRequest.Contract
   )
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Deposit.Contract
-  ( consumeAndRedeemRequests
-  , mkDepositValidator
+  ( mkDepositValidator
   , queryRequestsWithAirdropAddress
   )
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
@@ -20,7 +19,6 @@ import CardanoRacers.RacersState.Types (RacersState(RacersState))
 import Contract.Address (getWalletAddresses)
 import Contract.AssocMap (Map)
 import Contract.AssocMap (empty, insert) as AssocMap
-import Contract.Log (logInfo')
 import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.Scripts (ValidatorHash, validatorHash)
 import Contract.Test.Mote (TestPlanM)
@@ -54,11 +52,11 @@ suite = group "AssetRequest" do
         st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey) rp
           assetPrices
         _ <- withKeyWallet userKey $ requestAssetByRarity rp Common
-        withKeyWallet adminKey $ do
-          reqs <- queryRequestsWithAirdropAddress rp st
-          _ <- consumeAndRedeemRequests rp st Nothing
-          -- utxos <- utxosAt $ scriptHashAddress (unwrap st).depositScript Nothing
-          logInfo' $ "Utxos at deposit script: " <> show reqs
+        -- withKeyWallet adminKey $ do
+        --   reqs <- queryRequestsWithAirdropAddress rp st
+        --   _ <- consumeAndRedeemRequests rp st Nothing
+        --   -- utxos <- utxosAt $ scriptHashAddress (unwrap st).depositScript Nothing
+        --   logInfo' $ "Utxos at deposit script: " <> show reqs
         pure unit
 
   where

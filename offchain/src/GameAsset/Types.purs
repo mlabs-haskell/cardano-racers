@@ -7,6 +7,7 @@ module CardanoRacers.GameAsset.Types
   , GameAsset
   , GameAssetNftMetadataEntry(GameAssetNftMetadataEntry)
   , GameAssetNftMetadata(GameAssetNftMetadata)
+  , AssetOption
   , mkGameAsset
   ) where
 
@@ -56,6 +57,13 @@ import Data.BigInt (fromInt) as BigInt
 import Data.Function (on)
 import Data.Map (toUnfoldable) as Map
 import Foreign.Object (Object)
+
+type AssetOption =
+  { name :: String
+  , assetType :: GameAssetType
+  , imageUrl :: String
+  , description :: String
+  }
 
 data Rarity = Common | Rare | Epic
 

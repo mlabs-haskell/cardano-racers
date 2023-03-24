@@ -17,6 +17,8 @@ import Plutus.V2.Ledger.Api (
  )
 import Plutus.V2.Ledger.Contexts (valueSpent)
 import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
+import PlutusTx.AssocMap (Map)
+import PlutusTx.AssocMap qualified as AssocMap (empty, singleton, toList, unionWith)
 import PlutusTx.Prelude
 import Utils (getInlineDatum, parseToken, valueToAddr, withTraceM)
 
@@ -96,18 +98,17 @@ mkDepositValidator rp dps ctx =
 
     getRequestEntriesGrouped :: Value -> Maybe [(Rarity, Integer)]
     getRequestEntriesGrouped =
-      fmap groupByAssetRarity
+      fmap (AssocMap.toList . toAssetRarityMap)
         . traverse (\(_, tk, i) -> withTraceM "could not parse token name" $ (,i) <$> parseToken tk)
         . filter (\(cs, _, _) -> cs == assetRequestPolicySymbol dps)
         . flattenValue
 
     -- helper to group like rarity class requests into single entry with
     -- corresponding counts
-    groupByAssetRarity :: [(Rarity, Integer)] -> [(Rarity, Integer)]
-    groupByAssetRarity [] = []
-    groupByAssetRarity ((r, i) : xs) = (r, i + sum (map snd sames)) : groupByAssetRarity rest
+    toAssetRarityMap :: [(Rarity, Integer)] -> Map Rarity Integer
+    toAssetRarityMap = foldr (\(r, i) acc -> AssocMap.singleton r i `unionWithPlus` acc) AssocMap.empty
       where
-        (sames, rest) = partition ((== r) . fst) xs
+        unionWithPlus = AssocMap.unionWith (+)
 
 {-# INLINEABLE mkValidator #-}
 mkValidator :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()

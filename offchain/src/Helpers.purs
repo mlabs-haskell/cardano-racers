@@ -16,12 +16,19 @@ import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.PlutusData (unitDatum)
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
-import Contract.Utxos (getWalletUtxos)
 import Contract.Value (Value)
+import Effect.Ref (Ref)
+import Effect.Ref (read, write) as Ref
 import Foreign.Object (singleton)
 
 wrapEncodeAeson :: forall (a :: Type). EncodeAeson a => String -> a -> Aeson
 wrapEncodeAeson constr = encodeAeson <<< singleton constr <<< encodeAeson
+
+counterNonce :: Ref Int -> Effect String
+counterNonce ref = do
+  n <- Ref.read ref
+  Ref.write (n + 1) ref
+  pure $ show n
 
 decodeWrappedAeson
   :: forall (a ∷ Type) (r :: Type)

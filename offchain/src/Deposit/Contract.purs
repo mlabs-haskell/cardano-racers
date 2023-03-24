@@ -2,23 +2,28 @@ module CardanoRacers.Deposit.Contract
   ( queryRequestsWithAirdropAddress
   , createDepositReferenceScriptOutput
   , consumeAndRedeemRequests
+  , redeemGameAsset
   , mkDepositValidator
   ) where
 
 import Contract.Prelude
 
 import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy)
-import CardanoRacers.AssetRequest.Types (AirdropAddressDatum)
+import CardanoRacers.AssetRequest.Types
+  ( AirdropAddressDatum
+  , AssetRequestRedeemer(..)
+  )
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Deposit.Types (DepositValidatorParams)
 import CardanoRacers.GameAsset.Contract
-  ( AssetOption
-  , generateAsset
+  ( generateAsset
   , mintAvailableAssetByRarity
   , mkGameAssetPolicy
   )
 import CardanoRacers.GameAsset.Types
-  ( GameAssetNftMetadata
+  ( AssetOption
+  , GameAssetNftMetadata
+  , GameAssetNftMetadataEntry(..)
   , GameAssetType(CarType, DriverType)
   , Rarity(Common, Rare, Epic)
   )
@@ -32,6 +37,7 @@ import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
 import Contract.PlutusData
   ( OutputDatum(..)
   , PlutusData
+  , Redeemer(..)
   , fromData
   , toData
   , unitDatum
@@ -53,10 +59,11 @@ import Contract.Scripts
   )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
-  ( ScriptRef(..)
+  ( Redeemer
+  , ScriptRef(..)
   , TransactionHash
   , TransactionInput(..)
-  , TransactionOutputWithRefScript
+  , TransactionOutputWithRefScript(..)
   , awaitTxConfirmed
   , balanceTx
   , mkTxUnspentOut
@@ -83,6 +90,7 @@ import Control.Monad.Error.Class (liftMaybe)
 import Ctl.Internal.Contract.QueryHandle (getQueryHandle)
 import Ctl.Internal.Plutus.Conversion (toPlutusTxOutputWithRefScript)
 import Ctl.Internal.Serialization (convertTransaction, toBytes)
+import Ctl.Internal.TxOutput (txOutRefToTransactionInput)
 import Data.Array (catMaybes, concatMap)
 import Data.Array (elem, filter, find) as Array
 import Data.BigInt (BigInt)
@@ -98,6 +106,7 @@ import Effect.Exception (error)
 
 type PendingAssetRequest =
   { airdropAddress :: Address
+  , requestTxo :: TransactionOutputWithRefScript
   , requestedAssets :: Array (Rarity /\ BigInt)
   }
 
@@ -143,7 +152,10 @@ queryRequestsWithAirdropAddress rp st = do
           _ -> Nothing
 
         pure $ requestTxIn /\
-          { airdropAddress, requestedAssets: parsedRequestedAssets }
+          { airdropAddress
+          , requestTxo: requestTxOut
+          , requestedAssets: parsedRequestedAssets
+          }
 
   pure $ Map.fromFoldable pendingRequests
   where
@@ -156,7 +168,7 @@ queryRequestsWithAirdropAddress rp st = do
     case tkStr of
       "Common" -> pure Common
       "Rare" -> pure Rare
-      "Common" -> pure Common
+      "Epic" -> pure Epic
       _ -> Nothing
 
 -- todo: this contract does not need to computer scripts by itself as its
@@ -201,15 +213,19 @@ createDepositReferenceScriptOutput rp = do
     , index: zero
     }
 
--- todo: parametrize by array of queried request tokens, so its the tx is easily
--- split based on chunks of txs returned by query contract
-consumeAndRedeemRequests
+redeemGameAsset
   :: RacersParams
-  -> RacersState
+  -> Map Rarity AssetOption
+  -> Effect String
   -> Maybe TransactionInput
+  -> (TransactionInput /\ PendingAssetRequest)
   -> Contract TransactionHash
-consumeAndRedeemRequests rp st mDepScriptRef = do
-
+redeemGameAsset
+  rp
+  availableAssets
+  generateNonce
+  mDepScriptRef
+  (requestTxi /\ { airdropAddress, requestTxo, requestedAssets }) = do
   assetRequestMP <- mkAssetRequestPolicy rp
   assetRequestSymbol <-
     liftContractM "could not get currency symbol of asset request policy"
@@ -219,51 +235,49 @@ consumeAndRedeemRequests rp st mDepScriptRef = do
   gameAssetSymbol <- liftContractM "Could not get currency symbol" $
     Value.scriptCurrencySymbol gameAssetMP
 
-  pendingRequests <- queryRequestsWithAirdropAddress rp st
-  utxosAtDeposit <- utxosAt $ scriptHashAddress (unwrap st).depositScript
-    Nothing
-
   (authTxi /\ authTxo) <- liftedM "could not find admin or bot utxo in wallet" $
     findOwnAuthUtxo rp
 
-  logInfo' $ show pendingRequests
-
   let
+    -- Create and collect constraints to to mint game assets with metadata
     payAssetConstraintsAndMetadata
       :: Effect (Constraints.TxConstraints Void Void /\ GameAssetNftMetadata)
     payAssetConstraintsAndMetadata = do
-      cs <- for (Map.toUnfoldable pendingRequests)
-        \(_ /\ { airdropAddress, requestedAssets }) -> do
-          cs' <- map join $ for requestedAssets $ \(rarity /\ count) -> do
-            countInt <- liftMaybe (error "could not convert BigInt to Int") $
-              BigInt.toInt count
-            List.toUnfoldable <$> replicateM countInt
-              ( mintAvailableAssetByRarity availableAssets airdropAddress
-                  gameAssetSymbol
+      constraintsAndMetadata <- map join $ for requestedAssets $
+        \(rarity /\ count) -> do
+          countInt <- liftMaybe (error "could not convert BigInt to Int") $
+            BigInt.toInt count
+          List.toUnfoldable <$> replicateM countInt
+            ( do
+                nonce <- generateNonce
+                mintAvailableAssetByRarity availableAssets gameAssetSymbol nonce
+                  airdropAddress
                   rarity
-              )
-          pure $ foldMap fst cs' /\ map snd cs'
-      pure $ foldMap fst cs /\ wrap (concatMap snd cs)
+            )
+      pure $ foldMap fst constraintsAndMetadata /\ wrap
+        (map snd constraintsAndMetadata)
 
+    -- Constraints to ensure burning of request tokens
     burnsRequestTokensM :: Maybe (Constraints.TxConstraints Void Void)
-    burnsRequestTokensM = fold <$> for
-      (Map.toUnfoldable pendingRequests :: Array _)
-      \(_ /\ { requestedAssets }) ->
-        fold <$> for requestedAssets \(rarity /\ count) ->
-          let
-            tokenNameStr = show rarity
-            tkNameM = Value.mkTokenName <=< byteArrayFromAscii $ tokenNameStr
-          in
-            tkNameM <#> \tkName -> Constraints.mustMintValue
-              (Value.negation $ Value.singleton assetRequestSymbol tkName count)
+    burnsRequestTokensM =
+      fold <$> for requestedAssets \(rarity /\ count) ->
+        let
+          tokenNameStr = show rarity
+          tkNameM = Value.mkTokenName <=< byteArrayFromAscii $ tokenNameStr
+          red = Redeemer $ toData $ BurnRequestToken
+        in
+          tkNameM <#> \tkName -> Constraints.mustMintValueWithRedeemer red
+            (Value.negation $ Value.singleton assetRequestSymbol tkName count)
 
   mintsAndPays /\ allMetadata <- liftEffect payAssetConstraintsAndMetadata
   burnsRequestTokens <- liftContractM "could not create token name"
     burnsRequestTokensM
-  logInfo' $ show burnsRequestTokens
 
-  spendsRequestTokenHandle <- maybe
-    (pure $ \txIn -> Constraints.mustSpendScriptOutput txIn unitRedeemer)
+  -- Constraints to ensure that the deposit script outputs are spent,
+  -- favors reference script if passed, otherwise defaults to the validator
+  -- script
+  spendsRequestToken <- maybe
+    (pure $ Constraints.mustSpendScriptOutput requestTxi unitRedeemer)
     ( \scriptRefIn -> do
         queryHandle <- getQueryHandle
         txo <- liftedM "could not get script ref from txin" $ liftedE $ liftAff
@@ -272,14 +286,15 @@ consumeAndRedeemRequests rp st mDepScriptRef = do
           liftContractM
             "could not convert TransactionOutput to TransactionOutputWithScriptRef"
             $ toPlutusTxOutputWithRefScript txo
-        pure $ \txIn ->
+        pure $
           Constraints.mustSpendScriptOutputUsingScriptRef
-            txIn
+            requestTxi
             unitRedeemer
             (RefInput $ mkTxUnspentOut scriptRefIn txoWithScriptRef)
     )
     mDepScriptRef
 
+  -- Conditinal lookup for the deposit script in case of absense of reference script
   depositScriptLookups <- maybe
     ( do
         depositValidator <- mkDepositValidator rp
@@ -293,22 +308,17 @@ consumeAndRedeemRequests rp st mDepScriptRef = do
     mDepScriptRef
 
   let
-    spendsRequestTokens =
-      foldMap
-        (\(txIn /\ _) -> spendsRequestTokenHandle txIn)
-        $ (Map.toUnfoldable pendingRequests :: Array _)
-
     constraints :: Constraints.TxConstraints Void Void
-    constraints = spendsRequestTokens
+    constraints = spendsRequestToken
       <> Constraints.mustSpendPubKeyOutput authTxi
       <> mintsAndPays
       <> burnsRequestTokens
 
     lookups :: Lookups.ScriptLookups Void
-    lookups = Lookup.unspentOutputs utxosAtDeposit
+    lookups = Lookup.unspentOutputs (Map.singleton requestTxi requestTxo)
+      <> Lookup.unspentOutputs (Map.singleton authTxi authTxo)
       <> Lookup.mintingPolicy gameAssetMP
       <> Lookup.mintingPolicy assetRequestMP
-      <> Lookup.unspentOutputs (Map.singleton authTxi authTxo)
       <> depositScriptLookups
 
   unbalancedTx <- liftedE $ mkUnbalancedTx lookups constraints
@@ -316,40 +326,27 @@ consumeAndRedeemRequests rp st mDepScriptRef = do
   balancedTx <- liftedE $ balanceTx unbalancedTxWithMetadata
   balancedSignedTx <- signTransaction balancedTx
   tx <- liftEffect $ convertTransaction $ unwrap balancedSignedTx
-  logInfo' $ show $ byteLength $ cborBytesToByteArray $ toBytes tx
+  logInfo' $ "Tx size: " <>
+    (show $ byteLength $ cborBytesToByteArray $ toBytes tx)
   -- logInfo' $ show balancedSignedTx
   txId <- submit balancedSignedTx
   awaitTxConfirmed txId
   pure txId
 
--- txId <- submitTxFromConstraints lookups constraints
--- awaitTxConfirmed txId
--- pure txId
-
-availableAssets :: Map Rarity AssetOption
-availableAssets = Map.fromFoldable
-  [ Common /\
-      { name: "CommonCar"
-      , assetType: CarType
-      , imageUrl:
-          "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
-      , description: "Cool car with lots of experience"
-      }
-  , Rare /\
-      { name: "RareDriver"
-      , assetType: DriverType
-      , imageUrl:
-          "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
-      , description: "Cool car with lots of experience"
-      }
-  , Epic /\
-      { name: "EpicCar"
-      , assetType: CarType
-      , imageUrl:
-          "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
-      , description: "Cool car with lots of experience"
-      }
-  ]
+consumeAndRedeemRequests
+  :: RacersParams
+  -> Map Rarity AssetOption
+  -> Effect String
+  -> RacersState
+  -> Maybe TransactionInput
+  -> Contract (Array TransactionHash)
+consumeAndRedeemRequests rp availableAssets generateNonce st mDepScriptRef = do
+  pendingRequests <- (Map.toUnfoldable :: _ -> Array _) <$>
+    queryRequestsWithAirdropAddress rp st
+  txIds <- traverse
+    (redeemGameAsset rp availableAssets generateNonce mDepScriptRef)
+    pendingRequests
+  pure txIds
 
 findOwnAuthUtxo
   :: RacersParams

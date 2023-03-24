@@ -1,6 +1,5 @@
 module CardanoRacers.GameAsset.Contract
-  ( AssetOption
-  , mintAvailableAssetByRarity
+  ( mintAvailableAssetByRarity
   , mkGameAssetPolicy
   , generateAsset
   ) where
@@ -11,7 +10,8 @@ import Aeson (encodeAeson, stringifyAeson)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.GameAsset.Parameters (generateUniformParameters)
 import CardanoRacers.GameAsset.Types
-  ( CarAttributes(CarAttributes)
+  ( AssetOption
+  , CarAttributes(CarAttributes)
   , DriverAttributes(DriverAttributes)
   , GameAsset
   , GameAssetAttributes(..)
@@ -45,15 +45,9 @@ import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
 import Random.LCG (randomSeed)
 
-type AssetOption =
-  { name :: String
-  , assetType :: GameAssetType
-  , imageUrl :: String
-  , description :: String
-  }
-
-generateAsset :: AssetOption -> Rarity -> Effect (GameAsset /\ TokenName)
-generateAsset ao rarity = do
+generateAsset
+  :: AssetOption -> String -> Rarity -> Effect (GameAsset /\ TokenName)
+generateAsset ao nonce rarity = do
   attrs <- case ao.assetType of
     CarType -> CarAttrs <$> generateNewCar rarity
     DriverType -> DriverAttrs <$> generateNewDriver rarity
@@ -69,20 +63,14 @@ generateAsset ao rarity = do
           , description: ao.description
           }
 
-  hashedGameAssetByteArray <- liftMaybe (error "could not hash game asset")
-    $ sha256Hash
-    <$> byteArrayFromAscii (stringifyAeson $ encodeAeson ga)
-    >>= sha256Hash
-    >>> byteArrayToIntArray
-    >>> Array.drop (32 - 4)
-    >>> byteArrayFromIntArray
   nameByteArrayWithSep <- liftMaybe (error "could not create name byte array")
     $ byteArrayFromAscii
     $ ao.name
     <> ":"
+    <> nonce
+
   tkName <- liftMaybe (error "could not create token name") $ mkTokenName
     $ nameByteArrayWithSep
-    <> hashedGameAssetByteArray
 
   pure (ga /\ tkName)
 
@@ -133,16 +121,22 @@ type MintAssetNftOptions =
 
 mintAvailableAssetByRarity
   :: Map Rarity AssetOption
-  -> Address
   -> CurrencySymbol
+  -> String
+  -> Address
   -> Rarity
   -> Effect (Constraints.TxConstraints Void Void /\ GameAssetNftMetadataEntry)
-mintAvailableAssetByRarity availableAssets targetAddress assetSymbol rarity = do
+mintAvailableAssetByRarity
+  availableAssets
+  assetSymbol
+  nonce
+  targetAddress
+  rarity = do
   assetOption <-
     liftMaybe (error $ "available assets map does not include: " <> show rarity)
       $ Map.lookup rarity availableAssets
 
-  (ga /\ tk) <- generateAsset assetOption rarity
+  (ga /\ tk) <- generateAsset assetOption nonce rarity
 
   let
     assetVal = Value.singleton assetSymbol tk $ BigInt.fromInt 1

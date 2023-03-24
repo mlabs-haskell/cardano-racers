@@ -4,6 +4,7 @@ import Contract.Prelude
 
 import CardanoRacers.AssetRequest.Types
   ( AirdropAddressDatum(AirdropAddressDatum)
+  , AssetRequestRedeemer(..)
   )
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Deposit.Types (DepositValidatorParams(..))
@@ -15,13 +16,14 @@ import Contract.Address (getWalletAddresses)
 import Contract.AssocMap as AssocMap
 import Contract.Log (logInfo')
 import Contract.Monad (Contract, liftContractM, liftedM)
-import Contract.PlutusData (Datum(..), toData, unitRedeemer)
+import Contract.PlutusData (Datum(..), Redeemer(..), toData, unitRedeemer)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (MintingPolicy(..), applyArgs, mintingPolicyHash)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
-  ( TransactionHash
+  ( Redeemer
+  , TransactionHash
   , awaitTxConfirmed
   , submitTxFromConstraints
   )
@@ -72,13 +74,14 @@ requestAssetByRarity rp rarity = do
     lockedVal = Value.singleton cs requestTokenName $ BigInt.fromInt 1
 
     dat = Datum $ toData $ AirdropAddressDatum { airdropAddress: ownAddr }
+    red = Redeemer $ toData $ MintRequestToken
 
     constraints :: Constraints.TxConstraints Void Void
     constraints =
       Constraints.mustReferenceOutput stateTxi
         <> paysToAddrConstraint (unwrap rs).treasuryAddress treasuryVal
         <> paysToAddrConstraint (unwrap rs).operatingAddress operatingVal
-        <> Constraints.mustMintValueWithRedeemer unitRedeemer lockedVal
+        <> Constraints.mustMintValueWithRedeemer red lockedVal
         <> -- Constraints.mustPayToScriptWithScriptRef
 
           Constraints.mustPayToScript (unwrap rs).depositScript dat DatumInline

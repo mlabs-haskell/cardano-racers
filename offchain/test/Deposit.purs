@@ -14,13 +14,21 @@ import CardanoRacers.Deposit.Contract
   , queryRequestsWithAirdropAddress
   )
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
+import CardanoRacers.GameAsset.Types
+  ( AssetOption
+  , GameAssetType(..)
+  , Rarity(Common, Rare, Epic)
+  )
+import CardanoRacers.Helpers (counterNonce)
 import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
 import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
 import CardanoRacers.RacersState.Types (RacersState(RacersState))
-import Contract.Address (getWalletAddresses, scriptHashAddress)
-import Contract.AssocMap (Map)
-import Contract.AssocMap (empty, insert) as AssocMap
+import Contract.Address
+  ( getWalletAddresses
+  , getWalletCollateral
+  , scriptHashAddress
+  )
+import Contract.AssocMap (Map, empty, insert) as AssocMap
 import Contract.Log (logInfo')
 import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.Scripts (ValidatorHash, validatorHash)
@@ -31,13 +39,15 @@ import Contract.Test.Plutip
   , withKeyWallet
   , withWallets
   )
-import Contract.Utxos (getWalletUtxos, utxosAt)
+import Contract.Utxos (getWalletBalance, getWalletUtxos, utxosAt)
 import Contract.Value (scriptCurrencySymbol)
 import Contract.Wallet (KeyWallet)
+import Data.Array (concatMap)
 import Data.Array (head) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
-import Data.Map (empty, toUnfoldable) as Map
+import Data.Map (Map, fromFoldable, toUnfoldable) as Map
+import Effect.Ref (new) as Ref
 import Mote (group, test)
 
 suite :: TestPlanM PlutipTest Unit
@@ -45,6 +55,7 @@ suite = group "AssetRequest" do
   test "User mints request token" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
       \(adminKey /\ treasuryKey /\ userKey) -> do
+        cRef <- liftEffect $ Ref.new 1
         rp <- withKeyWallet adminKey createRacersParamsHelper
         let
           assetPrices = foldl (flip $ uncurry AssocMap.insert) AssocMap.empty
@@ -52,17 +63,33 @@ suite = group "AssetRequest" do
             , (Rare /\ BigInt.fromInt 10_000_000)
             , (Epic /\ BigInt.fromInt 20_000_000)
             ]
+        -- withKeyWallet adminKey do
+        --    col <- getWalletCollateral
+        --    logInfo' $ show col
         st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey) rp
           assetPrices
         _ <- withKeyWallet userKey $ requestAssetByRarity rp Common
-        let scriptAddr = scriptHashAddress (unwrap st).depositScript Nothing
+        _ <- withKeyWallet treasuryKey $ requestAssetByRarity rp Common
+        _ <- withKeyWallet userKey $ requestAssetByRarity rp Rare
+        _ <- withKeyWallet userKey $ requestAssetByRarity rp Epic
+        _ <- withKeyWallet userKey $ requestAssetByRarity rp Common
+        -- let scriptAddr = scriptHashAddress (unwrap st).depositScript Nothing
         depRefOref <- withKeyWallet adminKey $
           createDepositReferenceScriptOutput rp
-        -- logInfo' $ show depRefOref
-        -- utxosAt scriptAddr >>= logInfo' <<< show
         _ <- withKeyWallet adminKey $ do
           reqs <- queryRequestsWithAirdropAddress rp st
-          consumeAndRedeemRequests rp st $ Just depRefOref
+          logInfo' $ "========== Requests\n" <>
+            ( show $ concatMap (_.requestedAssets <<< snd) $
+                (Map.toUnfoldable :: _ -> Array _) reqs
+            )
+          consumeAndRedeemRequests rp availableAssets (counterNonce cRef) st $
+            Just depRefOref
+        withKeyWallet treasuryKey do
+          bal <- getWalletBalance
+          logInfo' $ "========== Treasury\n" <> show bal
+        withKeyWallet userKey do
+          bal <- getWalletBalance
+          logInfo' $ "========== User\n" <> show bal
         pure unit
 
   where
@@ -97,7 +124,7 @@ suite = group "AssetRequest" do
   initRacersStateWithAdminAndTreasury
     :: (KeyWallet /\ KeyWallet)
     -> RacersParams
-    -> Map Rarity BigInt
+    -> AssocMap.Map Rarity BigInt
     -> Contract RacersState
   initRacersStateWithAdminAndTreasury
     (admin /\ treasury)
@@ -123,3 +150,31 @@ suite = group "AssetRequest" do
           }
       _ <- RacersState.initRacersStateContract rp rs
       pure rs
+
+  availableAssets :: Map.Map Rarity AssetOption
+  availableAssets = Map.fromFoldable
+    [ Common /\
+        { name: "CommonCar"
+        , assetType: CarType
+        , imageUrl:
+            "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
+        , description: "Cool car with lots of experience"
+        -- , uniquenessNonce: "1"
+        }
+    , Rare /\
+        { name: "RareDriver"
+        , assetType: DriverType
+        , imageUrl:
+            "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
+        , description: "Cool car with lots of experience"
+        -- , uniquenessNonce: "1"
+        }
+    , Epic /\
+        { name: "EpicCar"
+        , assetType: CarType
+        , imageUrl:
+            "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
+        , description: "Cool car with lots of experience"
+        -- , uniquenessNonce: "1"
+        }
+    ]

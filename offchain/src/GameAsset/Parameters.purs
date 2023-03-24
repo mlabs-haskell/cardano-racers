@@ -33,18 +33,21 @@ chooseUpperExclusive x y = choose x y >>= \n ->
   if n == y then chooseUpperExclusive x y else pure n
 
 generateUniformParameters :: Seed -> Rarity -> Array Int
-generateUniformParameters seed r = flip evalGen { newSeed: seed, size: 1 } 
-  $ chooseInt (rarityMinRequirement r) maxTotalScore >>= splitXTimes 2
+generateUniformParameters seed r = flip evalGen { newSeed: seed, size: 1 }
+  $ chooseInt (rarityMinRequirement r) maxTotalScore
+  >>= splitXTimes 2
   where
   maxTotalScore = parameterCount * maxParameterScore
 
   splitXTimes :: Int -> Int -> Gen (Array Int)
-  splitXTimes 0 n = pure [n]
+  splitXTimes 0 n = pure [ n ]
   splitXTimes level n = do
     -- to ensure that every attribute has a minimum value of 1, random pivot
     -- ranges from 2 ^ (level - 1) to n - 2 ^ (level - 1)
-    let splitRandom :: Gen (Int /\ Int)
-        splitRandom = chooseInt (2 `pow` (level - 1)) (n - 2 `pow` (level - 1)) >>= \pivot -> pure $ pivot /\ (n - pivot)
+    let
+      splitRandom :: Gen (Int /\ Int)
+      splitRandom = chooseInt (2 `pow` (level - 1)) (n - 2 `pow` (level - 1))
+        >>= \pivot -> pure $ pivot /\ (n - pivot)
     (pivot /\ rest) <- splitRandom
     lift2 (<>) (splitXTimes (level - 1) pivot) (splitXTimes (level - 1) rest)
 
