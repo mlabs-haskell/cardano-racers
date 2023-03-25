@@ -15,10 +15,6 @@ import Math (abs, cos, log, pi, sqrt) as Math
 import Random.LCG (Seed)
 import Test.QuickCheck.Gen (Gen, choose, chooseInt, evalGen)
 
-derive instance Generic Rarity _
-instance Show Rarity where
-  show = genericShow
-
 maxParameterScore :: Int
 maxParameterScore = 10000
 

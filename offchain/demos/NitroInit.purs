@@ -3,61 +3,31 @@ module CardanoRacers.NitroInit where
 import Contract.Prelude
 
 import Aeson (decodeJsonString, encodeAeson)
-import CardanoRacers.GameAsset.Contract (mintNewDriverNft, mintWithMetadata)
-import CardanoRacers.GameAsset.Parameters (Rarity(..))
-import CardanoRacers.Nitro.Contract
-  ( adminMintsNitroContract
-  , botMintsNitroContract
-  , buyNitroContract
-  , initNitroStateContract
-  , modifyNitroStateContract
-  , queryNitroState
-  )
-import CardanoRacers.Nitro.Helpers (createNitroScriptParams)
-import CardanoRacers.Nitro.Types (NitroScriptParams, NitroState(..))
-import Contract.Address
-  ( Address
-  , ByteArray
-  , addressFromBech32
-  , addressToBech32
-  , getWalletAddress
-  )
-import Contract.Config
-  ( NetworkId(..)
-  , PrivatePaymentKeySource(..)
-  , WalletSpec(..)
-  , testnetConfig
-  )
+import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy)
+import CardanoRacers.Common.Types (RacersParams)
+import CardanoRacers.Deposit.Contract (mkDepositValidator)
+import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
+import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
+import CardanoRacers.Nitro.Contract (adminMintsNitroContract, botMintsNitroContract, buyNitroContract)
+import CardanoRacers.Nitro.Helpers (createRacersParams)
+import CardanoRacers.RacersState.Contract (initRacersStateContract, modifyRacersStateContract, queryRacersState)
+import CardanoRacers.RacersState.Types (RacersState(..))
+import Contract.Address (Address, ByteArray, addressFromBech32, addressToBech32, getWalletAddress)
+import Contract.AssocMap (empty, insert) as AssocMap
+import Contract.Config (NetworkId(..), PrivatePaymentKeySource(..), WalletSpec(..), testnetConfig)
 import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Hashing (publicKeyHash)
 import Contract.Log (logInfo')
-import Contract.Monad
-  ( Contract
-  , liftContractE
-  , liftContractM
-  , liftedM
-  , runContract
-  )
+import Contract.Monad (Contract, liftContractE, liftContractM, liftedM, runContract)
 import Contract.PlutusData (unitDatum)
 import Contract.Prim.ByteArray (byteArrayToIntArray, hexToByteArray)
 import Contract.ScriptLookups as Lookups
-import Contract.Transaction
-  ( TransactionHash
-  , awaitTxConfirmed
-  , submitTxFromConstraints
-  )
+import Contract.Scripts (ValidatorHash, validatorHash)
+import Contract.Transaction (TransactionHash, awaitTxConfirmed, submitTxFromConstraints)
 import Contract.TxConstraints (DatumPresence(..))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletBalance, getWalletUtxos)
-import Contract.Value
-  ( TokenName
-  , Value
-  , adaSymbol
-  , flattenNonAdaAssets
-  , flattenValue
-  , getTokenName
-  , lovelaceValueOf
-  )
+import Contract.Value (TokenName, Value, adaSymbol, flattenNonAdaAssets, flattenValue, getTokenName, lovelaceValueOf, scriptCurrencySymbol)
 import Contract.Value as Value
 import Contract.Wallet (PrivatePaymentKey(..), privateKeyFromBytes)
 import Contract.Wallet.Key (publicKeyFromPrivateKey)
@@ -66,11 +36,7 @@ import Control.Monad.Error.Class (throwError)
 import Control.Parallel (parTraverse)
 import Control.Promise (Promise, fromAff)
 import Ctl.Internal.Plutus.Conversion (toPlutusAddress)
-import Ctl.Internal.Serialization.Address
-  ( enterpriseAddress
-  , enterpriseAddressToAddress
-  , keyHashCredential
-  )
+import Ctl.Internal.Serialization.Address (enterpriseAddress, enterpriseAddressToAddress, keyHashCredential)
 import Ctl.Internal.Serialization.Types (PrivateKey)
 import Ctl.Internal.Types.RawBytes (RawBytes(RawBytes))
 import Data.Array (head) as Array
@@ -146,7 +112,7 @@ initNitro = do
     utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
     (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
       Map.toUnfoldable utxos
-    nsp <- createNitroScriptParams txi "NITRO"
+    rp <- createRacersParams txi "NITRO"
 
     ownAddr <- liftedM "Could not get wallet address" getWalletAddress
     treasuryAddr <- liftContractM "could not get address" $ actorAddress
@@ -154,22 +120,30 @@ initNitro = do
     botAddr <- liftContractM "could not get address" $ actorAddress "Bot"
     nitroPrice <- liftContractM "couldn't convert to bigint" $ BigInt.fromString
       nitroPriceStr
+    depositScriptHash <- depositScriptHashHelper rp
     let
-      nitroState = NitroState
+      assetPrices = foldl (flip $ uncurry AssocMap.insert) AssocMap.empty
+        [ (Common /\ BigInt.fromInt 5_000_000)
+        , (Rare /\ BigInt.fromInt 10_000_000)
+        , (Epic /\ BigInt.fromInt 20_000_000)
+        ]
+      nitroState = RacersState
         { nitroPrice: nitroPrice
         , treasuryAddress: treasuryAddr
         , operatingAddress: ownAddr
+        , depositScript: depositScriptHash
+        , assetPrices
         }
-    void $ initNitroStateContract nsp nitroState
-    sendToBot nsp botAddr
-    pure $ show $ encodeAeson nsp
+    void $ initRacersStateContract rp nitroState
+    sendToBot rp botAddr
+    pure $ show $ encodeAeson rp
   where
-  sendToBot :: NitroScriptParams -> Address -> Contract Unit
-  sendToBot nsp botAddr = do
+  sendToBot :: RacersParams -> Address -> Contract Unit
+  sendToBot rp botAddr = do
     let
       constraints :: Constraints.TxConstraints Void Void
       constraints = paysToAddrConstraint botAddr
-        (uncurry Value.singleton (unwrap nsp).botToken $ BigInt.fromInt 1)
+        (uncurry Value.singleton (unwrap rp).botToken $ BigInt.fromInt 1)
 
       lookups :: Lookups.ScriptLookups Void
       lookups = mempty
@@ -205,12 +179,12 @@ modifyNitroState = do
   withActor "Admin" do
     nsp <- liftContractE $ decodeJsonString pjson
     a <- liftContractM "couldn't convert amount" $ BigInt.fromString amo
-    (ns /\ _) <- queryNitroState nsp
+    (ns /\ _) <- queryRacersState nsp
     treasuryAddr <- addressFromBech32 treasuryAddrStr <|> pure
       (unwrap ns).treasuryAddress
     operatingAddr <- addressFromBech32 operatingAddrStr <|> pure
       (unwrap ns).operatingAddress
-    txId <- modifyNitroStateContract nsp
+    txId <- modifyRacersStateContract nsp
       ( wrap $ (unwrap ns)
           { nitroPrice = a
           , treasuryAddress = treasuryAddr
@@ -292,7 +266,7 @@ refreshState = do
   pjson <- promptFor "Enter NitroScriptParams:"
   withActor "Admin" do
     nsp <- liftContractE $ decodeJsonString pjson
-    (ns /\ _) <- queryNitroState nsp
+    (ns /\ _) <- queryRacersState nsp
     treasuryAddr <- addressToBech32 (unwrap ns).treasuryAddress
     operatingAddr <- addressToBech32 (unwrap ns).operatingAddress
     pure $ show $ encodeAeson
@@ -339,6 +313,21 @@ mkWalletSpec :: String -> Maybe WalletSpec
 mkWalletSpec phex = Just $ UseKeys (PrivatePaymentKeyValue $ wrap pkey) Nothing
   where
   pkey = unsafePartial $ fromJust $ mkPrivateKey phex
+
+depositScriptHashHelper :: RacersParams -> Contract ValidatorHash
+depositScriptHashHelper rp = do
+  assetRequestPolicySymbol <- liftedM "could not get asset request symbol"
+    $ mkAssetRequestPolicy rp
+    <#> scriptCurrencySymbol
+  assetPolicySymbol <- liftedM "could not get game asset symbol"
+    $ mkGameAssetPolicy rp
+    <#> scriptCurrencySymbol
+  depositVal <- mkDepositValidator rp $
+    wrap
+      { assetPolicySymbol
+      , assetRequestPolicySymbol
+      }
+  pure $ validatorHash depositVal
 
 mkPrivateKey :: String -> Maybe PrivateKey
 mkPrivateKey str =

@@ -6,6 +6,7 @@ You can edit this file as you like.
 , dependencies =
   [ "aeson"
   , "aff"
+  , "aff-promise"
   , "arrays"
   , "bifunctors"
   , "bigints"
@@ -21,6 +22,7 @@ You can edit this file as you like.
   , "math"
   , "mote"
   , "ordered-collections"
+  , "parallel"
   , "partial"
   , "posix-types"
   , "prelude"
@@ -33,5 +35,5 @@ You can edit this file as you like.
   , "uint"
   ]
 , packages = ./packages.dhall
-, sources = [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs" ]
+, sources = [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs", "demos/**/*.purs" ]
 }

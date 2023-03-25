@@ -211,11 +211,11 @@ let
 
     "cardano-transaction-lib" = pkgs.stdenv.mkDerivation {
         name = "cardano-transaction-lib";
-        version = "591e6ae27f58b3dc46337843322673a31f5fa8c7";
+        version = "b565f4b1ec877c671ec4ffc13b1b89dbe498bceb";
         src = pkgs.fetchgit {
           url = "https://github.com/Plutonomicon/cardano-transaction-lib.git";
-          rev = "591e6ae27f58b3dc46337843322673a31f5fa8c7";
-          sha256 = "0khyr363pjsa99csv39rza31w943c6icr7vyyjy2xia2a0jzzjb8";
+          rev = "b565f4b1ec877c671ec4ffc13b1b89dbe498bceb";
+          sha256 = "1cnvmw7y8vm1f5zycx1abvq053lw7bs65426910ixl0067gsr8vk";
         };
         phases = "installPhase";
         installPhase = "ln -s $src $out";
