@@ -35,8 +35,7 @@ module.exports = {
   },
 
   // we can add more entrypoints as needed
-  // entry: "./index.js",
-  entry: "./demos/index.js",
+  entry: "./index.js",
 
   output: {
     path: path.resolve(__dirname, "dist"),
@@ -92,7 +91,7 @@ module.exports = {
     }),
     new HtmlWebpackPlugin({
       title: "cardano-racers",
-      template: "./demos/index.html",
+      template: "./index.html",
       inject: false, // See stackoverflow.com/a/38292765/3067181
     }),
     new webpack.ProvidePlugin({

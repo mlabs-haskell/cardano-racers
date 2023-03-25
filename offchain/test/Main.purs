@@ -18,9 +18,12 @@ import Effect.Aff
   , launchAff
   )
 import Mote (only)
-import Test.CardanoRacers.GameAsset (gameAssetSuite)
-import Test.CardanoRacers.Nft (adminNftSuite)
-import Test.CardanoRacers.Nitro.Contract (nitroTokenSuite)
+import Test.CardanoRacers.AssetRequest (suite) as AssetRequest
+import Test.CardanoRacers.Deposit (suite) as Deposit
+import Test.CardanoRacers.GameAsset (suite) as GameAsset
+import Test.CardanoRacers.Nft (suite) as Nft
+import Test.CardanoRacers.Nitro.Contract (suite) as Nitro
+import Test.CardanoRacers.RacersState.Contract (suite) as RacersState
 import Test.Spec.Runner (defaultConfig)
 
 -- Run with `npm run test`
@@ -33,9 +36,12 @@ main = interruptOnSignal SIGINT =<< launchAff do
 
 suite :: TestPlanM PlutipTest Unit
 suite = do
-  adminNftSuite
-  nitroTokenSuite
-  only gameAssetSuite
+  Nft.suite
+  Nitro.suite
+  RacersState.suite
+  AssetRequest.suite
+  only Deposit.suite
+  GameAsset.suite
 
 config :: PlutipConfig
 config =
@@ -60,40 +66,3 @@ config =
   , clusterConfig:
       { slotLength: Seconds 0.05 }
   }
-
--- config :: PlutipConfig
--- config =
---   { host: "127.0.0.1"
---   , port: UInt.fromInt 8082
---   , logLevel: Info
---   , ogmiosConfig:
---       { port: UInt.fromInt 1338
---       , host: "127.0.0.1"
---       , secure: false
---       , path: Nothing
---       }
---   , ogmiosDatumCacheConfig:
---       { port: UInt.fromInt 10000
---       , host: "127.0.0.1"
---       , secure: false
---       , path: Nothing
---       }
---   , kupoConfig:
---       { port: UInt.fromInt 1443
---       , host: "127.0.0.1"
---       , secure: false
---       , path: Nothing
---       }
---   , postgresConfig:
---       { host: "127.0.0.1"
---       , port: UInt.fromInt 5433
---       , user: "ctxlib"
---       , password: "ctxlib"
---       , dbname: "ctxlib"
---       }
---   , customLogger: Nothing
---   , suppressLogs: false
---   , hooks: emptyHooks
---   , clusterConfig:
---       { slotLength: Seconds 0.05 }
---   }

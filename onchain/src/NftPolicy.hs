@@ -1,15 +1,14 @@
 {-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -w #-}
 
 module NftPolicy (policy, script) where
 
 import PlutusTx.Prelude
 
-import Ledger (PaymentPubKeyHash (unPaymentPubKeyHash), TokenName, TxId (TxId), TxOutRef (TxOutRef))
+import Ledger (TokenName)
 import Ledger qualified as Scripts
 import Ledger.Value (flattenValue)
-import Plutus.V2.Ledger.Api (CurrencySymbol (CurrencySymbol), Script, ScriptContext (scriptContextTxInfo), ToData (toBuiltinData), TokenName (TokenName), TxInfo, fromCompiledCode, getPubKeyHash, txInInfoOutRef, txInfoInputs, txInfoMint)
-import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, txSignedBy)
+import Plutus.V2.Ledger.Api (CurrencySymbol, ScriptContext (scriptContextTxInfo), ToData (toBuiltinData), TxInfo, TxOutRef, txInInfoOutRef, txInfoInputs, txInfoMint)
+import Plutus.V2.Ledger.Contexts (ownCurrencySymbol)
 import PlutusTx (unsafeFromBuiltinData)
 import PlutusTx qualified (applyCode, compile, liftCode)
 
@@ -30,7 +29,7 @@ mkPolicy txoref ctx =
 
     mintedOne :: Bool
     mintedOne = case filter (\(mintedCs, _, _) -> mintedCs == cs) $ flattenValue (txInfoMint info) of
-      [(mintedCs, _, amt)] -> amt == 1
+      [(_, _, amt)] -> amt == 1
       _ -> False
 
     badInput = "parameter TxOutRef not consumed in inputs"
@@ -38,7 +37,7 @@ mkPolicy txoref ctx =
 
 {-# INLINEABLE mkPolicy' #-}
 mkPolicy' :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
-mkPolicy' params _nonce redeemer context =
+mkPolicy' params _nonce _redeemer context =
   --               ^ the nonce is to enable a Tx to use a single TxOutRef to mint
   --               multiple unique NFTs
   let

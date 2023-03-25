@@ -21,9 +21,11 @@ import System.Environment (getArgs, lookupEnv)
 import Prelude
 
 import DepositScript qualified
-import GameAssetPolicy qualified
 import NftPolicy qualified
 import NitroPolicy qualified
+import RacersStateScript qualified
+import AssetRequestPolicy qualified
+import GameAssetPolicy qualified
 
 data ScriptsFFI
   = ScriptsFFI
@@ -61,10 +63,11 @@ main = do
     pure $ maybe "." id $ argOut <|> envOut
   let ScriptsFFI {js, purs} =
         mkScriptsFFI
-          [ ("nitroMintingPolicyScript", NitroPolicy.nitroPolicyScript)
-          , ("nitroStateValidatorScript", NitroPolicy.nitroStateValidatorScript)
+          [ ("nitroMintingPolicyScript", NitroPolicy.script)
+          , ("racersStateValidatorScript", RacersStateScript.script)
           , ("adminNftMintingPolicy", NftPolicy.script)
           , ("depositScript", DepositScript.script)
+          , ("assetRequestPolicy", AssetRequestPolicy.script)
           , ("gameAssetPolicy", GameAssetPolicy.script)
           ]
   writeFile (out <> "/ScriptsFFI.js") js

@@ -6,7 +6,6 @@ You can edit this file as you like.
 , dependencies =
   [ "aeson"
   , "aff"
-  , "aff-promise"
   , "arrays"
   , "bifunctors"
   , "bigints"
@@ -17,21 +16,22 @@ You can edit this file as you like.
   , "exceptions"
   , "foreign-object"
   , "integers"
+  , "lcg"
   , "lists"
   , "math"
   , "mote"
   , "ordered-collections"
-  , "parallel"
   , "partial"
   , "posix-types"
   , "prelude"
   , "profunctor"
-  , "random"
-  , "spec"
+  , "quickcheck"
+  , "refs"
   , "strings"
+  , "spec"
   , "transformers"
   , "uint"
   ]
 , packages = ./packages.dhall
-, sources = [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs", "demos/**/*.purs"]
+, sources = [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs" ]
 }

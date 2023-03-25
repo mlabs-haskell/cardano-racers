@@ -2,82 +2,26 @@
 
 module GameAssetPolicy (script) where
 
-import GHC.Generics (Generic)
-import GHC.Show (Show)
-import Ledger (AssetClass)
-import Ledger.Value (assetClass, assetClassValue, geq, assetClassValueOf)
+import CommonTypes (RacersParams, adminToken, botToken)
+import Ledger.Value (assetClassValue, geq)
 import Plutus.V2.Ledger.Api (
-  Address,
-  Datum (getDatum),
-  FromData (fromBuiltinData),
-  OutputDatum (OutputDatum),
   Script,
   ScriptContext (scriptContextTxInfo),
-  TokenName (TokenName),
-  TxInInfo (txInInfoOutRef, txInInfoResolved),
-  TxInfo (txInfoInputs, txInfoMint),
-  TxOut (txOutDatum),
-  TxOutRef,
+  TxInfo,
   fromCompiledCode,
  )
-import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, valueSpent)
-import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
+import Plutus.V2.Ledger.Contexts (valueSpent)
+import PlutusTx qualified (compile, unsafeFromBuiltinData)
 import PlutusTx.Prelude
-import Utils (valueToAddr)
-
-data Driver = Driver
-  { driverId :: BuiltinByteString
-  , aggression :: Integer
-  , experience :: Integer
-  , reflexes :: Integer
-  , luck :: Integer
-  }
-  deriving (Show, Generic)
-PlutusTx.unstableMakeIsData ''Driver
-
-data Car = Car
-  { carId :: BuiltinByteString
-  , topSpeed :: Integer
-  , acceleration :: Integer
-  , cornering :: Integer
-  , aerodynamics :: Integer
-  }
-  deriving (Show, Generic)
-PlutusTx.unstableMakeIsData ''Car
-
-data GameAsset
-  = DriverAsset Driver
-  | CarAsset Car
-  deriving (Show, Generic)
-PlutusTx.unstableMakeIsData ''GameAsset
-
-data GameAssetPolicyParams = GameAssetPolicyParams
-  { adminToken :: AssetClass
-  , botToken :: AssetClass
-  , asset :: GameAsset
-  }
-  deriving (Show, Generic)
-PlutusTx.unstableMakeIsData ''GameAssetPolicyParams
-
-newtype AirdropAddressDatum = AirdropAddressDatum
-  {airdropAddress :: Address}
-PlutusTx.unstableMakeIsData ''AirdropAddressDatum
 
 {-# INLINEABLE mkGameAssetPolicy #-}
-mkGameAssetPolicy :: TxOutRef -> GameAssetPolicyParams -> ScriptContext -> Bool
-mkGameAssetPolicy oref gapp ctx =
-  ( traceIfFalse "input does not contain admin token" inputContainsAdminNft
-      || traceIfFalse "input does not contain bot token" inputContainsBotNft
-  )
-    && traceIfFalse "does not spend parameter TxOutRef" (isJust paramTxo)
-    && traceIfFalse "does not mint asset NFT" mintsAssetNft
-    && traceIfFalse "doesn't send nft to airdrop address" paysNftToAirdrop
+mkGameAssetPolicy :: RacersParams -> ScriptContext -> Bool
+mkGameAssetPolicy gapp ctx =
+  traceIfFalse "admin token not present in inputs" inputContainsAdminNft
+    || traceIfFalse "bot token not present in inputs" inputContainsBotNft
   where
     info :: TxInfo
-    info = scriptContextTxInfo ctx
-
-    paramTxo :: Maybe TxOut
-    paramTxo = fmap txInInfoResolved $ find ((== oref) . txInInfoOutRef) $ txInfoInputs info
+    !info = scriptContextTxInfo ctx
 
     inputContainsAdminNft :: Bool
     inputContainsAdminNft = valueSpent info `geq` assetClassValue (adminToken gapp) 1
@@ -85,38 +29,12 @@ mkGameAssetPolicy oref gapp ctx =
     inputContainsBotNft :: Bool
     inputContainsBotNft = valueSpent info `geq` assetClassValue (botToken gapp) 1
 
-    nftTokenName :: TokenName
-    nftTokenName = TokenName $ case asset gapp of
-      DriverAsset d -> driverId d
-      CarAsset c -> carId c
-
-    nftAssetClass :: AssetClass
-    nftAssetClass = assetClass (ownCurrencySymbol ctx) nftTokenName
-
-    paysNftToAirdrop :: Bool
-    paysNftToAirdrop = fromMaybe False $ do
-      ptxo <- paramTxo
-      gapd <- case txOutDatum ptxo of
-        OutputDatum d ->
-          maybe (trace "failed to decode, expected AirdropAddressDatum" Nothing) pure $
-            fromBuiltinData @AirdropAddressDatum $
-              getDatum d
-        _ -> trace "failed to get txo inline datum containing airdrop address" Nothing
-      valueToAirdrop <-
-        maybe (trace "failed to get value paid to airdrop address" Nothing) pure $
-          valueToAddr info (airdropAddress gapd)
-      pure $ valueToAirdrop `geq` assetClassValue nftAssetClass 1
-
-    mintsAssetNft :: Bool
-    mintsAssetNft = assetClassValueOf (txInfoMint info) nftAssetClass == 1
-
 {-# INLINEABLE mkPolicy #-}
-mkPolicy :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
-mkPolicy oref gapp _redeemer context =
+mkPolicy :: BuiltinData -> BuiltinData -> BuiltinData -> ()
+mkPolicy gapp _redeemer context =
   let
     result =
       mkGameAssetPolicy
-        (PlutusTx.unsafeFromBuiltinData oref)
         (PlutusTx.unsafeFromBuiltinData gapp)
         (PlutusTx.unsafeFromBuiltinData context)
    in

@@ -61,11 +61,14 @@ library
   exposed-modules: 
     , NitroPolicy
     , NftPolicy
-    , DepositScript
     , GameAssetPolicy
+    , AssetRequestPolicy
+    , DepositScript
+    , RacersStateScript
                  
   other-modules:
     , Utils
+    , CommonTypes
 
   build-depends:
     , plutus-ledger
@@ -73,6 +76,7 @@ library
     , plutus-script-utils
     , plutus-tx
     , plutus-tx-plugin
+    , text
 
   hs-source-dirs:  src
 

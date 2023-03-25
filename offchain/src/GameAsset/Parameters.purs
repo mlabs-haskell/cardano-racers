@@ -1,19 +1,19 @@
 module CardanoRacers.GameAsset.Parameters
   ( generateUniformParameters
   , generateGaussianParameters
-  , Rarity(Common, Epic, Rare)
   ) where
 
-import Contract.Prelude
+import Contract.Prelude hiding (choose)
 
+import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
+import Control.Apply (lift2)
 import Data.Array (zip)
 import Data.Array as Array
-import Data.Int (floor)
+import Data.Int (floor, pow)
 import Data.List.Lazy (replicateM)
-import Effect.Random (randomInt, randomRange)
 import Math (abs, cos, log, pi, sqrt) as Math
-
-data Rarity = Common | Rare | Epic
+import Random.LCG (Seed)
+import Test.QuickCheck.Gen (Gen, choose, chooseInt, evalGen)
 
 derive instance Generic Rarity _
 instance Show Rarity where
@@ -31,29 +31,39 @@ rarityMinRequirement = case _ of
   Rare -> 10000
   Epic -> 20000
 
-generateUniformParameters :: Rarity -> Effect (Array Int)
-generateUniformParameters r = randomInt (rarityMinRequirement r) maxTotalScore
+-- | Generate a random number in [x,y)
+chooseUpperExclusive :: Number -> Number -> Gen Number
+chooseUpperExclusive x y = choose x y >>= \n ->
+  if n == y then chooseUpperExclusive x y else pure n
+
+generateUniformParameters :: Seed -> Rarity -> Array Int
+generateUniformParameters seed r = flip evalGen { newSeed: seed, size: 1 }
+  $ chooseInt (rarityMinRequirement r) maxTotalScore
   >>= splitXTimes 2
   where
   maxTotalScore = parameterCount * maxParameterScore
 
-  splitXTimes :: Int -> Int -> Effect (Array Int)
-  splitXTimes 0 n = pure $ [ n ]
+  splitXTimes :: Int -> Int -> Gen (Array Int)
+  splitXTimes 0 n = pure [ n ]
   splitXTimes level n = do
-    (pivot /\ rest) <- splitRandom n
-    (splitXTimes (level - 1) pivot) <> (splitXTimes (level - 1) rest)
+    -- to ensure that every attribute has a minimum value of 1, random pivot
+    -- ranges from 2 ^ (level - 1) to n - 2 ^ (level - 1)
+    let
+      splitRandom :: Gen (Int /\ Int)
+      splitRandom = chooseInt (2 `pow` (level - 1)) (n - 2 `pow` (level - 1))
+        >>= \pivot -> pure $ pivot /\ (n - pivot)
+    (pivot /\ rest) <- splitRandom
+    lift2 (<>) (splitXTimes (level - 1) pivot) (splitXTimes (level - 1) rest)
 
-  splitRandom :: Int -> Effect (Int /\ Int)
-  splitRandom n = randomInt 0 n >>= \pivot -> pure $ pivot /\ (n - pivot)
-
-generateGaussianParameters :: Rarity -> Effect (Array Int)
-generateGaussianParameters rarity = do
-  r <- map Array.fromFoldable $ replicateM parameterCount
-    (gaussianRandom mean deviation)
-  let
-    base = baseByRarity
-    rr = zip (map floor r) base
-  pure $ map (capAt maxParameterScore) $ map (uncurry (+)) rr
+generateGaussianParameters :: Seed -> Rarity -> (Array Int)
+generateGaussianParameters seed rarity = flip evalGen { newSeed: seed, size: 1 }
+  do
+    r <- map Array.fromFoldable $ replicateM parameterCount
+      (gaussianRandomGen mean deviation)
+    let
+      base = baseByRarity
+      rr = zip (map floor r) base
+    pure $ map (capAt maxParameterScore) $ map (uncurry (+)) rr
   where
   baseByRarity = case rarity of
     Common -> Array.replicate parameterCount 0
@@ -66,9 +76,10 @@ generateGaussianParameters rarity = do
   deviation = 1400.0
 
 -- | Generate a random number from a gaussian distribution using the Box-Muller transform.
-gaussianRandom :: Number -> Number -> Effect Number
-gaussianRandom mean std = do
-  u <- (1.0 - _) <$> randomRange 0.0 1.0
-  v <- randomRange 0.0 1.0
+gaussianRandomGen :: Number -> Number -> Gen Number
+gaussianRandomGen mean std = do
+  (u /\ v) <- (/\) <$> map (1.0 - _) randomUnitInterval <*> randomUnitInterval
   let z = Math.sqrt (-2.0 * Math.log u) * Math.cos (2.0 * Math.pi * v)
   pure $ Math.abs $ mean + std * z
+  where
+  randomUnitInterval = chooseUpperExclusive 0.0 1.0

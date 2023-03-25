@@ -11,6 +11,7 @@ import Effect.Aff
   , effectCanceler
   , launchAff
   )
+import Test.CardanoRacers.GameAsset.Parameters as GameAssetParameters
 import Test.CardanoRacers.Nitro.Types as NitroTypes
 import Test.Spec.Runner (defaultConfig)
 
@@ -22,6 +23,7 @@ main = interruptOnSignal SIGINT =<< launchAff do
       testPlan
 
 testPlan :: TestPlanM (Aff Unit) Unit
-testPlan =
-  NitroTypes.nitroTypesSuite
+testPlan = do
+  NitroTypes.suite
+  GameAssetParameters.suite
 
