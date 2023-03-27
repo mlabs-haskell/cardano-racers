@@ -3,84 +3,127 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     <style>
-      body {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
+    body {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    }
 
-      /* Matte gray buttons with sensible styles */
-      button {
-        background-color: #eee;
-        border: 1px solid #ccc;
-        border-radius: 5px;
-        padding: 5px 10px;
-        margin: 5px;
-        cursor: pointer;
-      }
+    /* Matte gray buttons with sensible styles */
+    button {
+    background-color: #eee;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    padding: 5px 10px;
+    margin: 5px;
+    cursor: pointer;
+    }
 
-      .btn-disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
+    .btn-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    }
 
-      /* Style for the card container */
-      .wallet-card {
-        border: 1px solid #ccc;
-        border-radius: 5px;
-        padding: 10px;
-        margin: 10px;
-        box-sizing: border-box;
-        width: 100%;
-        max-width: 300px;
-        display: inline-block;
-        vertical-align: top;
-      }
+    /* Style for the card container */
+    .wallet-card {
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    padding: 10px;
+    margin: 10px;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 300px;
+    display: inline-block;
+    vertical-align: top;
+    }
 
-      .wallet-card p {
-        overflow-wrap: break-word;
-      }
+    .wallet-card p {
+    overflow-wrap: break-word;
+    }
 
-      /* Style for the balance table */
-      .wallet-card table {
-        border-collapse: collapse;
-        margin-top: 10px;
-        width: 100%;
-      }
+    /* Style for the balance table */
+    .wallet-card table {
+    border-collapse: collapse;
+    margin-top: 10px;
+    width: 100%;
+    }
 
-      .wallet-card table th,
-      .wallet-card table td {
-        padding: 5px;
-        text-align: left;
-      }
+    .wallet-card table th,
+    .wallet-card table td {
+    padding: 5px;
+    text-align: left;
+    }
 
-      .wallet-card table th {
-        background-color: #f2f2f2;
-      }
-      
-      .row {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: space-between;
-      }
+    .wallet-card table th {
+    background-color: #f2f2f2;
+    }
 
-      .column {
-        flex: 1;
-        margin: 0 10px;
-      }
-      
-      .deposit-script {
-        min-width: 40vw;
-      }
-     
-      /* Responsive grid for the cards */
-      @media only screen and (min-width: 768px) {
-        .wallet-card {
-          max-width: calc(24% - 20px);
-          margin: 10px;
-          width: calc(24% - 20px);
-        }
-      }
+    .row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    }
+
+    .column {
+    flex: 1;
+    margin: 0 10px;
+    }
+
+    .deposit-script {
+    min-width: 40vw;
+    }
+
+    /* Responsive grid for the cards */
+    @media only screen and (min-width: 768px) {
+    .wallet-card {
+    max-width: calc(24% - 20px);
+    margin: 10px;
+    width: calc(24% - 20px);
+    }
+    }
+
+    form {
+    display: flex;
+    padding: 2rem;
+    flex-direction: column;
+    width: 40vw;
+    margin-top: 50px;
+    }
+
+    /* Style the input fields and labels */
+    label {
+    font-weight: bold;
+    margin-bottom: 5px;
+    }
+
+    input[type="text"], textarea {
+width: 300px;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    font-size: 16px;
+    }
+
+    input[type="radio"], select {
+    margin-right: 10px;
+    margin-bottom: 10px;
+    }
+
+    /* Style the submit button */
+    input[type="submit"] {
+    background-color: #4CAF50;
+    color: white;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    }
+
+    input[type="submit"]:hover {
+    background-color: #45a049;
+    }
     </style>
   </head>
   <body>
@@ -99,7 +142,6 @@
     <div class="row">
       <div class="column">
         <pre id="state"></pre>
-        <pre id="requests"></pre>
       </div>
       <div id="deposit-script-container" class="column">
       </div>
@@ -109,6 +151,7 @@
       <h4>Admin Actions:</h4>
       <button id="init">Initialise Racers State</button>
       <button id="modify-state">Change Racers State</button>
+      <button id="redeem-requests">Redeem Requests</button>
       <!-- <button id="mint-driver" class="btn-disabled">Mint Driver</button> -->
     </div>
 
@@ -122,6 +165,33 @@
       <button id="buy">Buy Nitro</button>
       <button id="request-asset">Request Asset</button>
       <!-- <button id="mint-driver" class="btn-disabled">Mint Driver</button> -->
+    </div>
+
+    <div>
+      <h4>Set Assets</h4>
+      <!-- Loading -->
+      <form id="asset-form">
+        <label for="rarity">Rarity:</label><br>
+        <select id="rarity" name="rarity">
+          <option value="Common">Common</option>
+          <option value="Rare">Rare</option>
+          <option value="Epic">Epic</option>
+        </select><br><br>
+        <div>
+          <label for="asset-type">Asset Type:</label><br>
+          <input type="radio" id="car" name="asset-type" value="CarType">
+          <label for="car">Car</label><br>
+          <input type="radio" id="driver" name="asset-type" value="DriverType">
+          <label for="driver">Driver</label><br><br>
+        </div>
+        <label for="name">Name:</label><br>
+        <input type="text" id="name" name="name"><br><br>
+        <label for="description">Description:</label><br>
+        <textarea id="description" name="description"></textarea><br><br>
+        <label for="image-url">Image URL:</label><br>
+        <input type="text" id="image-url" name="image-url"><br><br>
+        <input id="change-available-assets" type="submit" value="Submit">
+      </form>
     </div>
   </body>
 </html>

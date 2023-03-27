@@ -3,79 +3,32 @@ module CardanoRacers.NitroInit where
 import Contract.Prelude
 
 import Aeson (JsonDecodeError, decodeJsonString, encodeAeson)
-import CardanoRacers.AssetRequest.Contract
-  ( mkAssetRequestPolicy
-  , requestAssetByRarity
-  )
+import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy, requestAssetByRarity)
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.Deposit.Contract
-  ( mkDepositValidator
-  , queryRequestsWithAirdropAddress
-  )
+import CardanoRacers.Deposit.Contract (consumeAndRedeemRequests, createDepositReferenceScriptOutput, mkDepositValidator, queryOrCreateDepositReferenceScript, queryRequestsWithAirdropAddress)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types
-  ( Rarity(Common, Rare, Epic)
-  , rarityFromString
-  )
-import CardanoRacers.Nitro.Contract
-  ( adminMintsNitroContract
-  , botMintsNitroContract
-  , buyNitroContract
-  )
+import CardanoRacers.GameAsset.Types (AssetOption, GameAssetType(..), Rarity(Common, Rare, Epic), rarityFromString)
+import CardanoRacers.Helpers (counterNonce)
+import CardanoRacers.Nitro.Contract (adminMintsNitroContract, botMintsNitroContract, buyNitroContract)
 import CardanoRacers.Nitro.Helpers (createRacersParams)
-import CardanoRacers.RacersState.Contract
-  ( initRacersStateContract
-  , modifyRacersStateContract
-  , queryRacersState
-  )
+import CardanoRacers.RacersState.Contract (initRacersStateContract, modifyRacersStateContract, queryRacersState)
 import CardanoRacers.RacersState.Types (RacersState(..))
-import Contract.Address
-  ( Address
-  , ByteArray
-  , addressFromBech32
-  , addressToBech32
-  , getWalletAddress
-  , scriptHashAddress
-  )
+import Contract.Address (Address, ByteArray, addressFromBech32, addressToBech32, getWalletAddress, scriptHashAddress)
 import Contract.AssocMap (empty, insert) as AssocMap
-import Contract.Config
-  ( NetworkId(..)
-  , PrivatePaymentKeySource(..)
-  , WalletSpec(..)
-  , testnetConfig
-  )
+import Contract.Config (NetworkId(..), PrivatePaymentKeySource(..), WalletSpec(..), testnetConfig)
 import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Hashing (publicKeyHash)
 import Contract.Log (logError', logInfo')
-import Contract.Monad
-  ( Contract
-  , liftContractE
-  , liftContractM
-  , liftedM
-  , runContract
-  )
+import Contract.Monad (Contract, liftContractE, liftContractM, liftedM, runContract)
 import Contract.PlutusData (unitDatum)
 import Contract.Prim.ByteArray (byteArrayToIntArray, hexToByteArray)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (ValidatorHash, validatorHash)
-import Contract.Transaction
-  ( TransactionHash
-  , awaitTxConfirmed
-  , submitTxFromConstraints
-  )
+import Contract.Transaction (TransactionHash, awaitTxConfirmed, submitTxFromConstraints)
 import Contract.TxConstraints (DatumPresence(..))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletBalance, getWalletUtxos, utxosAt)
-import Contract.Value
-  ( TokenName
-  , Value
-  , adaSymbol
-  , flattenNonAdaAssets
-  , flattenValue
-  , getTokenName
-  , lovelaceValueOf
-  , scriptCurrencySymbol
-  )
+import Contract.Value (TokenName, Value, adaSymbol, flattenNonAdaAssets, flattenValue, getTokenName, lovelaceValueOf, scriptCurrencySymbol)
 import Contract.Value as Value
 import Contract.Wallet (PrivatePaymentKey(..), privateKeyFromBytes)
 import Contract.Wallet.Key (publicKeyFromPrivateKey)
@@ -85,11 +38,7 @@ import Control.Parallel (parTraverse)
 import Control.Promise (Promise, fromAff, toAffE)
 import Ctl.Internal.FfiHelpers (MaybeFfiHelper, maybeFfiHelper)
 import Ctl.Internal.Plutus.Conversion (toPlutusAddress)
-import Ctl.Internal.Serialization.Address
-  ( enterpriseAddress
-  , enterpriseAddressToAddress
-  , keyHashCredential
-  )
+import Ctl.Internal.Serialization.Address (enterpriseAddress, enterpriseAddressToAddress, keyHashCredential)
 import Ctl.Internal.Serialization.Types (PrivateKey)
 import Ctl.Internal.Types.RawBytes (RawBytes(RawBytes))
 import Data.Array (head) as Array
@@ -99,11 +48,14 @@ import Data.BigInt as BigInt
 import Data.Char (fromCharCode)
 import Data.FoldableWithIndex (foldWithIndexM, foldrWithIndex)
 import Data.Int (round, toNumber)
-import Data.Map (toUnfoldable) as Map
+import Data.Map (Map)
+import Data.Map (fromFoldable, insert, toUnfoldable) as Map
 import Data.String (stripPrefix)
 import Data.String.CodeUnits (fromCharArray)
 import Data.String.Pattern (Pattern(Pattern))
 import Effect.Aff (error)
+import Effect.Aff.Compat (EffectFn1, EffectFn2, mkEffectFn2)
+import Effect.Ref as Ref
 import Foreign.Object (Object)
 import Foreign.Object (empty, insert) as Object
 import Partial.Unsafe (unsafePartial)
@@ -132,6 +84,9 @@ type Listeners =
   , userBuyNitro :: Effect (Promise TransactionHash)
   , resetTokens :: Effect (Promise (Array TransactionHash))
   , makeAssetRequest :: Effect (Promise TransactionHash)
+  , redeemRequests :: Effect (Promise (Array TransactionHash))
+  , getAvailableAssets :: Effect (Promise (Object { name :: String, assetType :: String, description :: String, imageUrl :: String }))
+  , setAssetOption :: EffectFn2 String { name :: String, assetType :: String, description :: String, imageUrl :: String } Unit
   --   , mintDriver :: Effect (Promise TransactionHash)
   }
 
@@ -153,6 +108,8 @@ garbageAddressStr =
 
 main :: Effect Unit
 main = do
+  cRef <- Ref.new 0
+  assetRef <- Ref.new initialAvailableAssets
   setupListeners
     { refreshWallet: refreshWallets
     , initRacersState
@@ -163,12 +120,44 @@ main = do
     , userBuyNitro
     , resetTokens
     , makeAssetRequest
+    , redeemRequests: redeemRequests cRef assetRef
+    , getAvailableAssets: getAvailableAssets assetRef
+    , setAssetOption: mkEffectFn2 $ setAssetOption assetRef
     }
   pure unit
 
 getSelectedActor :: Effect String
 getSelectedActor = liftMaybe (error "actor not selected") =<< _getSelectedActor
   maybeFfiHelper
+
+getAvailableAssets :: Ref.Ref (Map Rarity AssetOption) -> Effect (Promise (Object { name :: String, assetType :: String, description :: String, imageUrl :: String }))
+getAvailableAssets r = fromAff do
+  assets <- liftEffect $ Ref.read r
+  pure $ foldrWithIndex
+    (\rarity option obj -> Object.insert (show rarity) 
+      { name: option.name
+      , assetType: show option.assetType
+      , description: option.description
+      , imageUrl: option.imageUrl
+      } obj)
+    Object.empty
+    assets
+
+setAssetOption :: Ref.Ref (Map Rarity AssetOption) -> String -> { name :: String, assetType :: String, description :: String, imageUrl :: String } -> Effect Unit
+setAssetOption r rarityStr option = do
+  availableAssets <- Ref.read r
+  rarity <- liftMaybe (error "invalid rarity") $ rarityFromString rarityStr
+  assetType <- liftMaybe (error "invalid asset type") $ case option.assetType of
+                        "CarType" -> Just CarType
+                        "DriverType" -> Just DriverType
+                        _ -> Nothing
+  let assetOption = { name: option.name
+                    , assetType
+                    , description: option.description
+                    , imageUrl: option.imageUrl
+                    }
+  Ref.write (Map.insert rarity assetOption availableAssets) r
+
 
 refreshWallets :: Effect (Promise WalletStates)
 refreshWallets = fromAff do
@@ -258,12 +247,23 @@ mintNitro = do
 makeAssetRequest :: Effect (Promise TransactionHash)
 makeAssetRequest = do
   pjson <- getParams
-  rarityStr <- promptFor "Enter requested rarity classe"
+  rarityStr <- promptFor "Enter requested rarity class"
   withSelectedActor do
     rp <- liftContractE $ decodeJsonString pjson
     rarity <- liftContractM "Unrecognized rarity class" $ rarityFromString
       rarityStr
     requestAssetByRarity rp rarity
+
+redeemRequests :: Ref.Ref Int -> Ref.Ref (Map Rarity AssetOption) -> Effect (Promise (Array TransactionHash))
+redeemRequests cRef assetRef= do
+  pjson <- getParams
+  availableAssets <- Ref.read assetRef
+  withActor "Bot" do
+    rp <- liftContractE $ decodeJsonString pjson
+    (rs /\ _) <- queryRacersState rp
+    depRefOref <- queryOrCreateDepositReferenceScript rp
+    consumeAndRedeemRequests rp availableAssets (counterNonce cRef) rs (Just depRefOref)
+
 
 userBuyNitro :: Effect (Promise TransactionHash)
 userBuyNitro = do
@@ -495,3 +495,28 @@ paysToAddrConstraint a v = case (unwrap a).addressCredential of
     Constraints.mustPayToPubKey (wrap pkh) v
   ScriptCredential vh ->
     Constraints.mustPayToScript vh unitDatum DatumWitness v
+
+initialAvailableAssets :: Map Rarity AssetOption
+initialAvailableAssets = Map.fromFoldable
+  [ Common /\
+      { name: "Subaru"
+      , assetType: CarType
+      , imageUrl:
+          "ipfs://k2cwuee3arxg398hwxx6c0iferxitu126xntuzg8t765oo020h5y6npn"
+      , description: "Common car nothing too special"
+      }
+  , Rare /\
+      { name: "Dan The Driver Man"
+      , assetType: DriverType
+      , imageUrl:
+          "ipfs://k2cwuee3arxg398hwxx6c0iferxitu126xntuzg8t765oo020h5y6npn"
+      , description: "Rare driver with lots of experience"
+      }
+  , Epic /\
+      { name: "Mustang"
+      , assetType: CarType
+      , imageUrl:
+          "ipfs://k2cwuee3arxg398hwxx6c0iferxitu126xntuzg8t765oo020h5y6npn"
+      , description: "Exceptional vehicle!"
+      }
+  ]

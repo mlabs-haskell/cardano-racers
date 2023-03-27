@@ -59,10 +59,27 @@ exports._getSelectedActor = maybe => () => {
 
 exports.getParams = () => document.getElementById("params-input").value;
 
+
+
 exports.setupListeners = handlers => () => {
   // document.getElementById("mint-driver").addEventListener("click", () => {
   //   wrapLoading(handlers.mintDriver()).then(console.log)
   // });
+  const fillForm = (assetOption) => {
+    // Set the input field values to the corresponding AssetOption values
+    const nameInput = document.getElementById('name');
+    nameInput.value = assetOption.name;
+
+    const assetTypeRadio = document.querySelector(`input[name="asset-type"][value="${assetOption.assetType}"]`);
+    assetTypeRadio.checked = true;
+
+    const imageUrlInput = document.getElementById('image-url');
+    imageUrlInput.value = assetOption.imageUrl;
+
+    const descriptionTextarea = document.getElementById('description');
+    descriptionTextarea.value = assetOption.description;
+  }
+
   document.getElementById("init").addEventListener("click", () => {
     wrapLoading(handlers.initRacersState()).then(x => download("params.json", x))
   });
@@ -81,11 +98,43 @@ exports.setupListeners = handlers => () => {
   document.getElementById("request-asset").addEventListener("click", () => {
     wrapLoading(handlers.makeAssetRequest()).then(console.log);
   });
+  document.getElementById("redeem-requests").addEventListener("click", () => {
+    wrapLoading(handlers.redeemRequests()).then(console.log);
+  });
 
+  const selectedRarity = document.getElementById("rarity");
+
+  selectedRarity.addEventListener("change", () => {
+    handlers.getAvailableAssets().then(assets => {
+      fillForm(assets[selectedRarity.value])
+    })
+  });
+  
+  document.getElementById("asset-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const selectRarity = document.getElementById('rarity');
+    const rarity = selectRarity.value;
+
+    const nameInput = document.getElementById('name');
+    const name = nameInput.value;
+
+    const assetTypeRadio = document.querySelector('input[name="asset-type"]:checked');
+    const assetType = assetTypeRadio.value;
+
+    const imageUrlInput = document.getElementById('image-url');
+    const imageUrl = imageUrlInput.value;
+
+    const descriptionTextarea = document.getElementById('description');
+    const description = descriptionTextarea.value;
+     
+    console.log({name, assetType, imageUrl, description})
+    handlers.setAssetOption(rarity, {name, assetType, imageUrl, description})
+  })
+   
   document.getElementById("refresh-requests").addEventListener("click", () => {
-    document.getElementById("requests").textContent = "";
+    document.getElementById("state").textContent = "";
     handlers.refreshRequests().then(requestsjson => {
-      document.getElementById("requests").textContent = JSON.stringify(
+      document.getElementById("state").textContent = JSON.stringify(
         JSON.parse(requestsjson),
         null,
         2

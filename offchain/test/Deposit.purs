@@ -155,7 +155,6 @@ suite = group "AssetRequest" do
         , imageUrl:
             "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
         , description: "Cool car with lots of experience"
-        -- , uniquenessNonce: "1"
         }
     , Rare /\
         { name: "RareDriver"
@@ -163,7 +162,6 @@ suite = group "AssetRequest" do
         , imageUrl:
             "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
         , description: "Cool car with lots of experience"
-        -- , uniquenessNonce: "1"
         }
     , Epic /\
         { name: "EpicCar"
@@ -171,6 +169,5 @@ suite = group "AssetRequest" do
         , imageUrl:
             "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
         , description: "Cool car with lots of experience"
-        -- , uniquenessNonce: "1"
         }
     ]
