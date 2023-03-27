@@ -60,46 +60,46 @@ suite = group "AdminNft" do
           plutusScriptV2FromEnvelope envelope
         let appliedScriptE = applyArgs v2script $ [ toData txi ]
         shouldSatisfy appliedScriptE isRight
---   test "Mints NFT" do
---     let
---       checkNftGain
---         :: forall (r :: Row Type)
---          . Labeled Address
---         -> ContractCheck (CurrencySymbol /\ TokenName)
---       checkNftGain addr contract = assertValueDeltaAtAddress addr check contract
---         where
---         check
---           :: Maybe (CurrencySymbol /\ TokenName)
---           -> Value
---           -> Value
---           -> ContractAssertion Unit
---         check result valueBefore valueAfter = do
---           (cs /\ tn) <- lift $ liftContractM
---             "Could not get contract result (CurrencySymbol,TokenName)"
---             result
---           let
---             actual :: BigInt
---             actual = Value.valueOf valueAfter cs tn - Value.valueOf valueBefore
---               cs
---               tn
--- 
---             expected :: BigInt
---             expected = BigInt.fromInt 1
--- 
---             unexpectedTokenDelta :: ContractAssertionFailure
---             unexpectedTokenDelta =
---               UnexpectedTokenDelta addr tn (ExpectedActual expected actual)
--- 
---           assertContract unexpectedTokenDelta (actual == expected)
---     withWallets singleWalletDistribution \w ->
---       withKeyWallet w do
---         addr <- liftedM "Could not get wallet addresses" $ map Array.head
---           getWalletAddresses
---         txi /\ _ <- liftedM "Could not find some utxo"
---           $ ((_ >>= Array.head) <<< map toUnfoldable)
---           <$> getWalletUtxos
---         void $ runChecks [ checkNftGain $ label addr "Receiver" ] $ lift $
---           NitroHelpers.mintAdminNft txi
+  --   test "Mints NFT" do
+  --     let
+  --       checkNftGain
+  --         :: forall (r :: Row Type)
+  --          . Labeled Address
+  --         -> ContractCheck (CurrencySymbol /\ TokenName)
+  --       checkNftGain addr contract = assertValueDeltaAtAddress addr check contract
+  --         where
+  --         check
+  --           :: Maybe (CurrencySymbol /\ TokenName)
+  --           -> Value
+  --           -> Value
+  --           -> ContractAssertion Unit
+  --         check result valueBefore valueAfter = do
+  --           (cs /\ tn) <- lift $ liftContractM
+  --             "Could not get contract result (CurrencySymbol,TokenName)"
+  --             result
+  --           let
+  --             actual :: BigInt
+  --             actual = Value.valueOf valueAfter cs tn - Value.valueOf valueBefore
+  --               cs
+  --               tn
+  -- 
+  --             expected :: BigInt
+  --             expected = BigInt.fromInt 1
+  -- 
+  --             unexpectedTokenDelta :: ContractAssertionFailure
+  --             unexpectedTokenDelta =
+  --               UnexpectedTokenDelta addr tn (ExpectedActual expected actual)
+  -- 
+  --           assertContract unexpectedTokenDelta (actual == expected)
+  --     withWallets singleWalletDistribution \w ->
+  --       withKeyWallet w do
+  --         addr <- liftedM "Could not get wallet addresses" $ map Array.head
+  --           getWalletAddresses
+  --         txi /\ _ <- liftedM "Could not find some utxo"
+  --           $ ((_ >>= Array.head) <<< map toUnfoldable)
+  --           <$> getWalletUtxos
+  --         void $ runChecks [ checkNftGain $ label addr "Receiver" ] $ lift $
+  --           NitroHelpers.mintAdminNft txi
   test "NFT minting policy fails to mint more than 1 token" $
     withWallets singleWalletDistribution \w ->
       withKeyWallet w do

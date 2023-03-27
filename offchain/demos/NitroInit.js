@@ -1,5 +1,7 @@
 const createActor = (name, address, balance) => `
-  <div id="${name}-card" class="wallet-card">
+<label class="wallet-card">
+  <input id="${name}-card" type="radio" name="wallet" value="${name}">
+  <div class="card-content">
     <h2>Actor: ${name}</h2>
     <p>Address: ${address}</p>
     <table>
@@ -14,9 +16,28 @@ const createActor = (name, address, balance) => `
       </tbody>
     </table>
   </div>
+</label>
 `;
 
-let selectedActor = "Admin";
+const createDepositScript = (address, balance) => `
+<div class="wallet-card deposit-script">
+  <div class="card-content">
+    <h2>Deposit Script</h2>
+    <p>Address: ${address}</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Asset</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody id="balance-table-body">
+          ${balance.map(b => `<tr><td>${b[0]}</td><td>${b[1]}</td></tr>`)}
+      </tbody>
+    </table>
+  </div>
+</div>
+`
 
 const wrapLoading = (p) => {
   const setLoading = (b) => {
@@ -27,34 +48,53 @@ const wrapLoading = (p) => {
     }
   }
   setLoading(true);
-  return p.then(res => {setLoading(false); return res;})
+  return p.finally(() => setLoading(false));
 }
+ 
+exports._getSelectedActor = maybe => () => {
+  const selectedWallet = document.querySelector('input[name="wallet"]:checked');
+  if (selectedWallet) return maybe.just(selectedWallet.value);
+  return maybe.nothing;
+}
+
+exports.getParams = () => document.getElementById("params-input").value;
 
 exports.setupListeners = handlers => () => {
   // document.getElementById("mint-driver").addEventListener("click", () => {
   //   wrapLoading(handlers.mintDriver()).then(console.log)
   // });
   document.getElementById("init").addEventListener("click", () => {
-    wrapLoading(handlers.initNitro()).then(x => download("params.json", x))
+    wrapLoading(handlers.initRacersState()).then(x => download("params.json", x))
   });
   document.getElementById("reset").addEventListener("click", () => {
     wrapLoading(handlers.resetTokens()).then(console.log)
   });
-  document.getElementById("modify-price").addEventListener("click", () => {
-    wrapLoading(handlers.modifyNitroState()).then(console.log);
+  document.getElementById("modify-state").addEventListener("click", () => {
+    wrapLoading(handlers.modifyRacersState()).then(console.log);
   });
-  document.getElementById("mint-admin").addEventListener("click", () => {
-    wrapLoading(handlers.adminMintNitro()).then(console.log);
-  });
-  document.getElementById("mint-bot").addEventListener("click", () => {
-    wrapLoading(handlers.botMintNitro()).then(console.log);
+  document.getElementById("mint-nitro").addEventListener("click", () => {
+    wrapLoading(handlers.mintNitro()).then(console.log);
   });
   document.getElementById("buy").addEventListener("click", () => {
     wrapLoading(handlers.userBuyNitro()).then(console.log);
   });
+  document.getElementById("request-asset").addEventListener("click", () => {
+    wrapLoading(handlers.makeAssetRequest()).then(console.log);
+  });
+
+  document.getElementById("refresh-requests").addEventListener("click", () => {
+    document.getElementById("requests").textContent = "";
+    handlers.refreshRequests().then(requestsjson => {
+      document.getElementById("requests").textContent = JSON.stringify(
+        JSON.parse(requestsjson),
+        null,
+        2
+      );
+    });
+  });
 
   document.getElementById("refresh-state").addEventListener("click", () => {
-    document.getElementById("state").innerHTML = "";
+    document.getElementById("state").textContent = "";
     handlers.refreshState().then(statejson => {
       document.getElementById("state").textContent = JSON.stringify(
         JSON.parse(statejson),
@@ -66,8 +106,12 @@ exports.setupListeners = handlers => () => {
 
   const refreshWallets = () => {
     document.getElementById("wallets").innerHTML = "";
-    handlers.refreshWallet().then(actors => {
-      actors.forEach(a => {
+    handlers.refreshWallet().then(({wallets, depositScript}) => {
+      if (depositScript.length) {
+        const depHtml = createDepositScript(depositScript[0].address, depositScript[0].balance)
+        document.getElementById("deposit-script-container").innerHTML = depHtml;
+      }
+      wallets.forEach(a => {
         document.getElementById("wallets").innerHTML += createActor(
           a.name,
           a.address,

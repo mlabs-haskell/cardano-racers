@@ -2,71 +2,137 @@ module CardanoRacers.NitroInit where
 
 import Contract.Prelude
 
-import Aeson (decodeJsonString, encodeAeson)
-import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy)
+import Aeson (JsonDecodeError, decodeJsonString, encodeAeson)
+import CardanoRacers.AssetRequest.Contract
+  ( mkAssetRequestPolicy
+  , requestAssetByRarity
+  )
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.Deposit.Contract (mkDepositValidator)
+import CardanoRacers.Deposit.Contract
+  ( mkDepositValidator
+  , queryRequestsWithAirdropAddress
+  )
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
-import CardanoRacers.Nitro.Contract (adminMintsNitroContract, botMintsNitroContract, buyNitroContract)
+import CardanoRacers.GameAsset.Types
+  ( Rarity(Common, Rare, Epic)
+  , rarityFromString
+  )
+import CardanoRacers.Nitro.Contract
+  ( adminMintsNitroContract
+  , botMintsNitroContract
+  , buyNitroContract
+  )
 import CardanoRacers.Nitro.Helpers (createRacersParams)
-import CardanoRacers.RacersState.Contract (initRacersStateContract, modifyRacersStateContract, queryRacersState)
+import CardanoRacers.RacersState.Contract
+  ( initRacersStateContract
+  , modifyRacersStateContract
+  , queryRacersState
+  )
 import CardanoRacers.RacersState.Types (RacersState(..))
-import Contract.Address (Address, ByteArray, addressFromBech32, addressToBech32, getWalletAddress)
+import Contract.Address
+  ( Address
+  , ByteArray
+  , addressFromBech32
+  , addressToBech32
+  , getWalletAddress
+  , scriptHashAddress
+  )
 import Contract.AssocMap (empty, insert) as AssocMap
-import Contract.Config (NetworkId(..), PrivatePaymentKeySource(..), WalletSpec(..), testnetConfig)
+import Contract.Config
+  ( NetworkId(..)
+  , PrivatePaymentKeySource(..)
+  , WalletSpec(..)
+  , testnetConfig
+  )
 import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Hashing (publicKeyHash)
-import Contract.Log (logInfo')
-import Contract.Monad (Contract, liftContractE, liftContractM, liftedM, runContract)
+import Contract.Log (logError', logInfo')
+import Contract.Monad
+  ( Contract
+  , liftContractE
+  , liftContractM
+  , liftedM
+  , runContract
+  )
 import Contract.PlutusData (unitDatum)
 import Contract.Prim.ByteArray (byteArrayToIntArray, hexToByteArray)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (ValidatorHash, validatorHash)
-import Contract.Transaction (TransactionHash, awaitTxConfirmed, submitTxFromConstraints)
+import Contract.Transaction
+  ( TransactionHash
+  , awaitTxConfirmed
+  , submitTxFromConstraints
+  )
 import Contract.TxConstraints (DatumPresence(..))
 import Contract.TxConstraints as Constraints
-import Contract.Utxos (getWalletBalance, getWalletUtxos)
-import Contract.Value (TokenName, Value, adaSymbol, flattenNonAdaAssets, flattenValue, getTokenName, lovelaceValueOf, scriptCurrencySymbol)
+import Contract.Utxos (getWalletBalance, getWalletUtxos, utxosAt)
+import Contract.Value
+  ( TokenName
+  , Value
+  , adaSymbol
+  , flattenNonAdaAssets
+  , flattenValue
+  , getTokenName
+  , lovelaceValueOf
+  , scriptCurrencySymbol
+  )
 import Contract.Value as Value
 import Contract.Wallet (PrivatePaymentKey(..), privateKeyFromBytes)
 import Contract.Wallet.Key (publicKeyFromPrivateKey)
 import Control.Alt ((<|>))
-import Control.Monad.Error.Class (throwError)
+import Control.Monad.Error.Class (catchError, liftMaybe, throwError)
 import Control.Parallel (parTraverse)
-import Control.Promise (Promise, fromAff)
+import Control.Promise (Promise, fromAff, toAffE)
+import Ctl.Internal.FfiHelpers (MaybeFfiHelper, maybeFfiHelper)
 import Ctl.Internal.Plutus.Conversion (toPlutusAddress)
-import Ctl.Internal.Serialization.Address (enterpriseAddress, enterpriseAddressToAddress, keyHashCredential)
+import Ctl.Internal.Serialization.Address
+  ( enterpriseAddress
+  , enterpriseAddressToAddress
+  , keyHashCredential
+  )
 import Ctl.Internal.Serialization.Types (PrivateKey)
 import Ctl.Internal.Types.RawBytes (RawBytes(RawBytes))
 import Data.Array (head) as Array
+import Data.Bifunctor (lmap)
+import Data.BigInt (BigInt)
 import Data.BigInt as BigInt
 import Data.Char (fromCharCode)
+import Data.FoldableWithIndex (foldWithIndexM, foldrWithIndex)
 import Data.Int (round, toNumber)
 import Data.Map (toUnfoldable) as Map
 import Data.String (stripPrefix)
 import Data.String.CodeUnits (fromCharArray)
 import Data.String.Pattern (Pattern(Pattern))
 import Effect.Aff (error)
+import Foreign.Object (Object)
+import Foreign.Object (empty, insert) as Object
 import Partial.Unsafe (unsafePartial)
 
 foreign import setupListeners :: Listeners -> Effect Unit
-
+foreign import getParams :: Effect String
 foreign import promptFor :: String -> Effect String
+foreign import _getSelectedActor :: MaybeFfiHelper -> Effect (Maybe String)
 
 type NitroWallet =
   { name :: String, address :: String, balance :: Array (Array String) }
 
+type WalletStates =
+  { wallets :: Array NitroWallet
+  , depositScript :: Array NitroWallet
+  -- Array since its simpler to work with on js side
+  }
+
 type Listeners =
-  { refreshWallet :: Effect (Promise (Array NitroWallet))
+  { refreshWallet :: Effect (Promise WalletStates)
   , refreshState :: Effect (Promise String)
-  , initNitro :: Effect (Promise String)
-  , adminMintNitro :: Effect (Promise TransactionHash)
-  , botMintNitro :: Effect (Promise TransactionHash)
-  , modifyNitroState :: Effect (Promise TransactionHash)
+  , refreshRequests :: Effect (Promise String)
+  , initRacersState :: Effect (Promise String)
+  , mintNitro :: Effect (Promise TransactionHash)
+  , modifyRacersState :: Effect (Promise TransactionHash)
   , userBuyNitro :: Effect (Promise TransactionHash)
   , resetTokens :: Effect (Promise (Array TransactionHash))
---   , mintDriver :: Effect (Promise TransactionHash)
+  , makeAssetRequest :: Effect (Promise TransactionHash)
+  --   , mintDriver :: Effect (Promise TransactionHash)
   }
 
 keys :: Array (Tuple String String)
@@ -88,25 +154,50 @@ garbageAddressStr =
 main :: Effect Unit
 main = do
   setupListeners
-    { refreshWallet: fromAff $ parTraverse refreshWallet keys
-    , initNitro: initNitro
-    , refreshState: refreshState
-    , adminMintNitro
-    , botMintNitro
-    , modifyNitroState
+    { refreshWallet: refreshWallets
+    , initRacersState
+    , refreshState
+    , refreshRequests
+    , mintNitro
+    , modifyRacersState
     , userBuyNitro
     , resetTokens
---     , mintDriver
+    , makeAssetRequest
     }
   pure unit
 
--- mintDriver :: Effect (Promise TransactionHash)
--- mintDriver = withActor "Admin" do
---   txid <- mintNewDriverNft Common
---   pure txid
+getSelectedActor :: Effect String
+getSelectedActor = liftMaybe (error "actor not selected") =<< _getSelectedActor
+  maybeFfiHelper
 
-initNitro :: Effect (Promise String)
-initNitro = do
+refreshWallets :: Effect (Promise WalletStates)
+refreshWallets = fromAff do
+  wallets <- parTraverse refreshWallet keys
+  pjson <- liftEffect $ getParams
+  depositBalance <- toAffE $ withActor "Admin"
+    ( flip catchError (\e -> logError' ("Deposit script: " <> show e) $> []) do
+        rp <- liftContractE $ decodeJsonString pjson
+        (rs /\ _) <- queryRacersState rp
+        let depAddr = scriptHashAddress (unwrap rs).depositScript Nothing
+        depAddrString <- addressToBech32 depAddr
+        utxos <- utxosAt depAddr
+        let
+          totalValue = foldMap (_.amount <<< unwrap <<< _.output <<< unwrap)
+            utxos
+        pure $
+          [ { name: ""
+            , address: depAddrString
+            , balance: prettifyBalance totalValue
+            }
+          ]
+    )
+  pure
+    { wallets
+    , depositScript: depositBalance
+    }
+
+initRacersState :: Effect (Promise String)
+initRacersState = do
   nitroPriceStr <- promptFor "Enter nitro price in lovelace"
   withActor "Admin" do
     utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
@@ -152,53 +243,33 @@ initNitro = do
     awaitTxConfirmed txId
     pure unit
 
-adminMintNitro :: Effect (Promise TransactionHash)
-adminMintNitro = do
-  pjson <- promptFor "Enter NitroScriptParams:"
+mintNitro :: Effect (Promise TransactionHash)
+mintNitro = do
+  pjson <- getParams
   amo <- promptFor "Enter NITRO amount"
-  withActor "Admin" do
-    nsp <- liftContractE $ decodeJsonString pjson
-    a <- liftContractM "couldn't convert amount" $ BigInt.fromString amo
-    adminMintsNitroContract nsp a
+  actor <- getSelectedActor
+  nsp <- liftEither $ lmap (error <<< show) $ decodeJsonString pjson
+  a <- liftMaybe (error "couldn't convert amount") $ BigInt.fromString amo
+  case actor of
+    "Admin" -> withActor "Admin" $ adminMintsNitroContract nsp a
+    "Bot" -> withActor "Bot" $ botMintsNitroContract nsp a
+    _ -> throwError $ error $ "Actor is not appropriate admin or bot" <> actor
 
-botMintNitro :: Effect (Promise TransactionHash)
-botMintNitro = do
-  pjson <- promptFor "Enter NitroScriptParams:"
-  amo <- promptFor "Enter NITRO amount"
-  withActor "Bot" do
-    nsp <- liftContractE $ decodeJsonString pjson
-    a <- liftContractM "couldn't convert amount" $ BigInt.fromString amo
-    botMintsNitroContract nsp a
-
-modifyNitroState :: Effect (Promise TransactionHash)
-modifyNitroState = do
-  pjson <- promptFor "Enter NitroScriptParams:"
-  amo <- promptFor "Enter NITRO price"
-  treasuryAddrStr <- promptFor "Enter treasury address"
-  operatingAddrStr <- promptFor "Enter operating address"
-  withActor "Admin" do
-    nsp <- liftContractE $ decodeJsonString pjson
-    a <- liftContractM "couldn't convert amount" $ BigInt.fromString amo
-    (ns /\ _) <- queryRacersState nsp
-    treasuryAddr <- addressFromBech32 treasuryAddrStr <|> pure
-      (unwrap ns).treasuryAddress
-    operatingAddr <- addressFromBech32 operatingAddrStr <|> pure
-      (unwrap ns).operatingAddress
-    txId <- modifyRacersStateContract nsp
-      ( wrap $ (unwrap ns)
-          { nitroPrice = a
-          , treasuryAddress = treasuryAddr
-          , operatingAddress = operatingAddr
-          }
-      )
-    logInfo' $ "Modified nitro state: " <> show (encodeAeson ns)
-    pure txId
+makeAssetRequest :: Effect (Promise TransactionHash)
+makeAssetRequest = do
+  pjson <- getParams
+  rarityStr <- promptFor "Enter requested rarity classe"
+  withSelectedActor do
+    rp <- liftContractE $ decodeJsonString pjson
+    rarity <- liftContractM "Unrecognized rarity class" $ rarityFromString
+      rarityStr
+    requestAssetByRarity rp rarity
 
 userBuyNitro :: Effect (Promise TransactionHash)
 userBuyNitro = do
-  pjson <- promptFor "Enter NitroScriptParams:"
+  pjson <- getParams
   amo <- promptFor "Enter NITRO amount"
-  withActor "User" do
+  withSelectedActor do
     nsp <- liftContractE $ decodeJsonString pjson
     a <- liftContractM "couldn't convert amount" $ BigInt.fromString amo
     buyNitroContract nsp a
@@ -208,41 +279,44 @@ withActor actor contract = case lookup actor keys of
   Just k -> fromAff $ runKeyWalletContract k contract
   Nothing -> throwError $ error $ "Could not find actor " <> actor
 
+withSelectedActor :: forall a. Contract a -> Effect (Promise a)
+withSelectedActor contract = do
+  actor <- getSelectedActor
+  withActor actor contract
+
 refreshWallet :: String /\ String -> Aff NitroWallet
 refreshWallet (name /\ phex) = runKeyWalletContract phex do
   addr <- liftedM "could not get wallet address" $ getWalletAddress
   bech32addr <- addressToBech32 addr
   bal <- liftedM "could not get wallet balance" $ getWalletBalance
-  let
-    parsedBal =
-      map
-        ( \(cs /\ tk /\ am) ->
-            [ tokenNameToString tk
-            , if eq cs adaSymbol then
-                BigInt.toString am <> "  ("
-                  <>
-                    ( show $
-                        toNumber
-                          ( round
-                              ( BigInt.toNumber am
-                                  `div` 1000.0
-                              )
-                          ) `div` 1000.0
-                    )
-                  <> " Ada)"
-              else BigInt.toString am
-            ]
-        ) $
-        flattenValue bal
-  pure { name, address: bech32addr, balance: parsedBal }
+  pure { name, address: bech32addr, balance: prettifyBalance bal }
+
+prettifyBalance :: Value -> Array (Array String)
+prettifyBalance bal =
+  map
+    ( \(cs /\ tk /\ am) ->
+        [ tokenNameToString tk
+        , if eq cs adaSymbol then
+            BigInt.toString am <> "  ("
+              <>
+                ( show $
+                    toNumber
+                      ( round
+                          ( BigInt.toNumber am
+                              `div` 1000.0
+                          )
+                      ) `div` 1000.0
+                )
+              <> " Ada)"
+          else BigInt.toString am
+        ]
+    ) $
+    flattenValue bal
 
 resetTokens :: Effect (Promise (Array TransactionHash))
 resetTokens = fromAff $ parTraverse resetWallet $ map snd keys
   where
   resetWallet phex = runKeyWalletContract phex do
-    utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
-    (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
-      Map.toUnfoldable utxos
     garbageAddress <- addressFromBech32 garbageAddressStr
     bal <- liftedM "could not get wallet balance" $ getWalletBalance
 
@@ -263,17 +337,95 @@ resetTokens = fromAff $ parTraverse resetWallet $ map snd keys
 
 refreshState :: Effect (Promise String)
 refreshState = do
-  pjson <- promptFor "Enter NitroScriptParams:"
+  pjson <- getParams
   withActor "Admin" do
     nsp <- liftContractE $ decodeJsonString pjson
     (ns /\ _) <- queryRacersState nsp
-    treasuryAddr <- addressToBech32 (unwrap ns).treasuryAddress
-    operatingAddr <- addressToBech32 (unwrap ns).operatingAddress
-    pure $ show $ encodeAeson
-      { treasuryAddress: treasuryAddr
-      , operatingAddress: operatingAddr
-      , nitroPrice: BigInt.toString (unwrap ns).nitroPrice
-      }
+    prettyState <- stateToSimpleJson ns
+    pure prettyState
+
+refreshRequests :: Effect (Promise String)
+refreshRequests = do
+  pjson <- getParams
+  withActor "Admin" do
+    rp <- liftContractE $ decodeJsonString pjson
+    (rs /\ _) <- queryRacersState rp
+    pendingReqs <- queryRequestsWithAirdropAddress rp rs
+    processedReqs <- for (Map.toUnfoldable pendingReqs :: Array _)
+      \(_ /\ pendingReq) -> do
+        reqAddr <- addressToBech32 $ pendingReq.airdropAddress
+        pure
+          { airdropAddress: reqAddr
+          , requestedAssets: map (\(r /\ i) -> show r /\ i)
+              pendingReq.requestedAssets
+          }
+    pure $ show $ encodeAeson processedReqs
+
+stateToSimpleJson :: RacersState -> Contract String
+stateToSimpleJson rs = do
+  let uRs = unwrap rs
+  treasuryAddr <- addressToBech32 uRs.treasuryAddress
+  operatingAddr <- addressToBech32 uRs.operatingAddress
+  let
+    assetPrices =
+      foldrWithIndex
+        (\rarity price obj -> Object.insert (show rarity) price obj)
+        Object.empty
+        uRs.assetPrices
+  -- foldMapWithIndex (\rarity price -> Object.singleton (show rarity) price) uRs.assetPrices
+  pure $ show $ encodeAeson
+    { nitroPrice: uRs.nitroPrice
+    , treasuryAddress: treasuryAddr
+    , operatingAddress: operatingAddr
+    , assetPrices: assetPrices
+    , depositScript: uRs.depositScript
+    }
+
+modifyRacersState :: Effect (Promise TransactionHash)
+modifyRacersState = do
+  pjson <- getParams
+  newStateStr <- promptFor "Enter Racers State JSON:"
+  withActor "Admin" do
+    nsp <- liftContractE $ decodeJsonString pjson
+    newState <- stateFromSimpleJson newStateStr
+    (ns /\ _) <- queryRacersState nsp
+    txId <- modifyRacersStateContract nsp newState
+    logInfo' $ "Modified nitro state: " <> show (encodeAeson ns)
+    pure txId
+
+stateFromSimpleJson :: String -> Contract RacersState
+stateFromSimpleJson json = do
+  obj <- liftContractE decodedJson
+  assetPrices <-
+    foldWithIndexM
+      ( \rarityStr priceMap price -> do
+          rarity <- liftContractM "could not parse rarity" $ rarityFromString
+            rarityStr
+          pure $ AssocMap.insert rarity price priceMap
+      )
+      AssocMap.empty
+      (obj.assetPrices :: Object BigInt)
+  -- foldrWithIndex (\rarity price obj -> Object.insert (show rarity) price obj) Object.empty obj.assetPrices
+  -- foldMapWithIndex (\rarity price -> Object.singleton (show rarity) price) obj.assetPrices
+  treasuryAddress <- addressFromBech32 obj.treasuryAddress
+  operatingAddress <- addressFromBech32 obj.operatingAddress
+  pure $ wrap
+    { nitroPrice: (obj.nitroPrice :: BigInt)
+    , treasuryAddress
+    , operatingAddress
+    , assetPrices
+    , depositScript: (obj.depositScript :: ValidatorHash)
+    }
+  where
+  decodedJson
+    :: Either JsonDecodeError
+         { nitroPrice :: _
+         , treasuryAddress :: _
+         , operatingAddress :: _
+         , assetPrices :: _
+         , depositScript :: _
+         }
+  decodedJson = decodeJsonString json
 
 actorAddress :: String -> Maybe Address
 actorAddress actor = do

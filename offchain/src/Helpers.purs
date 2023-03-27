@@ -30,7 +30,6 @@ counterNonce ref = do
   Ref.write (n + 1) ref
   pure $ show n
 
-
 decodeWrappedAeson
   :: forall (a ∷ Type) (r :: Type)
    . (DecodeAeson a)

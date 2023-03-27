@@ -57,7 +57,22 @@
       .wallet-card table th {
         background-color: #f2f2f2;
       }
+      
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+      }
 
+      .column {
+        flex: 1;
+        margin: 0 10px;
+      }
+      
+      .deposit-script {
+        min-width: 40vw;
+      }
+     
       /* Responsive grid for the cards */
       @media only screen and (min-width: 768px) {
         .wallet-card {
@@ -74,12 +89,27 @@
     <div>
       <button id="refresh-wallets">Refresh Wallets</button>
       <button id="refresh-state">Refresh State</button>
+      <button id="refresh-requests">Refresh Requests</button>
+      <button id="reset">Reset tokens</button>
+      <input id="params-input" placeholder="RacersParams JSON"></input>
     </div>
     <div id="wallets">
     </div>
 
+    <div class="row">
+      <div class="column">
+        <pre id="state"></pre>
+        <pre id="requests"></pre>
+      </div>
+      <div id="deposit-script-container" class="column">
+      </div>
+    </div>
+
     <div>
-      <pre id="state"></pre>
+      <h4>Admin Actions:</h4>
+      <button id="init">Initialise Racers State</button>
+      <button id="modify-state">Change Racers State</button>
+      <!-- <button id="mint-driver" class="btn-disabled">Mint Driver</button> -->
     </div>
 
     <div>
@@ -88,12 +118,9 @@
       <div id="loading" style="display: none">
         <p>Loading...</p>
       </div>
-      <button id="init">Initialise Nitro</button>
-      <button id="modify-price">Change Nitro State</button>
-      <button id="mint-admin">Admin Mint nitro</button>
-      <button id="mint-bot">Bot Mint Nitro</button>
-      <button id="buy">User Buys Nitro</button>
-      <button id="reset">Reset tokens</button>
+      <button id="mint-nitro">Mint Nitro</button>
+      <button id="buy">Buy Nitro</button>
+      <button id="request-asset">Request Asset</button>
       <!-- <button id="mint-driver" class="btn-disabled">Mint Driver</button> -->
     </div>
   </body>

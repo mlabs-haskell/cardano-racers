@@ -9,6 +9,7 @@ module CardanoRacers.GameAsset.Types
   , GameAssetNftMetadata(GameAssetNftMetadata)
   , AssetOption
   , mkGameAsset
+  , rarityFromString
   ) where
 
 import Contract.Prelude
@@ -71,6 +72,12 @@ derive instance Generic Rarity _
 derive instance Eq Rarity
 instance Show Rarity where
   show = genericShow
+
+rarityFromString :: String -> Maybe Rarity
+rarityFromString "Common" = Just Common
+rarityFromString "Rare" = Just Rare
+rarityFromString "Epic" = Just Epic
+rarityFromString _ = Nothing
 
 instance Ord Rarity where
   compare = compare `on` toInt
