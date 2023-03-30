@@ -47,6 +47,10 @@ import Contract.Value
   , mpsSymbol
   )
 import Control.Alt ((<|>))
+import Ctl.Internal.Metadata.Cip25.Cip25String
+  ( fromMetadataString
+  , toMetadataString
+  )
 import Ctl.Internal.Metadata.FromMetadata (class FromMetadata, fromMetadata)
 import Ctl.Internal.Metadata.Helpers (lookupMetadata)
 import Ctl.Internal.Metadata.MetadataType (class MetadataType)
@@ -60,7 +64,7 @@ import Data.Map (toUnfoldable) as Map
 import Foreign.Object (Object)
 
 type AssetOption =
-  { name :: String
+  { name :: Cip25String
   , assetType :: GameAssetType
   , imageUrl :: String
   , description :: String
@@ -346,7 +350,7 @@ newtype GameAsset = GameAsset
   , attributes :: GameAssetAttributes
   , imageUrl :: String
   , mediaType :: Maybe String
-  , name :: String
+  , name :: Cip25String
   , description :: String
   }
 
@@ -355,13 +359,13 @@ mkGameAsset
      , attributes :: GameAssetAttributes
      , imageUrl :: String
      , mediaType :: Maybe String
-     , name :: String
+     , name :: Cip25String
      , description :: String
      }
   -> Maybe GameAsset
 mkGameAsset { assetType, attributes, imageUrl, mediaType, name, description }
   | assetType == DriverType && isJust (driverAttrsFromAttributes attributes) =
-      Just $ GameAsset
+      pure $ GameAsset
         { assetType
         , attributes
         , imageUrl
@@ -369,8 +373,8 @@ mkGameAsset { assetType, attributes, imageUrl, mediaType, name, description }
         , name
         , description
         }
-  | assetType == CarType && isJust (carAttrsFromAttributes attributes) = Just $
-      GameAsset
+  | assetType == CarType && isJust (carAttrsFromAttributes attributes) =
+      pure $ GameAsset
         { assetType
         , attributes
         , imageUrl
@@ -425,8 +429,8 @@ gameAssetMetadataEntryToKeyValue
     ]
   dataEntry =
     [ "name" /\ toMetadata (asset.name)
-    , "image" /\ toMetadata (asset.imageUrl)
-    , "description" /\ toMetadata (asset.description)
+    , "image" /\ toMetadataString (asset.imageUrl)
+    , "description" /\ toMetadataString (asset.description)
     , "attributes" /\ toMetadata attributesEntry
     , "type" /\ toMetadata
         ( case asset.assetType of
@@ -457,12 +461,12 @@ gameAssetMetadataEntryFromMetadata
   -> Maybe GameAssetNftMetadataEntry
 gameAssetMetadataEntryFromMetadata policy tk md = do
   name <- lookupMetadata "name" md >>= fromMetadata
-  imageUrl <- lookupMetadata "image" md >>= fromMetadata
+  imageUrl <- lookupMetadata "image" md >>= fromMetadataString
   assetType <- lookupMetadata "type" md >>= fromMetadata >>= case _ of
     "Driver" -> pure DriverType
     "Car" -> pure CarType
     _ -> Nothing
-  description <- lookupMetadata "description" md >>= fromMetadata
+  description <- lookupMetadata "description" md >>= fromMetadataString
   mbMediaType <- for (lookupMetadata "mediaType" md) fromMetadata
   cs <- mpsSymbol policy
   attrsMd <- lookupMetadata "attributes" md >>= fromMetadata >>=

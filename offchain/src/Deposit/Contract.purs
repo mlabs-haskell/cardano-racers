@@ -10,11 +10,21 @@ module CardanoRacers.Deposit.Contract
 import Contract.Prelude
 
 import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy)
-import CardanoRacers.AssetRequest.Types (AirdropAddressDatum, AssetRequestRedeemer(BurnRequestToken))
+import CardanoRacers.AssetRequest.Types
+  ( AirdropAddressDatum
+  , AssetRequestRedeemer(BurnRequestToken)
+  )
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Deposit.Types (DepositValidatorParams)
-import CardanoRacers.GameAsset.Contract (mintAvailableAssetByRarity, mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types (AssetOption, GameAssetNftMetadata, Rarity(Epic, Rare, Common))
+import CardanoRacers.GameAsset.Contract
+  ( mintAvailableAssetByRarity
+  , mkGameAssetPolicy
+  )
+import CardanoRacers.GameAsset.Types
+  ( AssetOption
+  , GameAssetNftMetadata
+  , Rarity(Epic, Rare, Common)
+  )
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.RacersState.Types (RacersState)
 import CardanoRacers.ScriptsFFI (depositScript)
@@ -23,19 +33,59 @@ import Contract.AuxiliaryData (setTxMetadata)
 import Contract.CborBytes (cborBytesToByteArray)
 import Contract.Log (logInfo')
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
-import Contract.PlutusData (OutputDatum(OutputDatum), PlutusData, Redeemer(Redeemer), fromData, toData, unitDatum, unitRedeemer)
-import Contract.Prim.ByteArray (byteArrayFromAscii, byteArrayToIntArray, byteLength)
+import Contract.PlutusData
+  ( OutputDatum(OutputDatum)
+  , PlutusData
+  , Redeemer(Redeemer)
+  , fromData
+  , toData
+  , unitDatum
+  , unitRedeemer
+  )
+import Contract.Prim.ByteArray
+  ( byteArrayFromAscii
+  , byteArrayToIntArray
+  , byteLength
+  )
 import Contract.ScriptLookups (mkUnbalancedTx)
 import Contract.ScriptLookups as Lookup
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (Validator(Validator), ValidatorHash, applyArgs, validatorHash)
+import Contract.Scripts
+  ( Validator(Validator)
+  , ValidatorHash
+  , applyArgs
+  , validatorHash
+  )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
-import Contract.Transaction (ScriptRef(PlutusScriptRef), TransactionHash, TransactionInput, TransactionOutputWithRefScript, awaitTxConfirmed, balanceTx, mkTxUnspentOut, signTransaction, submit, submitTxFromConstraints)
-import Contract.TxConstraints (DatumPresence(DatumWitness), InputWithScriptRef(RefInput))
+import Contract.Transaction
+  ( ScriptRef(PlutusScriptRef)
+  , TransactionHash
+  , TransactionInput
+  , TransactionOutputWithRefScript
+  , awaitTxConfirmed
+  , balanceTx
+  , mkTxUnspentOut
+  , signTransaction
+  , submit
+  , submitTxFromConstraints
+  )
+import Contract.TxConstraints
+  ( DatumPresence(DatumWitness)
+  , InputWithScriptRef(RefInput)
+  )
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletUtxos, utxosAt)
 import Contract.Value (TokenName, Value)
-import Contract.Value (flattenValue, geq, getTokenName, lovelaceValueOf, mkTokenName, negation, scriptCurrencySymbol, singleton) as Value
+import Contract.Value
+  ( flattenValue
+  , geq
+  , getTokenName
+  , lovelaceValueOf
+  , mkTokenName
+  , negation
+  , scriptCurrencySymbol
+  , singleton
+  ) as Value
 import Control.Apply (lift2)
 import Control.Monad.Error.Class (liftMaybe)
 import Ctl.Internal.Contract.Monad (getQueryHandle)
@@ -170,12 +220,17 @@ queryOrCreateDepositReferenceScript rp = do
     Nothing -> createDepositReferenceScriptOutput rp
     Just txi -> pure txi
 
-queryDepositReferenceScriptOutput :: RacersParams -> Contract (Maybe TransactionInput)
+queryDepositReferenceScriptOutput
+  :: RacersParams -> Contract (Maybe TransactionInput)
 queryDepositReferenceScriptOutput rp = do
   (rs /\ _) <- queryRacersState rp
-  utxosAtDeposit <- utxosAt $ scriptHashAddress (unwrap rs).depositScript Nothing
-  pure $ _.index <$> findWithIndex (\txi txo -> maybe false (_ == unwrap (unwrap rs).depositScript) (unwrap (unwrap txo).output).referenceScript) utxosAtDeposit
-
+  utxosAtDeposit <- utxosAt $ scriptHashAddress (unwrap rs).depositScript
+    Nothing
+  pure $ _.index <$> findWithIndex
+    ( \txi txo -> maybe false (_ == unwrap (unwrap rs).depositScript)
+        (unwrap (unwrap txo).output).referenceScript
+    )
+    utxosAtDeposit
 
 redeemGameAsset
   :: RacersParams

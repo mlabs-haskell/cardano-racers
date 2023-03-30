@@ -22,6 +22,7 @@ import CardanoRacers.GameAsset.Types
 import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.ScriptsFFI (gameAssetPolicy)
 import Contract.Address (Address)
+import Contract.Metadata (unCip25String)
 import Contract.Monad (Contract, liftContractM)
 import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
@@ -59,7 +60,7 @@ generateAsset ao nonce rarity = do
 
   nameByteArrayWithSep <- liftMaybe (error "could not create name byte array")
     $ byteArrayFromAscii
-    $ ao.name
+    $ (unCip25String ao.name)
     <> ":"
     <> nonce
 
