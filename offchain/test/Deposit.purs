@@ -26,6 +26,7 @@ import CardanoRacers.RacersState.Types (RacersState(RacersState))
 import Contract.Address (getWalletAddresses)
 import Contract.AssocMap (Map, empty, insert) as AssocMap
 import Contract.Log (logInfo')
+import Contract.Metadata (mkCip25String)
 import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.Scripts (ValidatorHash, validatorHash)
 import Contract.Test.Mote (TestPlanM)
@@ -45,6 +46,7 @@ import Data.BigInt (fromInt) as BigInt
 import Data.Map (Map, fromFoldable, toUnfoldable) as Map
 import Effect.Ref (new) as Ref
 import Mote (group, test)
+import Partial.Unsafe (unsafePartial)
 
 suite :: TestPlanM PlutipTest Unit
 suite = group "AssetRequest" do
@@ -150,7 +152,7 @@ suite = group "AssetRequest" do
   availableAssets :: Map.Map Rarity AssetOption
   availableAssets = Map.fromFoldable
     [ Common /\
-        { name: "CommonCar"
+        { name: unsafePartial $ fromJust $ mkCip25String "CommonCar"
         , assetType: CarType
         , imageUrl:
             "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
@@ -158,7 +160,7 @@ suite = group "AssetRequest" do
         -- , uniquenessNonce: "1"
         }
     , Rare /\
-        { name: "RareDriver"
+        { name: unsafePartial $ fromJust $ mkCip25String "RareDriver"
         , assetType: DriverType
         , imageUrl:
             "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
@@ -166,7 +168,7 @@ suite = group "AssetRequest" do
         -- , uniquenessNonce: "1"
         }
     , Epic /\
-        { name: "EpicCar"
+        { name: unsafePartial $ fromJust $ mkCip25String "EpicCar"
         , assetType: CarType
         , imageUrl:
             "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
