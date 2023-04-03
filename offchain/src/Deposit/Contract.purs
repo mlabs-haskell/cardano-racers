@@ -24,8 +24,10 @@ import CardanoRacers.GameAsset.Types
   , GameAssetNftMetadata
   , Rarity(Epic, Rare, Common)
   )
+import CardanoRacers.Nitro.Contract (mintNitroAndPayToAddressConstraints)
 import CardanoRacers.RacersState.Types (RacersState)
 import CardanoRacers.ScriptsFFI (depositScript)
+import Common.ContractHelpers (findOwnAuthUtxo)
 import Contract.Address (Address, scriptHashAddress)
 import Contract.AuxiliaryData (setTxMetadata)
 import Contract.CborBytes (cborBytesToByteArray)
@@ -46,7 +48,6 @@ import Contract.Prim.ByteArray
   , byteLength
   )
 import Contract.ScriptLookups (mkUnbalancedTx)
-import Contract.ScriptLookups as Lookup
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts
   ( Validator(Validator)
@@ -72,11 +73,10 @@ import Contract.TxConstraints
   , InputWithScriptRef(RefInput)
   )
 import Contract.TxConstraints as Constraints
-import Contract.Utxos (getWalletUtxos, utxosAt)
-import Contract.Value (TokenName, Value)
+import Contract.Utxos (utxosAt)
+import Contract.Value (TokenName)
 import Contract.Value
   ( flattenValue
-  , geq
   , getTokenName
   , lovelaceValueOf
   , mkTokenName
@@ -84,19 +84,18 @@ import Contract.Value
   , scriptCurrencySymbol
   , singleton
   ) as Value
-import Control.Apply (lift2)
 import Control.Monad.Error.Class (liftMaybe)
 import Ctl.Internal.Contract.QueryHandle (getQueryHandle)
 import Ctl.Internal.Plutus.Conversion (toPlutusTxOutputWithRefScript)
 import Ctl.Internal.Serialization (convertTransaction, toBytes)
-import Data.Array (catMaybes, elem, filter, find) as Array
+import Data.Array (catMaybes, elem, filter) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt, toInt) as BigInt
 import Data.Char (fromCharCode)
 import Data.List.Lazy (replicateM)
 import Data.List.Lazy as List
 import Data.Map (Map)
-import Data.Map (fromFoldable, singleton, toUnfoldable) as Map
+import Data.Map (fromFoldable, lookup, singleton, toUnfoldable) as Map
 import Data.Profunctor.Choice (left)
 import Data.String.CodeUnits (fromCharArray)
 import Effect.Exception (error)
@@ -235,6 +234,15 @@ redeemGameAsset
   (authTxi /\ authTxo) <- liftedM "could not find admin or bot utxo in wallet" $
     findOwnAuthUtxo rp
 
+  (mintsAndPaysNitroConstraints /\ mintsAndPaysNitroLookups) <- do
+    cs <- for requestedAssets $ \(rarity /\ count) -> do
+      assetOption <- liftContractM "" $ Map.lookup rarity availableAssets
+      countInt <- liftMaybe (error "could not convert BigInt to Int") $
+        BigInt.toInt count
+      mintNitroAndPayToAddressConstraints rp (count * assetOption.nitroAmount)
+        airdropAddress
+    pure $ foldMap fst cs /\ foldMap snd cs
+
   let
     -- Create and collect constraints to to mint game assets with metadata
     payAssetConstraintsAndMetadata
@@ -242,12 +250,14 @@ redeemGameAsset
     payAssetConstraintsAndMetadata = do
       constraintsAndMetadata <- map join $ for requestedAssets $
         \(rarity /\ count) -> do
+          assetOption <- liftMaybe (error "could not find rarity entry in map")
+            $ Map.lookup rarity availableAssets
           countInt <- liftMaybe (error "could not convert BigInt to Int") $
             BigInt.toInt count
           List.toUnfoldable <$> replicateM countInt
             ( do
                 nonce <- generateNonce
-                mintAvailableAssetByRarity availableAssets gameAssetSymbol nonce
+                mintAvailableAssetByRarity assetOption gameAssetSymbol nonce
                   airdropAddress
                   rarity
             )
@@ -266,7 +276,7 @@ redeemGameAsset
           tkNameM <#> \tkName -> Constraints.mustMintValueWithRedeemer red
             (Value.negation $ Value.singleton assetRequestSymbol tkName count)
 
-  mintsAndPays /\ allMetadata <- liftEffect payAssetConstraintsAndMetadata
+  mintsAndPaysNft /\ allMetadata <- liftEffect payAssetConstraintsAndMetadata
   burnsRequestTokens <- liftContractM "could not create token name"
     burnsRequestTokensM
 
@@ -304,7 +314,7 @@ redeemGameAsset
               { assetPolicySymbol: gameAssetSymbol
               , assetRequestPolicySymbol: assetRequestSymbol
               }
-        pure $ Lookup.validator depositValidator
+        pure $ Lookups.validator depositValidator
     )
     (const $ pure mempty)
     mDepScriptRef
@@ -313,14 +323,16 @@ redeemGameAsset
     constraints :: Constraints.TxConstraints Void Void
     constraints = spendsRequestToken
       <> Constraints.mustSpendPubKeyOutput authTxi
-      <> mintsAndPays
+      <> mintsAndPaysNitroConstraints
+      <> mintsAndPaysNft
       <> burnsRequestTokens
 
     lookups :: Lookups.ScriptLookups Void
-    lookups = Lookup.unspentOutputs (Map.singleton requestTxi requestTxo)
-      <> Lookup.unspentOutputs (Map.singleton authTxi authTxo)
-      <> Lookup.mintingPolicy gameAssetMP
-      <> Lookup.mintingPolicy assetRequestMP
+    lookups = Lookups.unspentOutputs (Map.singleton requestTxi requestTxo)
+      <> Lookups.unspentOutputs (Map.singleton authTxi authTxo)
+      <> Lookups.mintingPolicy gameAssetMP
+      <> Lookups.mintingPolicy assetRequestMP
+      <> mintsAndPaysNitroLookups
       <> depositScriptLookups
 
   unbalancedTx <- liftedE $ mkUnbalancedTx lookups constraints
@@ -349,27 +361,6 @@ consumeAndRedeemRequests rp availableAssets generateNonce st mDepScriptRef = do
     (redeemGameAsset rp availableAssets generateNonce mDepScriptRef)
     pendingRequests
   pure txIds
-
-findOwnAuthUtxo
-  :: RacersParams
-  -> Contract (Maybe (TransactionInput /\ TransactionOutputWithRefScript))
-findOwnAuthUtxo rp = do
-  utxos <- liftedM "could not get wallet utxos" $ getWalletUtxos
-
-  let
-    adminValue :: Value
-    adminValue = uncurry Value.singleton (unwrap rp).adminToken $ BigInt.fromInt
-      1
-
-    botValue :: Value
-    botValue = uncurry Value.singleton (unwrap rp).botToken $ BigInt.fromInt 1
-    mUtxo =
-      Array.find
-        ( \(_ /\ txo) -> lift2 (||) (_ `Value.geq` adminValue)
-            (_ `Value.geq` botValue)
-            (unwrap (unwrap txo).output).amount
-        ) $ Map.toUnfoldable utxos
-  pure mUtxo
 
 mkDepositValidator
   :: RacersParams -> DepositValidatorParams -> Contract Validator
