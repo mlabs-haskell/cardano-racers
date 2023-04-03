@@ -68,6 +68,7 @@ type AssetOption =
   , assetType :: GameAssetType
   , imageUrl :: String
   , description :: String
+  , nitroAmount :: BigInt
   }
 
 data Rarity = Common | Rare | Epic

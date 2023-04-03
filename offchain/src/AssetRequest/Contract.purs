@@ -57,11 +57,8 @@ requestAssetByRarity rp rarity = do
       )
       $ AssocMap.lookup rarity (unwrap rs).assetPrices
 
-  -- todo:  pull out into helper for resue
-  let
-    tokenNameStr = show rarity
   requestTokenName <- liftContractM "Could not make required token names" $
-    (Value.mkTokenName <=< byteArrayFromAscii) tokenNameStr
+    (Value.mkTokenName <=< byteArrayFromAscii) (show rarity)
 
   let
     treasuryAmt = BigInt.fromInt <<< ceil $ BigInt.toNumber totalAdaDue * 0.75

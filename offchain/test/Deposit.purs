@@ -20,6 +20,7 @@ import CardanoRacers.GameAsset.Types
   , Rarity(Common, Rare, Epic)
   )
 import CardanoRacers.Helpers (counterNonce)
+import CardanoRacers.Nitro.Contract (adminMintsNitroContract)
 import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
 import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
 import CardanoRacers.RacersState.Types (RacersState(RacersState))
@@ -66,11 +67,8 @@ suite = group "AssetRequest" do
         --    logInfo' $ show col
         st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey) rp
           assetPrices
-        _ <- withKeyWallet userKey $ requestAssetByRarity rp Common
-        _ <- withKeyWallet treasuryKey $ requestAssetByRarity rp Common
         _ <- withKeyWallet userKey $ requestAssetByRarity rp Rare
         _ <- withKeyWallet userKey $ requestAssetByRarity rp Epic
-        _ <- withKeyWallet userKey $ requestAssetByRarity rp Common
         -- let scriptAddr = scriptHashAddress (unwrap st).depositScript Nothing
         depRefOref <- withKeyWallet adminKey $
           createDepositReferenceScriptOutput rp
@@ -80,11 +78,12 @@ suite = group "AssetRequest" do
             ( show $ concatMap (_.requestedAssets <<< snd) $
                 (Map.toUnfoldable :: _ -> Array _) reqs
             )
+          _ <- adminMintsNitroContract rp (BigInt.fromInt 1_000_000)
           consumeAndRedeemRequests rp availableAssets (counterNonce cRef) st $
             Just depRefOref
-        withKeyWallet treasuryKey do
-          bal <- getWalletBalance
-          logInfo' $ "========== Treasury\n" <> show bal
+        -- withKeyWallet treasuryKey do
+        --   bal <- getWalletBalance
+        --   logInfo' $ "========== Treasury\n" <> show bal
         withKeyWallet userKey do
           bal <- getWalletBalance
           logInfo' $ "========== User\n" <> show bal
@@ -157,6 +156,7 @@ suite = group "AssetRequest" do
         , imageUrl:
             "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
         , description: "Cool car with lots of experience"
+        , nitroAmount: BigInt.fromInt 100
         }
     , Rare /\
         { name: unsafePartial $ fromJust $ mkCip25String "RareDriver"
@@ -164,6 +164,7 @@ suite = group "AssetRequest" do
         , imageUrl:
             "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
         , description: "Cool car with lots of experience"
+        , nitroAmount: BigInt.fromInt 200
         }
     , Epic /\
         { name: unsafePartial $ fromJust $ mkCip25String "EpicCar"
@@ -171,5 +172,6 @@ suite = group "AssetRequest" do
         , imageUrl:
             "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
         , description: "Cool car with lots of experience"
+        , nitroAmount: BigInt.fromInt 300
         }
     ]

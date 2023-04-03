@@ -161,6 +161,7 @@ type Listeners =
         , assetType :: String
         , description :: String
         , imageUrl :: String
+        , nitroAmount :: BigInt
         }
         Unit
   --   , mintDriver :: Effect (Promise TransactionHash)
@@ -239,6 +240,7 @@ setAssetOption
      , assetType :: String
      , description :: String
      , imageUrl :: String
+     , nitroAmount :: BigInt
      }
   -> Effect Unit
 setAssetOption r rarityStr option = do
@@ -256,6 +258,7 @@ setAssetOption r rarityStr option = do
       , assetType
       , description: option.description
       , imageUrl: option.imageUrl
+      , nitroAmount: option.nitroAmount
       }
   Ref.write (Map.insert rarity assetOption availableAssets) r
 
@@ -617,13 +620,15 @@ initialAvailableAssets = Map.fromFoldable
       , imageUrl:
           "ipfs://k2cwuee3arxg398hwxx6c0iferxitu126xntuzg8t765oo020h5y6npn"
       , description: "Common car nothing too special"
+      , nitroAmount: BigInt.fromInt 100
       }
   , Rare /\
-      { name: unsafePartial $ fromJust $ mkCip25String "Dan The Driver Man"
+      { name: unsafePartial $ fromJust $ mkCip25String "The Driver"
       , assetType: DriverType
       , imageUrl:
           "ipfs://k2cwuee3arxg398hwxx6c0iferxitu126xntuzg8t765oo020h5y6npn"
       , description: "Rare driver with lots of experience"
+      , nitroAmount: BigInt.fromInt 200
       }
   , Epic /\
       { name: unsafePartial $ fromJust $ mkCip25String "Mustang"
@@ -631,5 +636,6 @@ initialAvailableAssets = Map.fromFoldable
       , imageUrl:
           "ipfs://k2cwuee3arxg398hwxx6c0iferxitu126xntuzg8t765oo020h5y6npn"
       , description: "Exceptional vehicle!"
+      , nitroAmount: BigInt.fromInt 300
       }
   ]

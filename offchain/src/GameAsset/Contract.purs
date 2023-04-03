@@ -34,8 +34,6 @@ import Contract.Value as Value
 import Control.Monad.Error.Class (liftMaybe, throwError)
 import Data.Array (singleton) as Array
 import Data.BigInt (fromInt) as BigInt
-import Data.Map (Map)
-import Data.Map (lookup) as Map
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
 import Random.LCG (randomSeed)
@@ -115,22 +113,18 @@ type MintAssetNftOptions =
   }
 
 mintAvailableAssetByRarity
-  :: Map Rarity AssetOption
+  :: AssetOption
   -> CurrencySymbol
   -> String
   -> Address
   -> Rarity
   -> Effect (Constraints.TxConstraints Void Void /\ GameAssetNftMetadataEntry)
 mintAvailableAssetByRarity
-  availableAssets
+  assetOption
   assetSymbol
   nonce
   targetAddress
   rarity = do
-  assetOption <-
-    liftMaybe (error $ "available assets map does not include: " <> show rarity)
-      $ Map.lookup rarity availableAssets
-
   (ga /\ tk) <- generateAsset assetOption nonce rarity
 
   let
