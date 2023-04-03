@@ -1,6 +1,7 @@
 module CardanoRacers.Deposit.Contract
   ( queryRequestsWithAirdropAddress
   , createDepositReferenceScriptOutput
+  , queryOrCreateDepositReferenceScript
   , consumeAndRedeemRequests
   , redeemGameAsset
   , mkDepositValidator
@@ -24,7 +25,12 @@ import CardanoRacers.GameAsset.Types
   , GameAssetNftMetadata
   , Rarity(Epic, Rare, Common)
   )
-import CardanoRacers.Nitro.Contract (mintNitroAndPayToAddressConstraints)
+import CardanoRacers.Helpers (paysToAddrConstraint)
+import CardanoRacers.Nitro.Contract
+  ( mintNitroAndPayToAddressConstraints
+  , paysNitroConstraints
+  )
+import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.RacersState.Types (RacersState)
 import CardanoRacers.ScriptsFFI (depositScript)
 import Common.ContractHelpers (findOwnAuthUtxo)
@@ -92,6 +98,7 @@ import Data.Array (catMaybes, elem, filter) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt, toInt) as BigInt
 import Data.Char (fromCharCode)
+import Data.FoldableWithIndex (findWithIndex)
 import Data.List.Lazy (replicateM)
 import Data.List.Lazy as List
 import Data.Map (Map)
@@ -167,8 +174,6 @@ queryRequestsWithAirdropAddress rp st = do
       "Epic" -> pure Epic
       _ -> Nothing
 
--- todo: this contract does not need to computer scripts by itself as its
--- essentially a hepler, deposit validator params should be passed in
 createDepositReferenceScriptOutput :: RacersParams -> Contract TransactionInput
 createDepositReferenceScriptOutput rp = do
   assetRequestMP <- mkAssetRequestPolicy rp
@@ -209,6 +214,25 @@ createDepositReferenceScriptOutput rp = do
     , index: zero
     }
 
+queryOrCreateDepositReferenceScript :: RacersParams -> Contract TransactionInput
+queryOrCreateDepositReferenceScript rp = do
+  mTxi <- queryDepositReferenceScriptOutput rp
+  case mTxi of
+    Nothing -> createDepositReferenceScriptOutput rp
+    Just txi -> pure txi
+
+queryDepositReferenceScriptOutput
+  :: RacersParams -> Contract (Maybe TransactionInput)
+queryDepositReferenceScriptOutput rp = do
+  (rs /\ _) <- queryRacersState rp
+  utxosAtDeposit <- utxosAt $ scriptHashAddress (unwrap rs).depositScript
+    Nothing
+  pure $ _.index <$> findWithIndex
+    ( \_ txo -> maybe false (_ == unwrap (unwrap rs).depositScript)
+        (unwrap (unwrap txo).output).referenceScript
+    )
+    utxosAtDeposit
+
 redeemGameAsset
   :: RacersParams
   -> Map Rarity AssetOption
@@ -234,16 +258,16 @@ redeemGameAsset
   (authTxi /\ authTxo) <- liftedM "could not find admin or bot utxo in wallet" $
     findOwnAuthUtxo rp
 
-  (mintsAndPaysNitroConstraints /\ mintsAndPaysNitroLookups) <- do
+  paysNitro <- do
     cs <- for requestedAssets $ \(rarity /\ count) -> do
-      assetOption <- liftContractM "" $ Map.lookup rarity availableAssets
-      countInt <- liftMaybe (error "could not convert BigInt to Int") $
-        BigInt.toInt count
-      mintNitroAndPayToAddressConstraints rp (count * assetOption.nitroAmount)
-        airdropAddress
-    pure $ foldMap fst cs /\ foldMap snd cs
+      assetOption <- liftContractM "could not find asset option" $ Map.lookup
+        rarity
+        availableAssets
+      paysNitroConstraints rp airdropAddress (count * assetOption.nitroAmount)
+    pure $ fold cs
 
   let
+
     -- Create and collect constraints to to mint game assets with metadata
     payAssetConstraintsAndMetadata
       :: Effect (Constraints.TxConstraints Void Void /\ GameAssetNftMetadata)
@@ -323,7 +347,7 @@ redeemGameAsset
     constraints :: Constraints.TxConstraints Void Void
     constraints = spendsRequestToken
       <> Constraints.mustSpendPubKeyOutput authTxi
-      <> mintsAndPaysNitroConstraints
+      <> paysNitro
       <> mintsAndPaysNft
       <> burnsRequestTokens
 
@@ -332,7 +356,6 @@ redeemGameAsset
       <> Lookups.unspentOutputs (Map.singleton authTxi authTxo)
       <> Lookups.mintingPolicy gameAssetMP
       <> Lookups.mintingPolicy assetRequestMP
-      <> mintsAndPaysNitroLookups
       <> depositScriptLookups
 
   unbalancedTx <- liftedE $ mkUnbalancedTx lookups constraints

@@ -5,6 +5,7 @@ module CardanoRacers.Nitro.Contract
   , mintNitroConstraints
   , mintNitroAndPayToAddressConstraints
   , mintNitroAndPayToAddressContract
+  , paysNitroConstraints
   , mkNitroPolicy
   ) where
 
@@ -47,7 +48,6 @@ mintNitroConstraints
   -> Contract
        (Constraints.TxConstraints Void Void /\ Lookups.ScriptLookups Void)
 mintNitroConstraints rp nitroAmount = do
-  utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
   nitroMp <- mkNitroPolicy rp
   (authTxi /\ authTxo) <- liftedM "could not find admin or bot utxo in wallet" $
     findOwnAuthUtxo rp
@@ -71,6 +71,19 @@ mintNitroConstraints rp nitroAmount = do
 
   pure (constraints /\ lookups)
 
+paysNitroConstraints
+  :: RacersParams
+  -> Address
+  -> BigInt
+  -> Contract (Constraints.TxConstraints Void Void)
+paysNitroConstraints rp targetAddress nitroAmount = do
+  nitroSymbol <- liftedM "Could not get currency symbol"
+    $ scriptCurrencySymbol
+    <$> mkNitroPolicy rp
+
+  pure $ paysToAddrConstraint targetAddress
+    (Value.singleton nitroSymbol (unwrap rp).nitroToken nitroAmount)
+
 mintNitroAndPayToAddressConstraints
   :: RacersParams
   -> BigInt
@@ -79,9 +92,14 @@ mintNitroAndPayToAddressConstraints
        (Constraints.TxConstraints Void Void /\ Lookups.ScriptLookups Void)
 mintNitroAndPayToAddressConstraints rp nitroAmount targetAddress = do
   (constraints /\ lookups) <- mintNitroConstraints rp nitroAmount
+
+  nitroSymbol <- liftedM "Could not get currency symbol"
+    $ scriptCurrencySymbol
+    <$> mkNitroPolicy rp
+
   let
     constraints' = constraints <> paysToAddrConstraint targetAddress
-      (Value.lovelaceValueOf nitroAmount)
+      (Value.singleton nitroSymbol (unwrap rp).nitroToken nitroAmount)
   pure (constraints' /\ lookups)
 
 mintNitroAndPayToAddressContract

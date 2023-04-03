@@ -20,6 +20,7 @@ import CardanoRacers.GameAsset.Types
   , Rarity(Common, Rare, Epic)
   )
 import CardanoRacers.Helpers (counterNonce)
+import CardanoRacers.Nitro.Contract (adminMintsNitroContract)
 import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
 import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
 import CardanoRacers.RacersState.Types (RacersState(RacersState))
@@ -77,6 +78,7 @@ suite = group "AssetRequest" do
             ( show $ concatMap (_.requestedAssets <<< snd) $
                 (Map.toUnfoldable :: _ -> Array _) reqs
             )
+          _ <- adminMintsNitroContract rp (BigInt.fromInt 1_000_000)
           consumeAndRedeemRequests rp availableAssets (counterNonce cRef) st $
             Just depRefOref
         -- withKeyWallet treasuryKey do

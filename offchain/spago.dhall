@@ -14,6 +14,7 @@ You can edit this file as you like.
   , "datetime"
   , "effect"
   , "exceptions"
+  , "foldable-traversable"
   , "foreign-object"
   , "integers"
   , "lcg"
