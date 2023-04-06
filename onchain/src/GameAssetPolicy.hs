@@ -17,8 +17,8 @@ import PlutusTx.Prelude
 {-# INLINEABLE mkGameAssetPolicy #-}
 mkGameAssetPolicy :: RacersParams -> ScriptContext -> Bool
 mkGameAssetPolicy gapp ctx =
-  traceIfFalse "admin token not present in inputs" inputContainsAdminNft
-    || traceIfFalse "bot token not present in inputs" inputContainsBotNft
+  traceIfFalse "admin token not present" inputContainsAdminNft
+    || traceIfFalse "bot token not present" inputContainsBotNft
   where
     info :: TxInfo
     !info = scriptContextTxInfo ctx

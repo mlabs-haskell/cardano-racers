@@ -2,41 +2,25 @@ module Test.CardanoRacers.Deposit (suite) where
 
 import Contract.Prelude
 
-import CardanoRacers.AssetRequest.Contract
-  ( mkAssetRequestPolicy
-  , requestAssetByRarity
-  )
+import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy, requestAssetByRarity)
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.Deposit.Contract
-  ( consumeAndRedeemRequests
-  , createDepositReferenceScriptOutput
-  , mkDepositValidator
-  , queryRequestsWithAirdropAddress
-  )
+import CardanoRacers.Deposit.Contract (consumeAndRedeemRequests, createDepositReferenceScriptOutput, mkDepositValidator, queryRequestsWithAirdropAddress)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types
-  ( AssetOption
-  , GameAssetType(CarType, DriverType)
-  , Rarity(Common, Rare, Epic)
-  )
-import CardanoRacers.Helpers (counterNonce)
+import CardanoRacers.GameAsset.Types (AssetOption, GameAssetType(CarType, DriverType), Rarity(Common, Rare, Epic))
+import CardanoRacers.Helpers (counterNonce, getTxoWithRefScrpt)
 import CardanoRacers.Nitro.Contract (adminMintsNitroContract)
 import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
+import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput)
 import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
 import CardanoRacers.RacersState.Types (RacersState(RacersState))
 import Contract.Address (getWalletAddresses)
 import Contract.AssocMap (Map, empty, insert) as AssocMap
 import Contract.Log (logInfo')
 import Contract.Metadata (mkCip25String)
-import Contract.Monad (Contract, liftContractM, liftedM)
-import Contract.Scripts (ValidatorHash, validatorHash)
+import Contract.Monad (Contract, liftContractM, liftedM, throwContractError)
+import Contract.Scripts (MintingPolicy(..), PlutusScript(..), ValidatorHash, validatorHash)
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip
-  ( InitialUTxOs
-  , PlutipTest
-  , withKeyWallet
-  , withWallets
-  )
+import Contract.Test.Plutip (InitialUTxOs, PlutipTest, withKeyWallet, withWallets)
 import Contract.Utxos (getWalletBalance, getWalletUtxos)
 import Contract.Value (scriptCurrencySymbol)
 import Contract.Wallet (KeyWallet)
@@ -56,6 +40,16 @@ suite = group "AssetRequest" do
       \(adminKey /\ treasuryKey /\ userKey) -> do
         cRef <- liftEffect $ Ref.new 1
         rp <- withKeyWallet adminKey createRacersParamsHelper
+        reqTxi /\ gameTxi <- withKeyWallet adminKey $ do
+          assetRequestScriptRef <- mkAssetRequestPolicy rp >>= case _ of 
+            PlutusMintingPolicy s -> pure s
+            _ -> throwContractError "Not plutus script"
+          gameAssetScriptRef <- mkGameAssetPolicy rp >>= case _ of
+            PlutusMintingPolicy s -> pure s
+            _ -> throwContractError "Not plutus script"
+          requestTxi <- createRacersRefScriptOutput rp assetRequestScriptRef
+          gameTxi <- createRacersRefScriptOutput rp gameAssetScriptRef
+          pure $ requestTxi /\ gameTxi
         let
           assetPrices = foldl (flip $ uncurry AssocMap.insert) AssocMap.empty
             [ (Common /\ BigInt.fromInt 5_000_000)
@@ -67,8 +61,8 @@ suite = group "AssetRequest" do
         --    logInfo' $ show col
         st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey) rp
           assetPrices
-        _ <- withKeyWallet userKey $ requestAssetByRarity rp Rare
-        _ <- withKeyWallet userKey $ requestAssetByRarity rp Epic
+        _ <- withKeyWallet userKey $ requestAssetByRarity rp Nothing Rare
+        _ <- withKeyWallet userKey $ requestAssetByRarity rp Nothing Epic
         -- let scriptAddr = scriptHashAddress (unwrap st).depositScript Nothing
         depRefOref <- withKeyWallet adminKey $
           createDepositReferenceScriptOutput rp
@@ -79,8 +73,9 @@ suite = group "AssetRequest" do
                 (Map.toUnfoldable :: _ -> Array _) reqs
             )
           _ <- adminMintsNitroContract rp (BigInt.fromInt 1_000_000)
+          refTxo <- getTxoWithRefScrpt depRefOref
           consumeAndRedeemRequests rp availableAssets (counterNonce cRef) st $
-            Just depRefOref
+            Just (depRefOref /\ refTxo)
         -- withKeyWallet treasuryKey do
         --   bal <- getWalletBalance
         --   logInfo' $ "========== Treasury\n" <> show bal

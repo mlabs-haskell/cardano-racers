@@ -48,7 +48,7 @@ suite = group "AssetRequest" do
             ]
         _ <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey) rp
           assetPrices
-        _ <- withKeyWallet userKey $ requestAssetByRarity rp Common
+        _ <- withKeyWallet userKey $ requestAssetByRarity rp Nothing Common
         -- withKeyWallet adminKey $ do
         --   reqs <- queryRequestsWithAirdropAddress rp st
         --   _ <- consumeAndRedeemRequests rp st Nothing
