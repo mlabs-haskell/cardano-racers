@@ -2,7 +2,15 @@ module CardanoRacers.Helpers where
 
 import Contract.Prelude
 
-import Aeson (class DecodeAeson, class EncodeAeson, Aeson, JsonDecodeError(TypeMismatch), caseAesonObject, encodeAeson, getField)
+import Aeson
+  ( class DecodeAeson
+  , class EncodeAeson
+  , Aeson
+  , JsonDecodeError(TypeMismatch)
+  , caseAesonObject
+  , encodeAeson
+  , getField
+  )
 import Contract.Address (Address)
 import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
@@ -21,7 +29,8 @@ import Foreign.Object (singleton)
 wrapEncodeAeson :: forall (a :: Type). EncodeAeson a => String -> a -> Aeson
 wrapEncodeAeson constr = encodeAeson <<< singleton constr <<< encodeAeson
 
-getTxoWithRefScrpt :: TransactionInput -> Contract TransactionOutputWithRefScript
+getTxoWithRefScrpt
+  :: TransactionInput -> Contract TransactionOutputWithRefScript
 getTxoWithRefScrpt scriptRefIn = do
   -- Need to use internal functions here to get
   -- a TransactionOutputWithRefScript

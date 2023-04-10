@@ -2,11 +2,17 @@ module CardanoRacers.AssetRequest.Contract where
 
 import Contract.Prelude
 
-import CardanoRacers.AssetRequest.Types (AirdropAddressDatum(AirdropAddressDatum), AssetRequestRedeemer(MintRequestToken))
+import CardanoRacers.AssetRequest.Types
+  ( AirdropAddressDatum(AirdropAddressDatum)
+  , AssetRequestRedeemer(MintRequestToken)
+  )
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.GameAsset.Types (Rarity)
 import CardanoRacers.Helpers (getTxoWithRefScrpt, paysToAddrConstraint)
-import CardanoRacers.RacersState.Contract (queryRacersRefScriptOutput, queryRacersState)
+import CardanoRacers.RacersState.Contract
+  ( queryRacersRefScriptOutput
+  , queryRacersState
+  )
 import CardanoRacers.ScriptsFFI (assetRequestPolicy)
 import Contract.Address (getWalletAddresses)
 import Contract.AssocMap as AssocMap
@@ -15,12 +21,31 @@ import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), applyArgs, mintingPolicyHash)
+import Contract.Scripts
+  ( MintingPolicy(PlutusMintingPolicy)
+  , applyArgs
+  , mintingPolicyHash
+  )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
-import Contract.Transaction (TransactionHash, TransactionInput, TransactionOutputWithRefScript(..), awaitTxConfirmed, mkTxUnspentOut, submitTxFromConstraints)
-import Contract.TxConstraints (DatumPresence(DatumInline), InputWithScriptRef(..))
+import Contract.Transaction
+  ( TransactionHash
+  , TransactionInput
+  , TransactionOutputWithRefScript(..)
+  , awaitTxConfirmed
+  , mkTxUnspentOut
+  , submitTxFromConstraints
+  )
+import Contract.TxConstraints
+  ( DatumPresence(DatumInline)
+  , InputWithScriptRef(..)
+  )
 import Contract.TxConstraints as Constraints
-import Contract.Value (lovelaceValueOf, mkTokenName, scriptCurrencySymbol, singleton) as Value
+import Contract.Value
+  ( lovelaceValueOf
+  , mkTokenName
+  , scriptCurrencySymbol
+  , singleton
+  ) as Value
 import Control.Monad.Error.Class (liftMaybe)
 import Data.Array (head, singleton) as Array
 import Data.BigInt (fromInt, toNumber) as BigInt
@@ -29,7 +54,11 @@ import Data.Map (singleton) as Map
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
 
-requestAssetByRarity :: RacersParams -> Maybe (TransactionInput /\ TransactionOutputWithRefScript) -> Rarity -> Contract TransactionHash
+requestAssetByRarity
+  :: RacersParams
+  -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
+  -> Rarity
+  -> Contract TransactionHash
 requestAssetByRarity rp mAssetRequestRefScript rarity = do
   assetRequestPolicy <- mkAssetRequestPolicy rp
   ownAddr <- liftedM "could not get first address"
@@ -60,13 +89,13 @@ requestAssetByRarity rp mAssetRequestRefScript rarity = do
     red = Redeemer $ toData $ MintRequestToken
 
     mintRequestTokenConstraints = case mAssetRequestRefScript of
-        Nothing -> Constraints.mustMintValueWithRedeemer red lockedVal
-        Just (refTxi /\ refTxo) -> 
-            Constraints.mustMintCurrencyUsingScriptRef
-              (mintingPolicyHash assetRequestPolicy)
-              requestTokenName
-              (BigInt.fromInt 1)
-              (RefInput $ mkTxUnspentOut refTxi refTxo)
+      Nothing -> Constraints.mustMintValueWithRedeemer red lockedVal
+      Just (refTxi /\ refTxo) ->
+        Constraints.mustMintCurrencyUsingScriptRef
+          (mintingPolicyHash assetRequestPolicy)
+          requestTokenName
+          (BigInt.fromInt 1)
+          (RefInput $ mkTxUnspentOut refTxi refTxo)
 
     constraints :: Constraints.TxConstraints Void Void
     constraints =
@@ -75,7 +104,7 @@ requestAssetByRarity rp mAssetRequestRefScript rarity = do
         <> paysToAddrConstraint (unwrap rs).operatingAddress operatingVal
         <> mintRequestTokenConstraints
         <> Constraints.mustPayToScript (unwrap rs).depositScript dat DatumInline
-            lockedVal
+          lockedVal
 
     lookups :: Lookups.ScriptLookups Void
     lookups = Lookups.mintingPolicy assetRequestPolicy

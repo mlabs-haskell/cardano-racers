@@ -2,11 +2,23 @@ module Test.CardanoRacers.Deposit (suite) where
 
 import Contract.Prelude
 
-import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy, requestAssetByRarity)
+import CardanoRacers.AssetRequest.Contract
+  ( mkAssetRequestPolicy
+  , requestAssetByRarity
+  )
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.Deposit.Contract (consumeAndRedeemRequests, createDepositReferenceScriptOutput, mkDepositValidator, queryRequestsWithAirdropAddress)
+import CardanoRacers.Deposit.Contract
+  ( consumeAndRedeemRequests
+  , createDepositReferenceScriptOutput
+  , mkDepositValidator
+  , queryRequestsWithAirdropAddress
+  )
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types (AssetOption, GameAssetType(CarType, DriverType), Rarity(Common, Rare, Epic))
+import CardanoRacers.GameAsset.Types
+  ( AssetOption
+  , GameAssetType(CarType, DriverType)
+  , Rarity(Common, Rare, Epic)
+  )
 import CardanoRacers.Helpers (counterNonce, getTxoWithRefScrpt)
 import CardanoRacers.Nitro.Contract (adminMintsNitroContract)
 import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
@@ -18,9 +30,19 @@ import Contract.AssocMap (Map, empty, insert) as AssocMap
 import Contract.Log (logInfo')
 import Contract.Metadata (mkCip25String)
 import Contract.Monad (Contract, liftContractM, liftedM, throwContractError)
-import Contract.Scripts (MintingPolicy(..), PlutusScript(..), ValidatorHash, validatorHash)
+import Contract.Scripts
+  ( MintingPolicy(..)
+  , PlutusScript(..)
+  , ValidatorHash
+  , validatorHash
+  )
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip (InitialUTxOs, PlutipTest, withKeyWallet, withWallets)
+import Contract.Test.Plutip
+  ( InitialUTxOs
+  , PlutipTest
+  , withKeyWallet
+  , withWallets
+  )
 import Contract.Utxos (getWalletBalance, getWalletUtxos)
 import Contract.Value (scriptCurrencySymbol)
 import Contract.Wallet (KeyWallet)
@@ -41,7 +63,7 @@ suite = group "AssetRequest" do
         cRef <- liftEffect $ Ref.new 1
         rp <- withKeyWallet adminKey createRacersParamsHelper
         reqTxi /\ gameTxi <- withKeyWallet adminKey $ do
-          assetRequestScriptRef <- mkAssetRequestPolicy rp >>= case _ of 
+          assetRequestScriptRef <- mkAssetRequestPolicy rp >>= case _ of
             PlutusMintingPolicy s -> pure s
             _ -> throwContractError "Not plutus script"
           gameAssetScriptRef <- mkGameAssetPolicy rp >>= case _ of

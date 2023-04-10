@@ -8,7 +8,17 @@ import Contract.Prelude
 
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.GameAsset.Parameters (generateUniformParameters)
-import CardanoRacers.GameAsset.Types (AssetOption, CarAttributes(CarAttributes), DriverAttributes(DriverAttributes), GameAsset, GameAssetAttributes(DriverAttrs, CarAttrs), GameAssetNftMetadataEntry(GameAssetNftMetadataEntry), GameAssetType(CarType, DriverType), Rarity, mkGameAsset)
+import CardanoRacers.GameAsset.Types
+  ( AssetOption
+  , CarAttributes(CarAttributes)
+  , DriverAttributes(DriverAttributes)
+  , GameAsset
+  , GameAssetAttributes(DriverAttrs, CarAttrs)
+  , GameAssetNftMetadataEntry(GameAssetNftMetadataEntry)
+  , GameAssetType(CarType, DriverType)
+  , Rarity
+  , mkGameAsset
+  )
 import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.ScriptsFFI (gameAssetPolicy)
 import Contract.Address (Address)
@@ -16,9 +26,17 @@ import Contract.Metadata (unCip25String)
 import Contract.Monad (Contract, liftContractM)
 import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
-import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), MintingPolicyHash(..), applyArgs)
+import Contract.Scripts
+  ( MintingPolicy(PlutusMintingPolicy)
+  , MintingPolicyHash(..)
+  , applyArgs
+  )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
-import Contract.Transaction (TransactionInput(..), TransactionOutputWithRefScript(..), mkTxUnspentOut)
+import Contract.Transaction
+  ( TransactionInput(..)
+  , TransactionOutputWithRefScript(..)
+  , mkTxUnspentOut
+  )
 import Contract.TxConstraints (InputWithScriptRef(..))
 import Contract.TxConstraints as Constraints
 import Contract.Value (CurrencySymbol, TokenName, mkTokenName)
@@ -105,7 +123,8 @@ type MintAssetNftOptions =
   }
 
 mintAvailableAssetByRarity
-  :: Maybe (MintingPolicyHash /\ TransactionInput /\ TransactionOutputWithRefScript)
+  :: Maybe
+       (MintingPolicyHash /\ TransactionInput /\ TransactionOutputWithRefScript)
   -> AssetOption
   -> CurrencySymbol
   -> String
@@ -123,12 +142,17 @@ mintAvailableAssetByRarity
 
   let
     assetVal = Value.singleton assetSymbol tk $ BigInt.fromInt 1
-    assetMintConstraints = maybe 
-      (Constraints.mustMintValue assetVal) 
-      (\(mph /\ refTxi /\ refTxo) -> Constraints.mustMintCurrencyUsingScriptRef mph tk (BigInt.fromInt 1) (RefInput $ mkTxUnspentOut refTxi refTxo))
+    assetMintConstraints = maybe
+      (Constraints.mustMintValue assetVal)
+      ( \(mph /\ refTxi /\ refTxo) -> Constraints.mustMintCurrencyUsingScriptRef
+          mph
+          tk
+          (BigInt.fromInt 1)
+          (RefInput $ mkTxUnspentOut refTxi refTxo)
+      )
       mAssetPolicyRef
-    constraints = assetMintConstraints 
-               <> paysToAddrConstraint targetAddress assetVal
+    constraints = assetMintConstraints
+      <> paysToAddrConstraint targetAddress assetVal
     metadata = GameAssetNftMetadataEntry
       { asset: ga
       , assetClass: assetSymbol /\ tk

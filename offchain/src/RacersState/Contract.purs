@@ -3,16 +3,40 @@ module CardanoRacers.RacersState.Contract where
 import Contract.Prelude
 
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.RacersState.Types (RacersState, RacersStateRedeemer(SetRacersState))
+import CardanoRacers.RacersState.Types
+  ( RacersState
+  , RacersStateRedeemer(SetRacersState)
+  )
 import CardanoRacers.ScriptsFFI (racersStateValidatorScript)
 import Contract.Address (scriptHashAddress)
 import Contract.Hashing (plutusScriptHash)
 import Contract.Monad (Contract, liftContractM, liftedM)
-import Contract.PlutusData (Datum(Datum), OutputDatum(OutputDatum), PlutusData, Redeemer(Redeemer), fromData, toData, unitDatum)
+import Contract.PlutusData
+  ( Datum(Datum)
+  , OutputDatum(OutputDatum)
+  , PlutusData
+  , Redeemer(Redeemer)
+  , fromData
+  , toData
+  , unitDatum
+  )
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (PlutusScript(..), ScriptHash, Validator(Validator), applyArgs, validatorHash)
+import Contract.Scripts
+  ( PlutusScript(..)
+  , ScriptHash
+  , Validator(Validator)
+  , applyArgs
+  , validatorHash
+  )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
-import Contract.Transaction (ScriptRef(..), TransactionHash, TransactionInput, TransactionOutputWithRefScript(..), awaitTxConfirmed, submitTxFromConstraints)
+import Contract.Transaction
+  ( ScriptRef(..)
+  , TransactionHash
+  , TransactionInput
+  , TransactionOutputWithRefScript(..)
+  , awaitTxConfirmed
+  , submitTxFromConstraints
+  )
 import Contract.TxConstraints (DatumPresence(..))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (getWalletUtxos, utxosAt)
@@ -114,7 +138,8 @@ queryRacersState nsp = do
       dat
   pure $ ns /\ stateTxi /\ stateTxo
 
-createRacersRefScriptOutput :: RacersParams -> PlutusScript -> Contract TransactionInput
+createRacersRefScriptOutput
+  :: RacersParams -> PlutusScript -> Contract TransactionInput
 createRacersRefScriptOutput rp script = do
   stateValidatorHash <- validatorHash <$> mkRacersStateValidator rp
 
@@ -124,7 +149,8 @@ createRacersRefScriptOutput rp script = do
 
     constraints :: Constraints.TxConstraints Unit Unit
     constraints =
-      Constraints.mustPayToScriptWithScriptRef stateValidatorHash unitDatum DatumWitness
+      Constraints.mustPayToScriptWithScriptRef stateValidatorHash unitDatum
+        DatumWitness
         scriptRef
         (Value.lovelaceValueOf $ BigInt.fromInt 2_000_000)
 
@@ -138,7 +164,10 @@ createRacersRefScriptOutput rp script = do
     , index: zero
     }
 
-queryRacersRefScriptOutput :: RacersParams -> ScriptHash -> Contract (Maybe (TransactionInput /\ TransactionOutputWithRefScript))
+queryRacersRefScriptOutput
+  :: RacersParams
+  -> ScriptHash
+  -> Contract (Maybe (TransactionInput /\ TransactionOutputWithRefScript))
 queryRacersRefScriptOutput rp scriptHash = do
   stateValidator <- mkRacersStateValidator rp
   let stateAddress = scriptHashAddress (validatorHash stateValidator) Nothing
