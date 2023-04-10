@@ -39,8 +39,8 @@ suite = do
   Nft.suite
   Nitro.suite
   RacersState.suite
-  AssetRequest.suite
-  only Deposit.suite
+  only AssetRequest.suite
+  Deposit.suite
   GameAsset.suite
 
 config :: PlutipConfig
