@@ -76,6 +76,7 @@ library
     , plutus-script-utils
     , plutus-tx
     , plutus-tx-plugin
+    , plutonomy
     , text
 
   hs-source-dirs:  src

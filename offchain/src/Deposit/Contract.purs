@@ -25,27 +25,29 @@ import CardanoRacers.GameAsset.Types
   , GameAssetNftMetadata
   , Rarity(Epic, Rare, Common)
   )
-import CardanoRacers.Helpers (paysToAddrConstraint)
+import CardanoRacers.Helpers (getTxoWithRefScrpt)
 import CardanoRacers.Nitro.Contract
   ( mintNitroAndPayToAddressConstraints
   , paysNitroConstraints
   )
-import CardanoRacers.RacersState.Contract (queryRacersState)
+import CardanoRacers.RacersState.Contract
+  ( createRacersRefScriptOutput
+  , queryRacersRefScriptOutput
+  , queryRacersState
+  )
 import CardanoRacers.RacersState.Types (RacersState)
 import CardanoRacers.ScriptsFFI (depositScript)
 import Common.ContractHelpers (findOwnAuthUtxo)
 import Contract.Address (Address, scriptHashAddress)
 import Contract.AuxiliaryData (setTxMetadata)
 import Contract.CborBytes (cborBytesToByteArray)
-import Contract.Log (logInfo')
+import Contract.Log (logInfo, logInfo')
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
 import Contract.PlutusData
   ( OutputDatum(OutputDatum)
-  , PlutusData
   , Redeemer(Redeemer)
   , fromData
   , toData
-  , unitDatum
   , unitRedeemer
   )
 import Contract.Prim.ByteArray
@@ -55,16 +57,10 @@ import Contract.Prim.ByteArray
   )
 import Contract.ScriptLookups (mkUnbalancedTx)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts
-  ( Validator(Validator)
-  , ValidatorHash
-  , applyArgs
-  , validatorHash
-  )
+import Contract.Scripts (Validator(Validator), applyArgs, mintingPolicyHash)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
-  ( ScriptRef(PlutusScriptRef)
-  , TransactionHash
+  ( TransactionHash
   , TransactionInput
   , TransactionOutputWithRefScript
   , awaitTxConfirmed
@@ -72,33 +68,25 @@ import Contract.Transaction
   , mkTxUnspentOut
   , signTransaction
   , submit
-  , submitTxFromConstraints
   )
-import Contract.TxConstraints
-  ( DatumPresence(DatumWitness)
-  , InputWithScriptRef(RefInput)
-  )
+import Contract.TxConstraints (InputWithScriptRef(..))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (utxosAt)
 import Contract.Value (TokenName)
 import Contract.Value
   ( flattenValue
   , getTokenName
-  , lovelaceValueOf
   , mkTokenName
   , negation
   , scriptCurrencySymbol
   , singleton
   ) as Value
 import Control.Monad.Error.Class (liftMaybe)
-import Ctl.Internal.Contract.Monad (getQueryHandle)
-import Ctl.Internal.Plutus.Conversion (toPlutusTxOutputWithRefScript)
 import Ctl.Internal.Serialization (convertTransaction, toBytes)
 import Data.Array (catMaybes, elem, filter) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt, toInt) as BigInt
 import Data.Char (fromCharCode)
-import Data.FoldableWithIndex (findWithIndex)
 import Data.List.Lazy (replicateM)
 import Data.List.Lazy as List
 import Data.Map (Map)
@@ -191,66 +179,40 @@ createDepositReferenceScriptOutput rp = do
         , assetRequestPolicySymbol: assetRequestSymbol
         }
 
-  let
-    vhash :: ValidatorHash
-    vhash = validatorHash depositValidator
-
-    scriptRef :: ScriptRef
-    scriptRef = PlutusScriptRef (unwrap depositValidator)
-
-    constraints :: Constraints.TxConstraints Unit Unit
-    constraints =
-      Constraints.mustPayToScriptWithScriptRef vhash unitDatum DatumWitness
-        scriptRef
-        (Value.lovelaceValueOf $ BigInt.fromInt 2_000_000)
-
-    lookups :: Lookups.ScriptLookups PlutusData
-    lookups = mempty
-
-  txHash <- submitTxFromConstraints lookups constraints
-  awaitTxConfirmed txHash
-  pure $ wrap
-    { transactionId: txHash
-    , index: zero
-    }
+  createRacersRefScriptOutput rp (unwrap depositValidator)
 
 queryOrCreateDepositReferenceScript :: RacersParams -> Contract TransactionInput
 queryOrCreateDepositReferenceScript rp = do
-  mTxi <- queryDepositReferenceScriptOutput rp
-  case mTxi of
-    Nothing -> createDepositReferenceScriptOutput rp
-    Just txi -> pure txi
-
-queryDepositReferenceScriptOutput
-  :: RacersParams -> Contract (Maybe TransactionInput)
-queryDepositReferenceScriptOutput rp = do
   (rs /\ _) <- queryRacersState rp
-  utxosAtDeposit <- utxosAt $ scriptHashAddress (unwrap rs).depositScript
-    Nothing
-  pure $ _.index <$> findWithIndex
-    ( \_ txo -> maybe false (_ == unwrap (unwrap rs).depositScript)
-        (unwrap (unwrap txo).output).referenceScript
-    )
-    utxosAtDeposit
+  mTxiTxo <- queryRacersRefScriptOutput rp (unwrap (unwrap rs).depositScript)
+  case mTxiTxo of
+    Nothing -> createDepositReferenceScriptOutput rp
+    Just (txi /\ _) -> pure txi
 
 redeemGameAsset
   :: RacersParams
   -> Map Rarity AssetOption
   -> Effect String
-  -> Maybe TransactionInput
+  -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
+  -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
+  -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
   -> (TransactionInput /\ PendingAssetRequest)
   -> Contract TransactionHash
 redeemGameAsset
   rp
   availableAssets
   generateNonce
-  mDepScriptRef
+  mAssetRequestPolicyRef
+  mGameAssetPolicyRef
+  mDepositRef
   (requestTxi /\ { airdropAddress, requestTxo, requestedAssets }) = do
+  -- todo: can be passed as param
   assetRequestMP <- mkAssetRequestPolicy rp
   assetRequestSymbol <-
     liftContractM "could not get currency symbol of asset request policy"
       $ Value.scriptCurrencySymbol assetRequestMP
 
+  -- todo: can be passed as param
   gameAssetMP <- mkGameAssetPolicy rp
   gameAssetSymbol <- liftContractM "Could not get currency symbol" $
     Value.scriptCurrencySymbol gameAssetMP
@@ -258,12 +220,13 @@ redeemGameAsset
   (authTxi /\ authTxo) <- liftedM "could not find admin or bot utxo in wallet" $
     findOwnAuthUtxo rp
 
-  paysNitro <- do
+  (mintsNitroAndPaysConstraint /\ mintsNitroAndPaysLookup) <- do
     cs <- for requestedAssets $ \(rarity /\ count) -> do
       assetOption <- liftContractM "could not find asset option" $ Map.lookup
         rarity
         availableAssets
-      paysNitroConstraints rp airdropAddress (count * assetOption.nitroAmount)
+      mintNitroAndPayToAddressConstraints rp (count * assetOption.nitroAmount)
+        airdropAddress
     pure $ fold cs
 
   let
@@ -281,7 +244,11 @@ redeemGameAsset
           List.toUnfoldable <$> replicateM countInt
             ( do
                 nonce <- generateNonce
-                mintAvailableAssetByRarity assetOption gameAssetSymbol nonce
+                mintAvailableAssetByRarity
+                  ((mintingPolicyHash gameAssetMP /\ _) <$> mGameAssetPolicyRef)
+                  assetOption
+                  gameAssetSymbol
+                  nonce
                   airdropAddress
                   rarity
             )
@@ -297,66 +264,71 @@ redeemGameAsset
           tkNameM = Value.mkTokenName <=< byteArrayFromAscii $ tokenNameStr
           red = Redeemer $ toData $ BurnRequestToken
         in
-          tkNameM <#> \tkName -> Constraints.mustMintValueWithRedeemer red
-            (Value.negation $ Value.singleton assetRequestSymbol tkName count)
+          tkNameM <#> \tkName -> maybe
+            ( Constraints.mustMintValueWithRedeemer red
+                ( Value.negation $ Value.singleton assetRequestSymbol tkName
+                    count
+                )
+            )
+            ( \(refTxi /\ refTxo) ->
+                Constraints.mustMintCurrencyWithRedeemerUsingScriptRef
+                  (mintingPolicyHash assetRequestMP)
+                  red
+                  tkName
+                  ((BigInt.fromInt (-1)) * count)
+                  (RefInput $ mkTxUnspentOut refTxi refTxo)
+            )
+            mAssetRequestPolicyRef
 
   mintsAndPaysNft /\ allMetadata <- liftEffect payAssetConstraintsAndMetadata
+
   burnsRequestTokens <- liftContractM "could not create token name"
     burnsRequestTokensM
 
   -- Constraints to ensure that the deposit script outputs are spent,
   -- favors reference script if passed, otherwise defaults to the validator
   -- script
-  spendsRequestToken <- maybe
-    (pure $ Constraints.mustSpendScriptOutput requestTxi unitRedeemer)
-    ( \scriptRefIn -> do
-        -- Need to use internal functions here to get
-        -- a TransactionOutputWithRefScript
-        -- otherwise, getUtxo uses toPlutusTxOutput which drops the script ref
-        -- and attaches a script ref hash
-        queryHandle <- getQueryHandle
-        txo <- liftedM "could not get script ref from txin" $ liftedE $ liftAff
-          $ queryHandle.getUtxoByOref scriptRefIn
-        txoWithScriptRef <-
-          liftContractM
-            "could not convert TransactionOutput to TransactionOutputWithScriptRef"
-            $ toPlutusTxOutputWithRefScript txo
-
-        pure $
-          Constraints.mustSpendScriptOutputUsingScriptRef
-            requestTxi
-            unitRedeemer
-            (RefInput $ mkTxUnspentOut scriptRefIn txoWithScriptRef)
-    )
-    mDepScriptRef
-
-  -- Conditinal lookup for the deposit script in case of absense of reference script
-  depositScriptLookups <- maybe
+  (depositConstraints /\ depositLookups) <- maybe
     ( do
         depositValidator <- mkDepositValidator rp
           $ wrap
               { assetPolicySymbol: gameAssetSymbol
               , assetRequestPolicySymbol: assetRequestSymbol
               }
-        pure $ Lookups.validator depositValidator
+        pure $ Constraints.mustSpendScriptOutput requestTxi unitRedeemer
+          /\ Lookups.validator depositValidator
     )
-    (const $ pure mempty)
-    mDepScriptRef
+    ( \(refTxi /\ refTxo) ->
+        pure
+          $ Constraints.mustSpendScriptOutputUsingScriptRef
+              requestTxi
+              unitRedeemer
+              (RefInput $ mkTxUnspentOut refTxi refTxo)
+          /\ mempty
+    )
+    mDepositRef
 
   let
     constraints :: Constraints.TxConstraints Void Void
-    constraints = spendsRequestToken
+    constraints = depositConstraints
       <> Constraints.mustSpendPubKeyOutput authTxi
-      <> paysNitro
+      <> mintsNitroAndPaysConstraint
       <> mintsAndPaysNft
       <> burnsRequestTokens
+
+    assetRequestPolicyLookups = maybe (Lookups.mintingPolicy assetRequestMP)
+      (const mempty)
+      mAssetRequestPolicyRef
+    gameAssetLookup = maybe (Lookups.mintingPolicy gameAssetMP) (const mempty)
+      mGameAssetPolicyRef
 
     lookups :: Lookups.ScriptLookups Void
     lookups = Lookups.unspentOutputs (Map.singleton requestTxi requestTxo)
       <> Lookups.unspentOutputs (Map.singleton authTxi authTxo)
-      <> Lookups.mintingPolicy gameAssetMP
-      <> Lookups.mintingPolicy assetRequestMP
-      <> depositScriptLookups
+      <> mintsNitroAndPaysLookup
+      <> gameAssetLookup
+      <> assetRequestPolicyLookups
+      <> depositLookups
 
   unbalancedTx <- liftedE $ mkUnbalancedTx lookups constraints
   unbalancedTxWithMetadata <- setTxMetadata unbalancedTx allMetadata
@@ -375,15 +347,31 @@ consumeAndRedeemRequests
   -> Map Rarity AssetOption
   -> Effect String
   -> RacersState
-  -> Maybe TransactionInput
+  -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
   -> Contract (Array TransactionHash)
-consumeAndRedeemRequests rp availableAssets generateNonce st mDepScriptRef = do
-  pendingRequests <- (Map.toUnfoldable :: _ -> Array _) <$>
-    queryRequestsWithAirdropAddress rp st
-  txIds <- traverse
-    (redeemGameAsset rp availableAssets generateNonce mDepScriptRef)
-    pendingRequests
-  pure txIds
+consumeAndRedeemRequests rp availableAssets generateNonce st mDepositScriptRef =
+  do
+    assetRequestMP <- mkAssetRequestPolicy rp
+    gameAssetMP <- mkGameAssetPolicy rp
+
+    mAssetRequestPolicyRef <- queryRacersRefScriptOutput rp
+      (unwrap $ mintingPolicyHash assetRequestMP)
+    mAssetPolicyRef <- queryRacersRefScriptOutput rp
+      (unwrap $ mintingPolicyHash gameAssetMP)
+
+    logInfo' $ show mAssetRequestPolicyRef
+    logInfo' $ show mAssetPolicyRef
+
+    pendingRequests <- (Map.toUnfoldable :: _ -> Array _) <$>
+      queryRequestsWithAirdropAddress rp st
+
+    txIds <- traverse
+      ( redeemGameAsset rp availableAssets generateNonce mAssetRequestPolicyRef
+          mAssetPolicyRef
+          mDepositScriptRef
+      )
+      pendingRequests
+    pure txIds
 
 mkDepositValidator
   :: RacersParams -> DepositValidatorParams -> Contract Validator

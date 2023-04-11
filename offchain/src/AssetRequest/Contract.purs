@@ -8,23 +8,37 @@ import CardanoRacers.AssetRequest.Types
   )
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.GameAsset.Types (Rarity)
-import CardanoRacers.Helpers (paysToAddrConstraint)
-import CardanoRacers.RacersState.Contract (queryRacersState)
+import CardanoRacers.Helpers (getTxoWithRefScrpt, paysToAddrConstraint)
+import CardanoRacers.RacersState.Contract
+  ( queryRacersRefScriptOutput
+  , queryRacersState
+  )
 import CardanoRacers.ScriptsFFI (assetRequestPolicy)
 import Contract.Address (getWalletAddresses)
 import Contract.AssocMap as AssocMap
+import Contract.Hashing (plutusScriptHash)
 import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), applyArgs)
+import Contract.Scripts
+  ( MintingPolicy(PlutusMintingPolicy)
+  , applyArgs
+  , mintingPolicyHash
+  )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
   ( TransactionHash
+  , TransactionInput
+  , TransactionOutputWithRefScript(..)
   , awaitTxConfirmed
+  , mkTxUnspentOut
   , submitTxFromConstraints
   )
-import Contract.TxConstraints (DatumPresence(DatumInline))
+import Contract.TxConstraints
+  ( DatumPresence(DatumInline)
+  , InputWithScriptRef(..)
+  )
 import Contract.TxConstraints as Constraints
 import Contract.Value
   ( lovelaceValueOf
@@ -40,8 +54,12 @@ import Data.Map (singleton) as Map
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
 
-requestAssetByRarity :: RacersParams -> Rarity -> Contract TransactionHash
-requestAssetByRarity rp rarity = do
+requestAssetByRarity
+  :: RacersParams
+  -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
+  -> Rarity
+  -> Contract TransactionHash
+requestAssetByRarity rp mAssetRequestRefScript rarity = do
   assetRequestPolicy <- mkAssetRequestPolicy rp
   ownAddr <- liftedM "could not get first address"
     (Array.head <$> getWalletAddresses)
@@ -70,16 +88,23 @@ requestAssetByRarity rp rarity = do
     dat = Datum $ toData $ AirdropAddressDatum { airdropAddress: ownAddr }
     red = Redeemer $ toData $ MintRequestToken
 
+    mintRequestTokenConstraints = case mAssetRequestRefScript of
+      Nothing -> Constraints.mustMintValueWithRedeemer red lockedVal
+      Just (refTxi /\ refTxo) ->
+        Constraints.mustMintCurrencyUsingScriptRef
+          (mintingPolicyHash assetRequestPolicy)
+          requestTokenName
+          (BigInt.fromInt 1)
+          (RefInput $ mkTxUnspentOut refTxi refTxo)
+
     constraints :: Constraints.TxConstraints Void Void
     constraints =
       Constraints.mustReferenceOutput stateTxi
         <> paysToAddrConstraint (unwrap rs).treasuryAddress treasuryVal
         <> paysToAddrConstraint (unwrap rs).operatingAddress operatingVal
-        <> Constraints.mustMintValueWithRedeemer red lockedVal
-        <> -- Constraints.mustPayToScriptWithScriptRef
-
-          Constraints.mustPayToScript (unwrap rs).depositScript dat DatumInline
-            lockedVal
+        <> mintRequestTokenConstraints
+        <> Constraints.mustPayToScript (unwrap rs).depositScript dat DatumInline
+          lockedVal
 
     lookups :: Lookups.ScriptLookups Void
     lookups = Lookups.mintingPolicy assetRequestPolicy

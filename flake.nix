@@ -1,9 +1,11 @@
 {
   inputs = {
     plutip.url = github:mlabs-haskell/plutip/8364c43ac6bc9ea140412af9a23c691adf67a18b;
-    cardano-transaction-lib.url = github:Plutonomicon/cardano-transaction-lib/b565f4b1ec877c671ec4ffc13b1b89dbe498bceb;
-    # cardano-transaction-lib.url = github:Plutonomicon/cardano-transaction-lib/591e6ae27f58b3dc46337843322673a31f5fa8c7;
-    nixpkgs.follows = "cardano-transaction-lib/nixpkgs";
+    cardano-transaction-lib.url = github:Plutonomicon/cardano-transaction-lib/aa0e524136b80af91a68a48363032207ee56bf1a;
+    plutonomy = {
+      url = github:well-typed/plutonomy/6c01302ba8cf3be4f71617e106cd5ef7ed10fc63;
+      flake = false;
+    };
     haskell-nix.follows = "plutip/haskell-nix";
   };
 
@@ -82,10 +84,17 @@
             compiler-nix-name = ghcVersion;
             index-state = "2022-05-25T00:00:00Z";
             cabalProject = ''
+              package plutonomy
+                flags: +plutus-f680ac697
+
               packages: ./.
             '';
             inherit (plutip) cabalProjectLocal;
             extraSources = plutip.extraSources ++ [
+              {
+                src = "${inputs.plutonomy}";
+                subdirs = [ "." ];
+              }
               {
                 src = "${plutip}";
                 subdirs = [ "." ];
@@ -114,6 +123,7 @@
                   plutus-script-utils
                   plutus-tx
                   plutus-tx-plugin
+                  plutonomy
                   serialise
                 ];
             };

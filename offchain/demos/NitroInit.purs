@@ -22,7 +22,7 @@ import CardanoRacers.GameAsset.Types
   , Rarity(Common, Rare, Epic)
   , rarityFromString
   )
-import CardanoRacers.Helpers (counterNonce)
+import CardanoRacers.Helpers (counterNonce, getTxoWithRefScrpt)
 import CardanoRacers.Nitro.Contract
   ( adminMintsNitroContract
   , botMintsNitroContract
@@ -356,7 +356,7 @@ makeAssetRequest = do
       rp <- liftContractE $ decodeJsonString pjson
       rarity <- liftContractM "Unrecognized rarity class" $ rarityFromString
         rarityStr
-      requestAssetByRarity rp rarity
+      requestAssetByRarity rp Nothing rarity
   actor <- getSelectedActor
   if actor == "User" then
     withActor "User" contract
@@ -372,9 +372,10 @@ redeemRequests cRef assetRef = do
   withActor "Bot" do
     rp <- liftContractE $ decodeJsonString pjson
     (rs /\ _) <- queryRacersState rp
-    depRefOref <- queryOrCreateDepositReferenceScript rp
+    depRefScriptTxi <- queryOrCreateDepositReferenceScript rp
+    depRefScriptTxo <- getTxoWithRefScrpt depRefScriptTxi
     consumeAndRedeemRequests rp availableAssets (counterNonce cRef) rs
-      (Just depRefOref)
+      (Just $ depRefScriptTxi /\ depRefScriptTxo)
 
 userBuyNitro :: Effect (Promise TransactionHash)
 userBuyNitro = do

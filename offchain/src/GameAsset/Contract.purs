@@ -26,8 +26,18 @@ import Contract.Metadata (unCip25String)
 import Contract.Monad (Contract, liftContractM)
 import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
-import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), applyArgs)
+import Contract.Scripts
+  ( MintingPolicy(PlutusMintingPolicy)
+  , MintingPolicyHash(..)
+  , applyArgs
+  )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
+import Contract.Transaction
+  ( TransactionInput(..)
+  , TransactionOutputWithRefScript(..)
+  , mkTxUnspentOut
+  )
+import Contract.TxConstraints (InputWithScriptRef(..))
 import Contract.TxConstraints as Constraints
 import Contract.Value (CurrencySymbol, TokenName, mkTokenName)
 import Contract.Value as Value
@@ -113,13 +123,16 @@ type MintAssetNftOptions =
   }
 
 mintAvailableAssetByRarity
-  :: AssetOption
+  :: Maybe
+       (MintingPolicyHash /\ TransactionInput /\ TransactionOutputWithRefScript)
+  -> AssetOption
   -> CurrencySymbol
   -> String
   -> Address
   -> Rarity
   -> Effect (Constraints.TxConstraints Void Void /\ GameAssetNftMetadataEntry)
 mintAvailableAssetByRarity
+  mAssetPolicyRef
   assetOption
   assetSymbol
   nonce
@@ -129,9 +142,17 @@ mintAvailableAssetByRarity
 
   let
     assetVal = Value.singleton assetSymbol tk $ BigInt.fromInt 1
-    constraints = Constraints.mustMintValue assetVal <> paysToAddrConstraint
-      targetAddress
-      assetVal
+    assetMintConstraints = maybe
+      (Constraints.mustMintValue assetVal)
+      ( \(mph /\ refTxi /\ refTxo) -> Constraints.mustMintCurrencyUsingScriptRef
+          mph
+          tk
+          (BigInt.fromInt 1)
+          (RefInput $ mkTxUnspentOut refTxi refTxo)
+      )
+      mAssetPolicyRef
+    constraints = assetMintConstraints
+      <> paysToAddrConstraint targetAddress assetVal
     metadata = GameAssetNftMetadataEntry
       { asset: ga
       , assetClass: assetSymbol /\ tk
