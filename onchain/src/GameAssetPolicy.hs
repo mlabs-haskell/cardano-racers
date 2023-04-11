@@ -2,6 +2,8 @@
 
 module GameAssetPolicy (script) where
 
+import PlutusTx.Prelude
+
 import CommonTypes (RacersParams, adminToken, botToken)
 import Ledger.Value (assetClassValue, geq)
 import Plutus.V2.Ledger.Api (
@@ -12,7 +14,7 @@ import Plutus.V2.Ledger.Api (
  )
 import Plutus.V2.Ledger.Contexts (valueSpent)
 import PlutusTx qualified (compile, unsafeFromBuiltinData)
-import PlutusTx.Prelude
+import Plutonomy qualified (optimizeUPLC)
 
 {-# INLINEABLE mkGameAssetPolicy #-}
 mkGameAssetPolicy :: RacersParams -> ScriptContext -> Bool
@@ -41,4 +43,4 @@ mkPolicy gapp _redeemer context =
     if result then () else traceError "Failed verification"
 
 script :: Script
-script = fromCompiledCode $$(PlutusTx.compile [||mkPolicy||])
+script = fromCompiledCode $ Plutonomy.optimizeUPLC $$(PlutusTx.compile [||mkPolicy||])

@@ -91,16 +91,9 @@ mintNitroAndPayToAddressConstraints
   -> Contract
        (Constraints.TxConstraints Void Void /\ Lookups.ScriptLookups Void)
 mintNitroAndPayToAddressConstraints rp nitroAmount targetAddress = do
-  (constraints /\ lookups) <- mintNitroConstraints rp nitroAmount
-
-  nitroSymbol <- liftedM "Could not get currency symbol"
-    $ scriptCurrencySymbol
-    <$> mkNitroPolicy rp
-
-  let
-    constraints' = constraints <> paysToAddrConstraint targetAddress
-      (Value.singleton nitroSymbol (unwrap rp).nitroToken nitroAmount)
-  pure (constraints' /\ lookups)
+  (mintConstraints /\ mintLookups) <- mintNitroConstraints rp nitroAmount
+  payConstraints <- paysNitroConstraints rp targetAddress nitroAmount
+  pure $ (payConstraints <> mintConstraints) /\ mintLookups
 
 mintNitroAndPayToAddressContract
   :: RacersParams -> BigInt -> Address -> Contract TransactionHash

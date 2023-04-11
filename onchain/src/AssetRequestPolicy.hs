@@ -18,6 +18,8 @@ import PlutusTx qualified (FromData (fromBuiltinData), compile, unsafeFromBuilti
 import PlutusTx.AssocMap (lookup)
 import PlutusTx.Prelude
 import Utils (distributesToAddrs, findCurrentGameStateFromRefInputs, parseToken, withTraceM)
+import Plutonomy qualified (optimizeUPLC)
+
 
 data AssetRequestRedeemer = MintRequestToken | BurnRequestToken
 PlutusTx.unstableMakeIsData ''AssetRequestRedeemer
@@ -134,4 +136,4 @@ mkPolicy gapp red context =
     if result then () else traceError "Failed verification"
 
 script :: Script
-script = fromCompiledCode $$(PlutusTx.compile [||mkPolicy||])
+script = fromCompiledCode $ Plutonomy.optimizeUPLC $$(PlutusTx.compile [||mkPolicy||])

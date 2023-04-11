@@ -21,11 +21,13 @@ import PlutusTx.AssocMap (Map)
 import PlutusTx.AssocMap qualified as AssocMap (empty, singleton, toList, unionWith)
 import PlutusTx.Prelude
 import Utils (getInlineDatum, parseToken, valueToAddr, withTraceM)
+import Plutonomy qualified (optimizeUPLC)
 
 data DepositValidatorParams = DepositValidatorParams
   { assetPolicySymbol :: CurrencySymbol
   , assetRequestPolicySymbol :: CurrencySymbol
   }
+
 PlutusTx.unstableMakeIsData ''DepositValidatorParams
 
 {-# INLINEABLE mkDepositValidator #-}
@@ -123,4 +125,4 @@ mkValidator rp dps _datum _redeemer context =
     if result then () else traceError "Failed verification"
 
 script :: Script
-script = fromCompiledCode $$(PlutusTx.compile [||mkValidator||])
+script = fromCompiledCode $ Plutonomy.optimizeUPLC $$(PlutusTx.compile [||mkValidator||])

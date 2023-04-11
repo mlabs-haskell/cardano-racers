@@ -7657,6 +7657,23 @@
         "type": "github"
       }
     },
+    "plutonomy": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1658952630,
+        "narHash": "sha256-fU8uecltSDdIlmUG4WnQcv/vfhj1IP9YVkpvrOBwgdE=",
+        "owner": "well-typed",
+        "repo": "plutonomy",
+        "rev": "6c01302ba8cf3be4f71617e106cd5ef7ed10fc63",
+        "type": "github"
+      },
+      "original": {
+        "owner": "well-typed",
+        "repo": "plutonomy",
+        "rev": "6c01302ba8cf3be4f71617e106cd5ef7ed10fc63",
+        "type": "github"
+      }
+    },
     "plutus": {
       "flake": false,
       "locked": {
@@ -7827,7 +7844,8 @@
           "haskell-nix"
         ],
         "nixpkgs": "nixpkgs_23",
-        "plutip": "plutip_2"
+        "plutip": "plutip_2",
+        "plutonomy": "plutonomy"
       }
     },
     "servant-purescript": {

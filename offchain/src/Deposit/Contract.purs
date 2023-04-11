@@ -26,7 +26,10 @@ import CardanoRacers.GameAsset.Types
   , Rarity(Epic, Rare, Common)
   )
 import CardanoRacers.Helpers (getTxoWithRefScrpt)
-import CardanoRacers.Nitro.Contract (paysNitroConstraints)
+import CardanoRacers.Nitro.Contract
+  ( mintNitroAndPayToAddressConstraints
+  , paysNitroConstraints
+  )
 import CardanoRacers.RacersState.Contract
   ( createRacersRefScriptOutput
   , queryRacersRefScriptOutput
@@ -79,6 +82,7 @@ import Contract.Value
   , singleton
   ) as Value
 import Control.Monad.Error.Class (liftMaybe)
+import Ctl.Internal.Contract.QueryHandle (getQueryHandle)
 import Ctl.Internal.Serialization (convertTransaction, toBytes)
 import Data.Array (catMaybes, elem, filter) as Array
 import Data.BigInt (BigInt)
@@ -217,12 +221,13 @@ redeemGameAsset
   (authTxi /\ authTxo) <- liftedM "could not find admin or bot utxo in wallet" $
     findOwnAuthUtxo rp
 
-  paysNitro <- do
+  (mintsNitroAndPaysConstraint /\ mintsNitroAndPaysLookup) <- do
     cs <- for requestedAssets $ \(rarity /\ count) -> do
       assetOption <- liftContractM "could not find asset option" $ Map.lookup
         rarity
         availableAssets
-      paysNitroConstraints rp airdropAddress (count * assetOption.nitroAmount)
+      mintNitroAndPayToAddressConstraints rp (count * assetOption.nitroAmount)
+        airdropAddress
     pure $ fold cs
 
   let
@@ -308,7 +313,7 @@ redeemGameAsset
     constraints :: Constraints.TxConstraints Void Void
     constraints = depositConstraints
       <> Constraints.mustSpendPubKeyOutput authTxi
-      <> paysNitro
+      <> mintsNitroAndPaysConstraint
       <> mintsAndPaysNft
       <> burnsRequestTokens
 
@@ -321,6 +326,7 @@ redeemGameAsset
     lookups :: Lookups.ScriptLookups Void
     lookups = Lookups.unspentOutputs (Map.singleton requestTxi requestTxo)
       <> Lookups.unspentOutputs (Map.singleton authTxi authTxo)
+      <> mintsNitroAndPaysLookup
       <> gameAssetLookup
       <> assetRequestPolicyLookups
       <> depositLookups
