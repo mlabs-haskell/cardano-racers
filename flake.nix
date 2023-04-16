@@ -1,7 +1,8 @@
 {
   inputs = {
     plutip.url = github:mlabs-haskell/plutip/8364c43ac6bc9ea140412af9a23c691adf67a18b;
-    cardano-transaction-lib.url = github:Plutonomicon/cardano-transaction-lib/aa0e524136b80af91a68a48363032207ee56bf1a;
+    cardano-transaction-lib.url = github:Plutonomicon/cardano-transaction-lib/d9ef85a964a49ea8c9d1898599aceb45a341db65;
+    nixpkgs.follows = "cardano-transaction-lib/nixpkgs";
     plutonomy = {
       url = github:well-typed/plutonomy/6c01302ba8cf3be4f71617e106cd5ef7ed10fc63;
       flake = false;
@@ -233,6 +234,7 @@
       apps = perSystem (system: {
         docs = self.offchain.project.${system}.launchSearchablePursDocs { };
         ctl-docs = cardano-transaction-lib.apps.${system}.docs;
+
         runtime = (nixpkgsFor system).launchCtlRuntime {};
         script-exporter = {
           # nix run .#script-exporter -- offchain/src
