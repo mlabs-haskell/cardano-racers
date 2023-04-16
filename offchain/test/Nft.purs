@@ -3,45 +3,20 @@ module Test.CardanoRacers.Nft (suite) where
 import Contract.Prelude
 
 import CardanoRacers.Nft (mkNftMintingPolicy) as Nft
-import CardanoRacers.Nitro.Helpers (mintAdminNft) as NitroHelpers
 import CardanoRacers.ScriptsFFI (adminNftMintingPolicy)
-import Contract.Address (Address, getWalletAddresses)
 import Contract.Monad (liftContractM, liftedE, liftedM)
 import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
-import Contract.ScriptLookups
-  ( ScriptLookups
-  , mintingPolicy
-  , mkUnbalancedTx
-  , unspentOutputs
-  ) as Lookups
+import Contract.ScriptLookups (ScriptLookups, mintingPolicy, mkUnbalancedTx, unspentOutputs) as Lookups
 import Contract.Scripts (applyArgs)
-import Contract.Test.Assert
-  ( ContractAssertion
-  , ContractAssertionFailure(UnexpectedTokenDelta)
-  , ContractCheck
-  , ExpectedActual(ExpectedActual)
-  , Labeled
-  , assertContract
-  , label
-  , runChecks
-  )
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip
-  ( InitialUTxOs
-  , PlutipTest
-  , withKeyWallet
-  , withWallets
-  )
+import Contract.Test.Plutip (InitialUTxOs, PlutipTest, withKeyWallet, withWallets)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction (balanceTx)
 import Contract.TxConstraints as Constraints
-import Contract.Utxos (getWalletUtxos)
-import Contract.Value (CurrencySymbol, TokenName, Value)
-import Contract.Value (mkTokenName, scriptCurrencySymbol, singleton, valueOf) as Value
-import Control.Monad.Trans.Class (lift)
+import Contract.Value (mkTokenName, scriptCurrencySymbol, singleton) as Value
+import Contract.Wallet (getWalletUtxos)
 import Data.Array (head) as Array
-import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (toUnfoldable)
 import Mote (group, test)

@@ -2,20 +2,11 @@ module CardanoRacers.Helpers where
 
 import Contract.Prelude
 
-import Aeson
-  ( class DecodeAeson
-  , class EncodeAeson
-  , Aeson
-  , JsonDecodeError(TypeMismatch)
-  , caseAesonObject
-  , encodeAeson
-  , getField
-  )
+import Aeson (class DecodeAeson, class EncodeAeson, Aeson, JsonDecodeError(TypeMismatch), caseAesonObject, encodeAeson, getField)
 import Contract.Address (Address)
 import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
 import Contract.PlutusData (unitDatum)
-import Contract.Scripts (PlutusScript(..), Validator(..))
 import Contract.Transaction (TransactionInput, TransactionOutputWithRefScript)
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints

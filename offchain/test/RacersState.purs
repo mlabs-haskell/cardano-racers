@@ -17,7 +17,7 @@ import CardanoRacers.RacersState.Types
   ( RacersState(RacersState)
   , RacersStateRedeemer(SetRacersState)
   )
-import Contract.Address (getWalletAddresses)
+import Contract.Wallet (getWalletAddresses, getWalletUtxos)
 import Contract.AssocMap as AssocMap
 import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
@@ -32,7 +32,6 @@ import Contract.Test.Plutip
   )
 import Contract.Transaction (submitTxFromConstraints)
 import Contract.TxConstraints as Constraints
-import Contract.Utxos (getWalletUtxos)
 import Contract.Value (CurrencySymbol, TokenName, scriptCurrencySymbol)
 import Contract.Value (geq, singleton) as Value
 import Contract.Wallet (KeyWallet)

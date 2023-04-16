@@ -14,7 +14,7 @@ import CardanoRacers.RacersState.Contract
   , queryRacersState
   )
 import CardanoRacers.ScriptsFFI (assetRequestPolicy)
-import Contract.Address (getWalletAddresses)
+import Contract.Wallet (getWalletAddresses)
 import Contract.AssocMap as AssocMap
 import Contract.Hashing (plutusScriptHash)
 import Contract.Monad (Contract, liftContractM, liftedM)
@@ -56,10 +56,10 @@ import Effect.Exception (error)
 
 requestAssetByRarity
   :: RacersParams
-  -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
+  -- -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
   -> Rarity
   -> Contract TransactionHash
-requestAssetByRarity rp mAssetRequestRefScript rarity = do
+requestAssetByRarity rp rarity = do
   assetRequestPolicy <- mkAssetRequestPolicy rp
   ownAddr <- liftedM "could not get first address"
     (Array.head <$> getWalletAddresses)
@@ -78,6 +78,9 @@ requestAssetByRarity rp mAssetRequestRefScript rarity = do
   requestTokenName <- liftContractM "Could not make required token names" $
     (Value.mkTokenName <=< byteArrayFromAscii) (show rarity)
 
+  mAssetRequestPolicyRef <- queryRacersRefScriptOutput rp
+    (unwrap $ mintingPolicyHash assetRequestPolicy)
+
   let
     treasuryAmt = BigInt.fromInt <<< ceil $ BigInt.toNumber totalAdaDue * 0.75
     operatingAmt = BigInt.fromInt <<< ceil $ BigInt.toNumber totalAdaDue * 0.25
@@ -88,7 +91,7 @@ requestAssetByRarity rp mAssetRequestRefScript rarity = do
     dat = Datum $ toData $ AirdropAddressDatum { airdropAddress: ownAddr }
     red = Redeemer $ toData $ MintRequestToken
 
-    mintRequestTokenConstraints = case mAssetRequestRefScript of
+    mintRequestTokenConstraints = case mAssetRequestPolicyRef of
       Nothing -> Constraints.mustMintValueWithRedeemer red lockedVal
       Just (refTxi /\ refTxo) ->
         Constraints.mustMintCurrencyUsingScriptRef
@@ -96,6 +99,10 @@ requestAssetByRarity rp mAssetRequestRefScript rarity = do
           requestTokenName
           (BigInt.fromInt 1)
           (RefInput $ mkTxUnspentOut refTxi refTxo)
+
+    assetRequestPolicyLookups = maybe (Lookups.mintingPolicy assetRequestPolicy)
+      (const mempty)
+      mAssetRequestPolicyRef
 
     constraints :: Constraints.TxConstraints Void Void
     constraints =
@@ -107,7 +114,7 @@ requestAssetByRarity rp mAssetRequestRefScript rarity = do
           lockedVal
 
     lookups :: Lookups.ScriptLookups Void
-    lookups = Lookups.mintingPolicy assetRequestPolicy
+    lookups = assetRequestPolicyLookups
       <> Lookups.unspentOutputs (Map.singleton stateTxi stateTxo)
 
   txId <- submitTxFromConstraints lookups constraints

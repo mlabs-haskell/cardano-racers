@@ -25,11 +25,7 @@ import CardanoRacers.GameAsset.Types
   , GameAssetNftMetadata
   , Rarity(Epic, Rare, Common)
   )
-import CardanoRacers.Helpers (getTxoWithRefScrpt)
-import CardanoRacers.Nitro.Contract
-  ( mintNitroAndPayToAddressConstraints
-  , paysNitroConstraints
-  )
+import CardanoRacers.Nitro.Contract (paysNitroConstraints)
 import CardanoRacers.RacersState.Contract
   ( createRacersRefScriptOutput
   , queryRacersRefScriptOutput
@@ -41,7 +37,7 @@ import Common.ContractHelpers (findOwnAuthUtxo)
 import Contract.Address (Address, scriptHashAddress)
 import Contract.AuxiliaryData (setTxMetadata)
 import Contract.CborBytes (cborBytesToByteArray)
-import Contract.Log (logInfo, logInfo')
+import Contract.Log (logInfo')
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
 import Contract.PlutusData
   ( OutputDatum(OutputDatum)
@@ -82,6 +78,7 @@ import Contract.Value
   , singleton
   ) as Value
 import Control.Monad.Error.Class (liftMaybe)
+import Ctl.Internal.Contract.Monad (getQueryHandle)
 import Ctl.Internal.Serialization (convertTransaction, toBytes)
 import Data.Array (catMaybes, elem, filter) as Array
 import Data.BigInt (BigInt)
@@ -90,7 +87,7 @@ import Data.Char (fromCharCode)
 import Data.List.Lazy (replicateM)
 import Data.List.Lazy as List
 import Data.Map (Map)
-import Data.Map (fromFoldable, lookup, singleton, toUnfoldable) as Map
+import Data.Map (empty, fromFoldable, lookup, singleton, toUnfoldable) as Map
 import Data.Profunctor.Choice (left)
 import Data.String.CodeUnits (fromCharArray)
 import Effect.Exception (error)
@@ -193,6 +190,7 @@ redeemGameAsset
   :: RacersParams
   -> Map Rarity AssetOption
   -> Effect String
+  -- Optionally use ref scripts to save on Tx size
   -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
   -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
   -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
@@ -220,13 +218,12 @@ redeemGameAsset
   (authTxi /\ authTxo) <- liftedM "could not find admin or bot utxo in wallet" $
     findOwnAuthUtxo rp
 
-  (mintsNitroAndPaysConstraint /\ mintsNitroAndPaysLookup) <- do
+  paysNitroConstraint <- do
     cs <- for requestedAssets $ \(rarity /\ count) -> do
       assetOption <- liftContractM "could not find asset option" $ Map.lookup
         rarity
         availableAssets
-      mintNitroAndPayToAddressConstraints rp (count * assetOption.nitroAmount)
-        airdropAddress
+      paysNitroConstraints rp airdropAddress (count * assetOption.nitroAmount)
     pure $ fold cs
 
   let
@@ -312,7 +309,8 @@ redeemGameAsset
     constraints :: Constraints.TxConstraints Void Void
     constraints = depositConstraints
       <> Constraints.mustSpendPubKeyOutput authTxi
-      <> mintsNitroAndPaysConstraint
+      <> paysNitroConstraint
+      -- <> mintsNitroAndPaysConstraint
       <> mintsAndPaysNft
       <> burnsRequestTokens
 
@@ -325,7 +323,7 @@ redeemGameAsset
     lookups :: Lookups.ScriptLookups Void
     lookups = Lookups.unspentOutputs (Map.singleton requestTxi requestTxo)
       <> Lookups.unspentOutputs (Map.singleton authTxi authTxo)
-      <> mintsNitroAndPaysLookup
+      -- <> mintsNitroAndPaysLookup
       <> gameAssetLookup
       <> assetRequestPolicyLookups
       <> depositLookups
@@ -337,7 +335,12 @@ redeemGameAsset
   tx <- liftEffect $ convertTransaction $ unwrap balancedSignedTx
   logInfo' $ "Tx size: " <>
     (show $ byteLength $ cborBytesToByteArray $ toBytes tx)
-  -- logInfo' $ show balancedSignedTx
+  queryHandle <- getQueryHandle
+
+  (liftAff $ queryHandle.evaluateTx (unwrap balancedSignedTx) (wrap Map.empty))
+    >>= logInfo'
+    <<< show
+
   txId <- submit balancedSignedTx
   awaitTxConfirmed txId
   pure txId
@@ -358,9 +361,6 @@ consumeAndRedeemRequests rp availableAssets generateNonce st mDepositScriptRef =
       (unwrap $ mintingPolicyHash assetRequestMP)
     mAssetPolicyRef <- queryRacersRefScriptOutput rp
       (unwrap $ mintingPolicyHash gameAssetMP)
-
-    logInfo' $ show mAssetRequestPolicyRef
-    logInfo' $ show mAssetPolicyRef
 
     pendingRequests <- (Map.toUnfoldable :: _ -> Array _) <$>
       queryRequestsWithAirdropAddress rp st

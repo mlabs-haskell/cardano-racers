@@ -39,7 +39,8 @@ import Contract.Transaction
   )
 import Contract.TxConstraints (DatumPresence(..))
 import Contract.TxConstraints as Constraints
-import Contract.Utxos (getWalletUtxos, utxosAt)
+import Contract.Utxos (utxosAt)
+import Contract.Wallet (getWalletUtxos)
 import Contract.Value (geq)
 import Contract.Value (lovelaceValueOf, singleton) as Value
 import Data.Array (singleton) as Array

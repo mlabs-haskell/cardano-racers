@@ -19,7 +19,8 @@ import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
 import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.RacersState.Types (RacersState(RacersState))
-import Contract.Address (getWalletAddresses, scriptHashAddress)
+import Contract.Address (scriptHashAddress)
+import Contract.Wallet (getWalletAddresses, getWalletUtxos)
 import Contract.AssocMap (Map)
 import Contract.AssocMap (empty, insert, lookup) as AssocMap
 import Contract.Monad (Contract, liftContractM, liftedM)
@@ -43,7 +44,6 @@ import Contract.Test.Plutip
 import Contract.Transaction (submitTxFromConstraints)
 import Contract.TxConstraints (DatumPresence(..))
 import Contract.TxConstraints as Constraints
-import Contract.Utxos (getWalletUtxos)
 import Contract.Value (scriptCurrencySymbol)
 import Contract.Value as Value
 import Contract.Wallet (KeyWallet)
@@ -107,7 +107,7 @@ suite = group "AssetRequest" do
                 ]
 
             runChecks assertions $ lift $
-              requestAssetByRarity rp Nothing rarity
+              requestAssetByRarity rp rarity
   test
     "User fails to request asset by rarity with incorrect amount paid to operating/treasury"
     do
