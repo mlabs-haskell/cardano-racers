@@ -7,8 +7,8 @@ import CardanoRacers.AssetRequest.Contract
   , requestAssetByRarity
   )
 import CardanoRacers.AssetRequest.Types
-  ( AirdropAddressDatum(..)
-  , AssetRequestRedeemer(..)
+  ( AirdropAddressDatum(AirdropAddressDatum)
+  , AssetRequestRedeemer(MintRequestToken)
   )
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Deposit.Contract (mkDepositValidator)
@@ -23,7 +23,7 @@ import Contract.Address (scriptHashAddress)
 import Contract.AssocMap (Map)
 import Contract.AssocMap (empty, insert, lookup) as AssocMap
 import Contract.Monad (Contract, liftContractM, liftedM)
-import Contract.PlutusData (Datum(..), Redeemer(..), toData)
+import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (ValidatorHash, validatorHash)
@@ -41,7 +41,7 @@ import Contract.Test.Plutip
   , withWallets
   )
 import Contract.Transaction (submitTxFromConstraints)
-import Contract.TxConstraints (DatumPresence(..))
+import Contract.TxConstraints (DatumPresence(DatumInline))
 import Contract.TxConstraints as Constraints
 import Contract.Value (scriptCurrencySymbol)
 import Contract.Value as Value

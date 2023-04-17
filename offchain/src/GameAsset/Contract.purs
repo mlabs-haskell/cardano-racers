@@ -28,16 +28,16 @@ import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.Scripts
   ( MintingPolicy(PlutusMintingPolicy)
-  , MintingPolicyHash(..)
+  , MintingPolicyHash
   , applyArgs
   )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
-  ( TransactionInput(..)
-  , TransactionOutputWithRefScript(..)
+  ( TransactionInput
+  , TransactionOutputWithRefScript
   , mkTxUnspentOut
   )
-import Contract.TxConstraints (InputWithScriptRef(..))
+import Contract.TxConstraints (InputWithScriptRef(RefInput))
 import Contract.TxConstraints as Constraints
 import Contract.Value (CurrencySymbol, TokenName, mkTokenName)
 import Contract.Value as Value

@@ -15,7 +15,7 @@ import Contract.Address (Address)
 import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
 import Contract.PlutusData (unitDatum)
-import Contract.Scripts (PlutusScript(..), Validator(..))
+import Contract.Scripts (PlutusScript(PlutusScript), Validator(Validator))
 import Contract.Transaction (TransactionInput, TransactionOutputWithRefScript)
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints

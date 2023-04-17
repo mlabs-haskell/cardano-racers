@@ -8,14 +8,13 @@ import CardanoRacers.AssetRequest.Types
   )
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.GameAsset.Types (Rarity)
-import CardanoRacers.Helpers (getTxoWithRefScrpt, paysToAddrConstraint)
+import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.RacersState.Contract
   ( queryRacersRefScriptOutput
   , queryRacersState
   )
 import CardanoRacers.ScriptsFFI (assetRequestPolicy)
 import Contract.AssocMap as AssocMap
-import Contract.Hashing (plutusScriptHash)
 import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
@@ -28,15 +27,13 @@ import Contract.Scripts
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
   ( TransactionHash
-  , TransactionInput
-  , TransactionOutputWithRefScript(..)
   , awaitTxConfirmed
   , mkTxUnspentOut
   , submitTxFromConstraints
   )
 import Contract.TxConstraints
   ( DatumPresence(DatumInline)
-  , InputWithScriptRef(..)
+  , InputWithScriptRef(RefInput)
   )
 import Contract.TxConstraints as Constraints
 import Contract.Value

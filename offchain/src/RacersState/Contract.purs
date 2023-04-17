@@ -9,7 +9,6 @@ import CardanoRacers.RacersState.Types
   )
 import CardanoRacers.ScriptsFFI (racersStateValidatorScript)
 import Contract.Address (scriptHashAddress)
-import Contract.Hashing (plutusScriptHash)
 import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData
   ( Datum(Datum)
@@ -22,7 +21,7 @@ import Contract.PlutusData
   )
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts
-  ( PlutusScript(..)
+  ( PlutusScript
   , ScriptHash
   , Validator(Validator)
   , applyArgs
@@ -30,14 +29,14 @@ import Contract.Scripts
   )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
-  ( ScriptRef(..)
+  ( ScriptRef(PlutusScriptRef)
   , TransactionHash
   , TransactionInput
-  , TransactionOutputWithRefScript(..)
+  , TransactionOutputWithRefScript
   , awaitTxConfirmed
   , submitTxFromConstraints
   )
-import Contract.TxConstraints (DatumPresence(..))
+import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (utxosAt)
 import Contract.Value (geq)

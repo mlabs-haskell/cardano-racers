@@ -30,8 +30,7 @@ import Contract.Log (logInfo')
 import Contract.Metadata (mkCip25String)
 import Contract.Monad (Contract, liftContractM, liftedM, throwContractError)
 import Contract.Scripts
-  ( MintingPolicy(..)
-  , PlutusScript(..)
+  ( MintingPolicy(PlutusMintingPolicy)
   , ValidatorHash
   , validatorHash
   )
@@ -43,8 +42,12 @@ import Contract.Test.Plutip
   , withWallets
   )
 import Contract.Value (scriptCurrencySymbol)
-import Contract.Wallet (KeyWallet)
-import Contract.Wallet (getWalletAddresses, getWalletBalance, getWalletUtxos)
+import Contract.Wallet
+  ( KeyWallet
+  , getWalletAddresses
+  , getWalletBalance
+  , getWalletUtxos
+  )
 import Data.Array (concatMap)
 import Data.Array (head) as Array
 import Data.BigInt (BigInt)
@@ -61,7 +64,7 @@ suite = group "AssetRequest" do
       \(adminKey /\ treasuryKey /\ userKey) -> do
         cRef <- liftEffect $ Ref.new 1
         rp <- withKeyWallet adminKey createRacersParamsHelper
-        reqTxi /\ gameTxi <- withKeyWallet adminKey $ do
+        _ <- withKeyWallet adminKey $ do
           assetRequestScriptRef <- mkAssetRequestPolicy rp >>= case _ of
             PlutusMintingPolicy s -> pure s
             _ -> throwContractError "Not plutus script"

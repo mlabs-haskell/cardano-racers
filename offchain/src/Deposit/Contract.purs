@@ -65,7 +65,7 @@ import Contract.Transaction
   , signTransaction
   , submit
   )
-import Contract.TxConstraints (InputWithScriptRef(..))
+import Contract.TxConstraints (InputWithScriptRef(RefInput))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (utxosAt)
 import Contract.Value (TokenName)
