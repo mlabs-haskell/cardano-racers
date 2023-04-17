@@ -6,6 +6,7 @@ import PlutusTx.Prelude
 
 import CommonTypes (RacersParams, adminToken, botToken)
 import Ledger.Value (assetClassValue, geq)
+import Plutonomy qualified (optimizeUPLC)
 import Plutus.V2.Ledger.Api (
   Script,
   ScriptContext (scriptContextTxInfo),
@@ -14,7 +15,6 @@ import Plutus.V2.Ledger.Api (
  )
 import Plutus.V2.Ledger.Contexts (valueSpent)
 import PlutusTx qualified (compile, unsafeFromBuiltinData)
-import Plutonomy qualified (optimizeUPLC)
 
 {-# INLINEABLE mkGameAssetPolicy #-}
 mkGameAssetPolicy :: RacersParams -> ScriptContext -> Bool

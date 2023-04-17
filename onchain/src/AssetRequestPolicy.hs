@@ -4,6 +4,7 @@ module AssetRequestPolicy where
 
 import CommonTypes (RacersParams (adminToken, botToken, stateToken), RacersState (depositScript), Rarity, airdropAddress, assetPrices, depositScript)
 import Ledger.Value (Value, assetClass, assetClassValue, flattenValue, geq)
+import Plutonomy qualified (optimizeUPLC)
 import Plutus.V2.Ledger.Api (
   CurrencySymbol,
   Datum (getDatum),
@@ -18,8 +19,6 @@ import PlutusTx qualified (FromData (fromBuiltinData), compile, unsafeFromBuilti
 import PlutusTx.AssocMap (lookup)
 import PlutusTx.Prelude
 import Utils (distributesToAddrs, findCurrentGameStateFromRefInputs, parseToken, withTraceM)
-import Plutonomy qualified (optimizeUPLC)
-
 
 data AssetRequestRedeemer = MintRequestToken | BurnRequestToken
 PlutusTx.unstableMakeIsData ''AssetRequestRedeemer

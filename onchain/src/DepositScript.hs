@@ -5,6 +5,7 @@ module DepositScript (script) where
 import CommonTypes (AirdropAddressDatum (airdropAddress), RacersParams, Rarity, adminToken, botToken)
 import Ledger (Address)
 import Ledger.Value (assetClass, assetClassValue, flattenValue, geq, leq)
+import Plutonomy qualified (optimizeUPLC)
 import Plutus.V2.Ledger.Api (
   CurrencySymbol,
   Script,
@@ -21,7 +22,6 @@ import PlutusTx.AssocMap (Map)
 import PlutusTx.AssocMap qualified as AssocMap (empty, singleton, toList, unionWith)
 import PlutusTx.Prelude
 import Utils (getInlineDatum, parseToken, valueToAddr, withTraceM)
-import Plutonomy qualified (optimizeUPLC)
 
 data DepositValidatorParams = DepositValidatorParams
   { assetPolicySymbol :: CurrencySymbol
