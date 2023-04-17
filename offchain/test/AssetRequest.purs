@@ -12,7 +12,6 @@ import CardanoRacers.AssetRequest.Types
   )
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Deposit.Contract (mkDepositValidator)
-import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
 import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
@@ -26,7 +25,7 @@ import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (ValidatorHash, validatorHash)
+import Contract.Scripts (validatorHash)
 import Contract.Test.Assert
   ( checkGainAtAddress'
   , checkTokenGainAtAddress'
@@ -43,7 +42,6 @@ import Contract.Test.Plutip
 import Contract.Transaction (submitTxFromConstraints)
 import Contract.TxConstraints (DatumPresence(DatumInline))
 import Contract.TxConstraints as Constraints
-import Contract.Value (scriptCurrencySymbol)
 import Contract.Value as Value
 import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
 import Control.Monad.Error.Class (try)
@@ -194,21 +192,6 @@ suite = group "AssetRequest" do
       Map.toUnfoldable utxos
     NitroHelpers.createRacersParams txi "NITRO"
 
-  depositScriptHashHelper :: RacersParams -> Contract ValidatorHash
-  depositScriptHashHelper rp = do
-    assetRequestPolicySymbol <- liftedM "could not get asset request symbol"
-      $ mkAssetRequestPolicy rp
-      <#> scriptCurrencySymbol
-    assetPolicySymbol <- liftedM "could not get game asset symbol"
-      $ mkGameAssetPolicy rp
-      <#> scriptCurrencySymbol
-    depositVal <- mkDepositValidator rp $
-      wrap
-        { assetPolicySymbol
-        , assetRequestPolicySymbol
-        }
-    pure $ validatorHash depositVal
-
   defaultAssetPrices :: Map Rarity BigInt
   defaultAssetPrices = foldl (flip $ uncurry AssocMap.insert) AssocMap.empty
     [ (Common /\ BigInt.fromInt 5_000_000)
@@ -231,7 +214,7 @@ suite = group "AssetRequest" do
       ownAddr <- liftedM "Could not get address" $ Array.head <$>
         getWalletAddresses
 
-      depositScriptHash <- depositScriptHashHelper rp
+      depositScriptHash <- validatorHash <$> mkDepositValidator rp
 
       let
         rs = RacersState
