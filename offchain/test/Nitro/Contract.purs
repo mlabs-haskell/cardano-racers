@@ -19,7 +19,7 @@ import CardanoRacers.RacersState.Contract
   , queryRacersState
   ) as RacersState
 import CardanoRacers.RacersState.Types (RacersState(RacersState))
-import Contract.Address (Address, getWalletAddresses)
+import Contract.Address (Address)
 import Contract.AssocMap as AssocMap
 import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Monad (Contract, liftContractM, liftedM)
@@ -42,10 +42,9 @@ import Contract.Test.Plutip
 import Contract.Transaction (submitTxFromConstraints)
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
-import Contract.Utxos (getWalletUtxos)
 import Contract.Value (CurrencySymbol, TokenName, Value, scriptCurrencySymbol)
 import Contract.Value (lovelaceValueOf, scriptCurrencySymbol, singleton) as Value
-import Contract.Wallet (KeyWallet)
+import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
 import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array

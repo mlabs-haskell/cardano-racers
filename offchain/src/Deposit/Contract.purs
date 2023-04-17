@@ -25,11 +25,7 @@ import CardanoRacers.GameAsset.Types
   , GameAssetNftMetadata
   , Rarity(Epic, Rare, Common)
   )
-import CardanoRacers.Helpers (getTxoWithRefScrpt)
-import CardanoRacers.Nitro.Contract
-  ( mintNitroAndPayToAddressConstraints
-  , paysNitroConstraints
-  )
+import CardanoRacers.Nitro.Contract (mintNitroAndPayToAddressConstraints)
 import CardanoRacers.RacersState.Contract
   ( createRacersRefScriptOutput
   , queryRacersRefScriptOutput
@@ -41,7 +37,7 @@ import Common.ContractHelpers (findOwnAuthUtxo)
 import Contract.Address (Address, scriptHashAddress)
 import Contract.AuxiliaryData (setTxMetadata)
 import Contract.CborBytes (cborBytesToByteArray)
-import Contract.Log (logInfo, logInfo')
+import Contract.Log (logInfo')
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
 import Contract.PlutusData
   ( OutputDatum(OutputDatum)
@@ -82,7 +78,6 @@ import Contract.Value
   , singleton
   ) as Value
 import Control.Monad.Error.Class (liftMaybe)
-import Ctl.Internal.Contract.QueryHandle (getQueryHandle)
 import Ctl.Internal.Serialization (convertTransaction, toBytes)
 import Data.Array (catMaybes, elem, filter) as Array
 import Data.BigInt (BigInt)

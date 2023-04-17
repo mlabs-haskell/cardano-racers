@@ -5,9 +5,9 @@ import Contract.Prelude
 import CardanoRacers.Common.Types (RacersParams)
 import Contract.Monad (Contract, liftedM)
 import Contract.Transaction (TransactionInput, TransactionOutputWithRefScript)
-import Contract.Utxos (getWalletUtxos)
 import Contract.Value (Value)
 import Contract.Value (geq, singleton) as Value
+import Contract.Wallet (getWalletUtxos)
 import Control.Apply (lift2)
 import Data.Array (find) as Array
 import Data.BigInt (fromInt) as BigInt

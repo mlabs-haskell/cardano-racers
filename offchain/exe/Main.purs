@@ -4,9 +4,9 @@ module CardanoRacers.Main (main) where
 
 import Contract.Prelude
 
-import Contract.Address (getWalletAddresses)
 import Contract.Config as Contract.Config
 import Contract.Monad as Contract.Monad
+import Contract.Wallet (getWalletAddresses)
 
 main :: Effect Unit
 main = Contract.Monad.launchAff_

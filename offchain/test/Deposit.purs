@@ -25,7 +25,6 @@ import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
 import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput)
 import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
 import CardanoRacers.RacersState.Types (RacersState(RacersState))
-import Contract.Address (getWalletAddresses)
 import Contract.AssocMap (Map, empty, insert) as AssocMap
 import Contract.Log (logInfo')
 import Contract.Metadata (mkCip25String)
@@ -43,9 +42,9 @@ import Contract.Test.Plutip
   , withKeyWallet
   , withWallets
   )
-import Contract.Utxos (getWalletBalance, getWalletUtxos)
 import Contract.Value (scriptCurrencySymbol)
 import Contract.Wallet (KeyWallet)
+import Contract.Wallet (getWalletAddresses, getWalletBalance, getWalletUtxos)
 import Data.Array (concatMap)
 import Data.Array (head) as Array
 import Data.BigInt (BigInt)
@@ -83,8 +82,8 @@ suite = group "AssetRequest" do
         --    logInfo' $ show col
         st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey) rp
           assetPrices
-        _ <- withKeyWallet userKey $ requestAssetByRarity rp Nothing Rare
-        _ <- withKeyWallet userKey $ requestAssetByRarity rp Nothing Epic
+        _ <- withKeyWallet userKey $ requestAssetByRarity rp Rare
+        _ <- withKeyWallet userKey $ requestAssetByRarity rp Epic
         -- let scriptAddr = scriptHashAddress (unwrap st).depositScript Nothing
         depRefOref <- withKeyWallet adminKey $
           createDepositReferenceScriptOutput rp

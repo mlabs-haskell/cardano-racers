@@ -20,7 +20,7 @@ import Contract.Transaction (TransactionInput, TransactionOutputWithRefScript)
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
 import Contract.Value (Value)
-import Ctl.Internal.Contract.QueryHandle (getQueryHandle)
+import Ctl.Internal.Contract.Monad (getQueryHandle)
 import Ctl.Internal.Plutus.Conversion (toPlutusTxOutputWithRefScript)
 import Effect.Ref (Ref)
 import Effect.Ref (read, write) as Ref

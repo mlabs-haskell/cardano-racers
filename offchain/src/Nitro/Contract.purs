@@ -31,7 +31,6 @@ import Contract.Transaction
   , submitTxFromConstraints
   )
 import Contract.TxConstraints as Constraints
-import Contract.Utxos (getWalletUtxos)
 import Contract.Value (lovelaceValueOf, singleton) as Value
 import Contract.Value (scriptCurrencySymbol)
 import Data.Array (singleton) as Array

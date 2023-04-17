@@ -5,7 +5,7 @@ import Contract.Prelude
 import CardanoRacers.Nft (mkNftMintingPolicy) as Nft
 import CardanoRacers.Nitro.Helpers (mintAdminNft) as NitroHelpers
 import CardanoRacers.ScriptsFFI (adminNftMintingPolicy)
-import Contract.Address (Address, getWalletAddresses)
+import Contract.Address (Address)
 import Contract.Monad (liftContractM, liftedE, liftedM)
 import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
@@ -23,7 +23,7 @@ import Contract.Test.Assert
   , ExpectedActual(ExpectedActual)
   , Labeled
   , assertContract
-  , assertValueDeltaAtAddress
+  , checkValueDeltaAtAddress
   , label
   , runChecks
   )
@@ -37,9 +37,9 @@ import Contract.Test.Plutip
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction (balanceTx)
 import Contract.TxConstraints as Constraints
-import Contract.Utxos (getWalletUtxos)
 import Contract.Value (CurrencySymbol, TokenName, Value)
 import Contract.Value (mkTokenName, scriptCurrencySymbol, singleton, valueOf) as Value
+import Contract.Wallet (getWalletAddresses, getWalletUtxos)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
 import Data.BigInt (BigInt)
@@ -67,7 +67,7 @@ suite = group "AdminNft" do
         :: forall (r :: Row Type)
          . Labeled Address
         -> ContractCheck (CurrencySymbol /\ TokenName)
-      checkNftGain addr contract = assertValueDeltaAtAddress addr check contract
+      checkNftGain addr contract = checkValueDeltaAtAddress addr check contract
         where
         check
           :: Maybe (CurrencySymbol /\ TokenName)
@@ -89,7 +89,8 @@ suite = group "AdminNft" do
 
             unexpectedTokenDelta :: ContractAssertionFailure
             unexpectedTokenDelta =
-              UnexpectedTokenDelta addr tn (ExpectedActual expected actual)
+              UnexpectedTokenDelta (Just addr) tn
+                (ExpectedActual expected actual)
 
           assertContract unexpectedTokenDelta (actual == expected)
     withWallets singleWalletDistribution \w ->
