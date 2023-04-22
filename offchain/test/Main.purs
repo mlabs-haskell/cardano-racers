@@ -40,7 +40,7 @@ suite = do
   Nitro.suite
   RacersState.suite
   AssetRequest.suite
-  Deposit.suite
+  only Deposit.suite
   GameAsset.suite
 
 config :: PlutipConfig

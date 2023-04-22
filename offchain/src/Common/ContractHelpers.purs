@@ -1,10 +1,11 @@
-module Common.ContractHelpers (findOwnAuthUtxo) where
+module Common.ContractHelpers (findOwnAuthUtxo, findAuthInUtxosMap) where
 
 import Contract.Prelude
 
 import CardanoRacers.Common.Types (RacersParams)
 import Contract.Monad (Contract, liftedM)
 import Contract.Transaction (TransactionInput, TransactionOutputWithRefScript)
+import Contract.Utxos (UtxoMap)
 import Contract.Value (Value)
 import Contract.Value (geq, singleton) as Value
 import Contract.Wallet (getWalletUtxos)
@@ -33,3 +34,25 @@ findOwnAuthUtxo rp = do
             (unwrap (unwrap txo).output).amount
         ) $ Map.toUnfoldable utxos
   pure mUtxo
+
+findAuthInUtxosMap
+  :: RacersParams
+  -> UtxoMap
+  -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
+findAuthInUtxosMap rp utxos =
+  let
+    adminValue :: Value
+    adminValue = uncurry Value.singleton (unwrap rp).adminToken $ BigInt.fromInt
+      1
+
+    botValue :: Value
+    botValue = uncurry Value.singleton (unwrap rp).botToken $ BigInt.fromInt 1
+
+    mUtxo =
+      Array.find
+        ( \(_ /\ txo) -> lift2 (||) (_ `Value.geq` adminValue)
+            (_ `Value.geq` botValue)
+            (unwrap (unwrap txo).output).amount
+        ) $ Map.toUnfoldable utxos
+  in
+    mUtxo

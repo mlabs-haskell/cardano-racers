@@ -23,8 +23,6 @@ import Utils (distributesToAddrs, findCurrentGameStateFromRefInputs, parseToken,
 data AssetRequestRedeemer = MintRequestToken | BurnRequestToken
 PlutusTx.unstableMakeIsData ''AssetRequestRedeemer
 
--- todo: will help readability to add redeemers representing admin/bot
--- burning, and user minting request tokens. Must be wary of Tx size though
 {-# INLINEABLE mkAssetRequestPolicy #-}
 mkAssetRequestPolicy :: RacersParams -> AssetRequestRedeemer -> ScriptContext -> Bool
 mkAssetRequestPolicy rp red ctx =
@@ -53,7 +51,7 @@ mkAssetRequestPolicy rp red ctx =
           -- using ^(all) to disallow minting and burning in
           -- same tx, doing so would allow the admin/bot to
           -- mint request tokens freely which could result in
-          -- the tokens leaving the closed loop
+          -- the tokens leaving the closed system
 
           inputContainsAdminNft :: Bool
           inputContainsAdminNft = spentValue `geq` assetClassValue (adminToken rp) 1

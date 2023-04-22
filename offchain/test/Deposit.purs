@@ -7,7 +7,10 @@ import CardanoRacers.AssetRequest.Contract
   , requestAssetByRarity
   )
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.Deposit.Contract (consumeAndRedeemRequests, mkDepositValidator)
+import CardanoRacers.Deposit.Contract
+  ( consumeAndRedeemRequests
+  , mkDepositValidator
+  )
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types
   ( AssetOption
@@ -21,6 +24,7 @@ import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput)
 import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
 import CardanoRacers.RacersState.Types (RacersState(RacersState))
 import Contract.AssocMap (Map, empty, insert) as AssocMap
+import Contract.Log (logInfo')
 import Contract.Metadata (mkCip25String)
 import Contract.Monad (Contract, liftContractM, liftedM, throwContractError)
 import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), validatorHash)
@@ -70,8 +74,10 @@ suite = group "AssetRequest" do
 
         st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey) rp
           assetPrices
+        _ <- withKeyWallet userKey $ requestAssetByRarity rp Common
         _ <- withKeyWallet userKey $ requestAssetByRarity rp Rare
         _ <- withKeyWallet userKey $ requestAssetByRarity rp Epic
+        logInfo' "requests complete"
         _ <- withKeyWallet adminKey $ do
           _ <- adminMintsNitroContract rp (BigInt.fromInt 1_000_000)
           consumeAndRedeemRequests rp availableAssets (counterNonce cRef) st

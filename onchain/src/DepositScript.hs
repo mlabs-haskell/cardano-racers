@@ -1,4 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:optimize #-}
+{-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:remove-trace #-}
 
 module DepositScript (script) where
 
