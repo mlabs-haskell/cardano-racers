@@ -26,6 +26,7 @@ import NitroPolicy qualified
 import RacersStateScript qualified
 import AssetRequestPolicy qualified
 import GameAssetPolicy qualified
+import SlotTokenPolicy qualified
 
 data ScriptsFFI
   = ScriptsFFI
@@ -69,6 +70,7 @@ main = do
           , ("depositScript", DepositScript.script)
           , ("assetRequestPolicy", AssetRequestPolicy.script)
           , ("gameAssetPolicy", GameAssetPolicy.script)
+          , ("slotTokenPolicy", SlotTokenPolicy.script)
           ]
   writeFile (out <> "/ScriptsFFI.js") js
   writeFile (out <> "/ScriptsFFI.purs") purs

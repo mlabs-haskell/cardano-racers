@@ -15,8 +15,8 @@ import PlutusTx qualified (applyCode, compile, liftCode)
 {-# INLINEABLE mkPolicy #-}
 mkPolicy :: TxOutRef -> ScriptContext -> Bool
 mkPolicy txoref ctx =
-  traceIfFalse badInput hasUtxo
-    && traceIfFalse badAmount mintedOne
+  traceIfFalse "parameter TxOutRef not consumed in inputs" hasUtxo
+    && traceIfFalse "amount minted is not 1" mintedOne
   where
     info :: TxInfo
     info = scriptContextTxInfo ctx
@@ -31,9 +31,6 @@ mkPolicy txoref ctx =
     mintedOne = case filter (\(mintedCs, _, _) -> mintedCs == cs) $ flattenValue (txInfoMint info) of
       [(_, _, amt)] -> amt == 1
       _ -> False
-
-    badInput = "parameter TxOutRef not consumed in inputs"
-    badAmount = "amount minted is not 1"
 
 {-# INLINEABLE mkPolicy' #-}
 mkPolicy' :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()

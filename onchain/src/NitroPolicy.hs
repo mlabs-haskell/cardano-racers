@@ -29,7 +29,7 @@ PlutusTx.unstableMakeIsData ''NitroPolicyRedeemer
 
 {-# INLINEABLE mkNitroMintiingPolicy #-}
 mkNitroMintiingPolicy :: RacersParams -> NitroPolicyRedeemer -> ScriptContext -> Bool
-mkNitroMintiingPolicy nsp red ctx = case red of
+mkNitroMintiingPolicy rp red ctx = case red of
   MintNitroToken i ->
     ( traceIfFalse "admin token not present" inputContainsAdminNft
         || traceIfFalse "bot token not present" inputContainsBotNft
@@ -41,7 +41,7 @@ mkNitroMintiingPolicy nsp red ctx = case red of
       && traceIfFalse "wrong amount minted" (mintedNitroToken i)
     where
       currentStateFromRefInput :: Maybe RacersState
-      currentStateFromRefInput = findCurrentGameStateFromRefInputs info (stateToken nsp)
+      currentStateFromRefInput = findCurrentGameStateFromRefInputs info (stateToken rp)
 
       sendsAdaToCorrectAddrs :: Integer -> Bool
       sendsAdaToCorrectAddrs mintedAmount = fromMaybe False $ do
@@ -53,24 +53,24 @@ mkNitroMintiingPolicy nsp red ctx = case red of
     info = scriptContextTxInfo ctx
 
     inputContainsAdminNft :: Bool
-    inputContainsAdminNft = valueSpent info `geq` assetClassValue (adminToken nsp) 1
+    inputContainsAdminNft = valueSpent info `geq` assetClassValue (adminToken rp) 1
 
     inputContainsBotNft :: Bool
-    inputContainsBotNft = valueSpent info `geq` assetClassValue (botToken nsp) 1
+    inputContainsBotNft = valueSpent info `geq` assetClassValue (botToken rp) 1
 
     nitroAssetClass :: AssetClass
-    nitroAssetClass = assetClass (ownCurrencySymbol ctx) (nitroToken nsp)
+    nitroAssetClass = assetClass (ownCurrencySymbol ctx) (nitroToken rp)
 
     mintedNitroToken :: Integer -> Bool
     mintedNitroToken i = i == assetClassValueOf (txInfoMint info) nitroAssetClass
 
 {-# INLINEABLE mkPolicy #-}
 mkPolicy :: BuiltinData -> BuiltinData -> BuiltinData -> ()
-mkPolicy nsp redeemer context =
+mkPolicy rp redeemer context =
   let
     result =
       mkNitroMintiingPolicy
-        (PlutusTx.unsafeFromBuiltinData nsp)
+        (PlutusTx.unsafeFromBuiltinData rp)
         (PlutusTx.unsafeFromBuiltinData redeemer)
         (PlutusTx.unsafeFromBuiltinData context)
    in

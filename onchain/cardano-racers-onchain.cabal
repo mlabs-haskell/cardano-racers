@@ -60,6 +60,7 @@ library
   import:          common
   exposed-modules: 
     , NitroPolicy
+    , SlotTokenPolicy
     , NftPolicy
     , GameAssetPolicy
     , AssetRequestPolicy
