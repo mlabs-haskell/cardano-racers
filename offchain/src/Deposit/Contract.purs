@@ -54,7 +54,7 @@ import Contract.Scripts
   )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
-  ( BalancedSignedTransaction(..)
+  ( BalancedSignedTransaction
   , TransactionHash
   , TransactionInput
   , TransactionOutputWithRefScript
@@ -79,8 +79,6 @@ import Contract.Value
   , singleton
   ) as Value
 import Control.Monad.Error.Class (liftMaybe)
-import Ctl.Internal.BalanceTx.CoinSelection (SelectionStrategy(..))
-import Ctl.Internal.BalanceTx.ExUnitsAndMinFee (evalExUnitsAndMinFee)
 import Ctl.Internal.Contract.Monad (getQueryHandle)
 import Ctl.Internal.Plutus.Conversion (fromPlutusUtxoMap)
 import Ctl.Internal.TxOutput
