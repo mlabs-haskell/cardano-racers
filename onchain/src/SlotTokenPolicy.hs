@@ -20,13 +20,13 @@ import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
 
 data SlotTokenPolicyRedeemer
   = MintSlotToken Integer
-  | BurnSlotToken Integer
+  | BurnSlotToken
   deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''SlotTokenPolicyRedeemer
 
 {-# INLINEABLE mkSlotTokenPolicy #-}
-mkSlotTokenPolicy :: RacersParams -> TxOutRef -> BuiltinByteString -> SlotTokenPolicyRedeemer -> ScriptContext -> Bool
-mkSlotTokenPolicy rp txoref raceId red ctx = case red of
+mkSlotTokenPolicy :: TxOutRef -> RacersParams -> BuiltinByteString -> SlotTokenPolicyRedeemer -> ScriptContext -> Bool
+mkSlotTokenPolicy txoref rp raceId red ctx = case red of
   MintSlotToken i ->
     ( traceIfFalse "admin token not present" inputContainsAdminNft
         || traceIfFalse "bot token not present" inputContainsBotNft
@@ -45,7 +45,7 @@ mkSlotTokenPolicy rp txoref raceId red ctx = case red of
 
       mintsSlotTokens :: Bool
       mintsSlotTokens = i == mintedSlotToken
-  BurnSlotToken _ -> traceIfFalse "wrong amount minted" burnsSlotTokens
+  BurnSlotToken -> traceIfFalse "wrong amount minted" burnsSlotTokens
     where
       burnsSlotTokens :: Bool
       burnsSlotTokens = mintedSlotToken < 0
@@ -61,12 +61,12 @@ mkSlotTokenPolicy rp txoref raceId red ctx = case red of
 
 {-# INLINEABLE mkPolicy #-}
 mkPolicy :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
-mkPolicy rp utxo raceHash redeemer context =
+mkPolicy utxo rp raceHash redeemer context =
   let
     result =
       mkSlotTokenPolicy
-        (PlutusTx.unsafeFromBuiltinData rp)
         (PlutusTx.unsafeFromBuiltinData utxo)
+        (PlutusTx.unsafeFromBuiltinData rp)
         (PlutusTx.unsafeFromBuiltinData raceHash)
         (PlutusTx.unsafeFromBuiltinData redeemer)
         (PlutusTx.unsafeFromBuiltinData context)
