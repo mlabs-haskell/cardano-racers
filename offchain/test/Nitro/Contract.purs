@@ -4,6 +4,7 @@ import Contract.Prelude
 
 import CardanoRacers.Common.Types (RacersParams(RacersParams))
 import CardanoRacers.Deposit.Contract (mkDepositValidator)
+import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.Nitro.Contract
   ( adminMintsNitroContract
   , botMintsNitroContract
@@ -11,7 +12,7 @@ import CardanoRacers.Nitro.Contract
   , mkNitroPolicy
   ) as Nitro
 import CardanoRacers.Nitro.Helpers (createRacersParams, mintBotNft) as NitroHelpers
-import CardanoRacers.Nitro.Types (NitroPolicyRedeemer(BuyNitroToken))
+import CardanoRacers.Nitro.Types (NitroPolicyRedeemer(..))
 import CardanoRacers.RacersState.Contract
   ( initRacersStateContract
   , queryRacersState
@@ -22,11 +23,13 @@ import Contract.AssocMap as AssocMap
 import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData (Redeemer(Redeemer), toData, unitDatum)
+import Contract.ScriptLookups as Lookup
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (validatorHash)
 import Contract.Test.Assert
   ( checkGainAtAddress'
   , checkTokenGainAtAddress'
+  , checkTokenLossAtAddress'
   , label
   , runChecks
   )
@@ -37,11 +40,16 @@ import Contract.Test.Plutip
   , withKeyWallet
   , withWallets
   )
-import Contract.Transaction (submitTxFromConstraints)
+import Contract.Transaction (awaitTxConfirmed, submitTxFromConstraints)
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
 import Contract.Value (CurrencySymbol, TokenName, Value)
-import Contract.Value (lovelaceValueOf, scriptCurrencySymbol, singleton) as Value
+import Contract.Value
+  ( lovelaceValueOf
+  , negation
+  , scriptCurrencySymbol
+  , singleton
+  ) as Value
 import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
 import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
@@ -101,9 +109,56 @@ suite = group "NitroToken script" do
                 ]
             $ lift
             $ Nitro.botMintsNitroContract nspWithBotToken amountToMint
+    test "User burns Nitro" do
+      withWallets (walletUtxoDistr /\ walletUtxoDistr) \(admin /\ user) -> do
+        userAddress <- withKeyWallet user
+          $ liftedM "Couldn't get wallet address"
+          $ Array.head
+          <$>
+            getWalletAddresses
+        (rp /\ nitroPolicy /\ nitroSymbol) <- withKeyWallet admin do
+          rp <- createNitroParamsHelper
+          let amountToMint = BigInt.fromInt 100
+          nitroPolicy <- Nitro.mkNitroPolicy rp
+          nitroSymbol <-
+            liftContractM "Couldn't create currency symbol from NitroPolicy"
+              $ Value.scriptCurrencySymbol nitroPolicy
+          void $ Nitro.adminMintsNitroContract rp amountToMint
+          txId <- submitTxFromConstraints (mempty :: Lookups.ScriptLookups Void)
+            ( paysToAddrConstraint userAddress
+                ( Value.singleton nitroSymbol (unwrap rp).nitroToken
+                    (BigInt.fromInt 50)
+                )
+            )
+          awaitTxConfirmed txId
+          pure (rp /\ nitroPolicy /\ nitroSymbol)
+        withKeyWallet user do
+          let
+            fiftyNitro = Value.singleton nitroSymbol (unwrap rp).nitroToken
+              (BigInt.fromInt 50)
+            mintContract valueToMint =
+              submitTxFromConstraints
+                (Lookup.mintingPolicy nitroPolicy :: Lookups.ScriptLookups Void)
+                ( Constraints.mustMintValueWithRedeemer
+                    (Redeemer $ toData BurnNitroToken)
+                    valueToMint
+                ) >>= awaitTxConfirmed
+
+          resE <- try $ mintContract fiftyNitro
+          resE `shouldSatisfy` isLeft
+
+          void
+            $ runChecks
+                [ checkTokenLossAtAddress' (label userAddress "User")
+                    ( nitroSymbol /\ (unwrap rp).nitroToken /\ BigInt.fromInt 50
+                    )
+                ]
+            $ lift
+            $ mintContract
+            $ Value.negation fiftyNitro
     test "User buys Nitro" do
       withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
-        \(admin /\ treasury /\ bob) -> do
+        \(admin /\ treasury /\ user) -> do
           let nitroPrice = BigInt.fromInt 1000000
           treasuryAddr <- withKeyWallet treasury
             $ liftedM "Could not get treasury address"
@@ -119,8 +174,8 @@ suite = group "NitroToken script" do
           nitroCs <- liftedM "Could not get currency symbol"
             $ Value.scriptCurrencySymbol
             <$> Nitro.mkNitroPolicy nsp
-          void $ withKeyWallet bob do
-            bobAddress <- liftedM "Could not get bob address" $ Array.head <$>
+          void $ withKeyWallet user do
+            userAddress <- liftedM "Could not get user address" $ Array.head <$>
               getWalletAddresses
             let
               amountToBuy = BigInt.fromInt 100
@@ -135,7 +190,7 @@ suite = group "NitroToken script" do
                     amountToTreasury
                 , checkGainAtAddress' (label operatingAddress "Operating")
                     amountToOperating
-                , checkTokenGainAtAddress' (label bobAddress "Bob")
+                , checkTokenGainAtAddress' (label userAddress "user")
                     (nitroCs /\ (unwrap nsp).nitroToken /\ amountToBuy)
                 ]
 
@@ -145,14 +200,14 @@ suite = group "NitroToken script" do
       "User fails to mint Nitro with incorrect amount paid to operating/treasury"
       do
         withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
-          \(admin /\ treasury /\ bob) -> do
+          \(admin /\ treasury /\ user) -> do
             nsp <- withKeyWallet admin do
               nsp <- createNitroParamsHelper
               _ <- initNitroPolicyWithAdminAndTreasury (admin /\ treasury) nsp
                 (BigInt.fromInt 1000000)
               pure nsp
 
-            withKeyWallet bob do
+            withKeyWallet user do
               nitroMp <- Nitro.mkNitroPolicy nsp
               let
                 nitroAmount = BigInt.fromInt 100

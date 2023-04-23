@@ -24,6 +24,7 @@ import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
 data NitroPolicyRedeemer
   = MintNitroToken Integer
   | BuyNitroToken Integer
+  | BurnNitroToken
   deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''NitroPolicyRedeemer
 
@@ -48,6 +49,10 @@ mkNitroMintiingPolicy rp red ctx = case red of
         gameState <- currentStateFromRefInput
         let totalLovelace = mintedAmount * nitroPrice gameState
         pure $ distributesToAddrs info gameState totalLovelace
+  BurnNitroToken -> traceIfFalse "nitro minted is not negative" burnsNitro
+    where
+      burnsNitro :: Bool
+      burnsNitro = assetClassValueOf (txInfoMint info) nitroAssetClass < 0
   where
     info :: TxInfo
     info = scriptContextTxInfo ctx

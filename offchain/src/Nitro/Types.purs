@@ -19,10 +19,12 @@ import Contract.PlutusData
   )
 import Control.Alt ((<|>))
 import Data.BigInt (BigInt)
+import Foreign.Object (Object)
 
 data NitroPolicyRedeemer
   = MintNitroToken BigInt
   | BuyNitroToken BigInt
+  | BurnNitroToken
 
 derive instance Generic NitroPolicyRedeemer _
 derive instance Eq NitroPolicyRedeemer
@@ -34,6 +36,9 @@ instance
         :+ "BuyNitroToken"
         := PNil
         @@ (S Z)
+        :+ "BurnNitroToken"
+        := PNil
+        @@ (S (S Z))
         :+ PNil
     )
 
@@ -49,8 +54,15 @@ instance Show NitroPolicyRedeemer where
 instance EncodeAeson NitroPolicyRedeemer where
   encodeAeson (MintNitroToken amt) = wrapEncodeAeson "MintNitroToken" amt
   encodeAeson (BuyNitroToken amt) = wrapEncodeAeson "BuyNitroToken" amt
+  encodeAeson BurnNitroToken = wrapEncodeAeson "BurnNitroToken" {}
 
 instance DecodeAeson NitroPolicyRedeemer where
   decodeAeson aes =
-    decodeWrappedAeson "MintNitroToken" (pure <<< MintNitroToken) aes <|>
-      decodeWrappedAeson "BuyNitroToken" (pure <<< BuyNitroToken) aes
+    decodeWrappedAeson "MintNitroToken" (pure <<< MintNitroToken) aes
+      <|> decodeWrappedAeson "BuyNitroToken" (pure <<< BuyNitroToken) aes
+      <|>
+        decodeWrappedAeson "BurnRequestToken" (constMono $ pure BurnNitroToken)
+          aes
+    where
+    constMono :: forall a. a -> Object {} -> a
+    constMono a _ = a
