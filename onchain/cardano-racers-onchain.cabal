@@ -61,6 +61,7 @@ library
   exposed-modules: 
     , NitroPolicy
     , SlotTokenPolicy
+    , RegistryScript
     , NftPolicy
     , GameAssetPolicy
     , AssetRequestPolicy
