@@ -75,8 +75,9 @@ mintNitroConstraints rp nitroAmount = do
           nitroAmount
           /\ Lookups.mintingPolicy nitroPolicy
       Just (refTxi /\ refTxo) ->
-        Constraints.mustMintCurrencyUsingScriptRef
+        Constraints.mustMintCurrencyWithRedeemerUsingScriptRef
           (mintingPolicyHash nitroPolicy)
+          red
           (unwrap rp).nitroToken
           nitroAmount
           (RefInput $ mkTxUnspentOut refTxi refTxo) /\ mempty
