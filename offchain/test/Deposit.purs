@@ -88,7 +88,12 @@ suite = group "AssetRequest" do
         st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey) rp
           assetPrices
 
-        let requests = [ Common, Rare, Epic ]
+        let
+          requests =
+            [ Common
+            , Rare
+            , Epic
+            ]
 
         _ <- withKeyWallet userKey do
           traverse_ (requestAssetByRarity rp) requests

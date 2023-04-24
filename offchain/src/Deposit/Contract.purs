@@ -347,7 +347,6 @@ consumeAndRedeemRequests rp availableAssets generateNonce st =
       ( \reqs -> do
           (authTxi /\ authTxo) <- liftedM "could not find own auth utxo" $
             findOwnAuthUtxo rp
-          logInfo' "getting first auth"
           txs <- chainRedeem
             ( redeemGameAsset rp availableAssets generateNonce
                 mAssetRequestPolicyRef
@@ -356,10 +355,7 @@ consumeAndRedeemRequests rp availableAssets generateNonce st =
             )
             (authTxi /\ authTxo)
             reqs
-          txIds <- traverse
-            (\tx -> logInfo' "submitting tx" >>= const (submit tx))
-            txs
-          logInfo' "await tx chain confirmed"
+          txIds <- traverse submit txs
           traverse_ awaitTxConfirmed txIds
           pure txIds
       )
@@ -382,7 +378,6 @@ consumeAndRedeemRequests rp availableAssets generateNonce st =
       unbalancedTx <- redeemTx (authTxi /\ Map.singleton authTxi authTxo) req
       withBalancedTx unbalancedTx
         ( \balancedTx -> do
-            logInfo' "balanced tx"
             balSignedTx <- signTransaction balancedTx
             calculateExUnits balSignedTx Map.empty
             additionalUtxos <- createAdditionalUtxos balSignedTx
@@ -413,7 +408,6 @@ consumeAndRedeemRequests rp availableAssets generateNonce st =
             additionalUtxos
         withBalancedTxWithConstraints unbalancedTx balanceTxConstraints
           ( \balancedTx -> do
-              logInfo' "balanced tx chained"
               balSignedTx <- signTransaction balancedTx
               calculateExUnits balSignedTx additionalUtxos
               additionalUtxos' <- createAdditionalUtxos balSignedTx
@@ -446,10 +440,11 @@ calculateExUnits tx additionalUtxos = do
       (unwrap >>> Map.values >>> Array.fromFoldable >>> map _.memory >>> sum)
   liftContractE memorySum >>= \mem -> do
     logInfo' $ show mem
-    -- when (mem < fromBigInt' (BigInt.fromInt 7800000)) $ do
-    --   logInfo' $ show tx
-    when (mem > fromBigInt' (BigInt.fromInt 9200000)) $ do
-      logInfo' $ show tx
+
+-- when (mem < fromBigInt' (BigInt.fromInt 8000000)) $ do
+--   logInfo' $ show tx
+-- when (mem > fromBigInt' (BigInt.fromInt 9200000)) $ do
+--   logInfo' $ show tx
 
 -- when (mem > BigInt.fromInt 10000000) $ do
 --   logInfo' "memory limit exceeded"
