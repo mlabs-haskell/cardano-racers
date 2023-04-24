@@ -9,9 +9,7 @@ import CardanoRacers.AssetRequest.Contract
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Deposit.Contract
   ( consumeAndRedeemRequests
-  , createDepositReferenceScriptOutput
   , mkDepositValidator
-  , queryRequestsWithAirdropAddress
   )
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types
@@ -19,18 +17,17 @@ import CardanoRacers.GameAsset.Types
   , GameAssetType(CarType, DriverType)
   , Rarity(Common, Rare, Epic)
   )
-import CardanoRacers.Helpers (counterNonce, getTxoWithRefScrpt)
 import CardanoRacers.Nitro.Contract (adminMintsNitroContract)
 import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
 import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput)
 import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
 import CardanoRacers.RacersState.Types (RacersState(RacersState))
-import Contract.Wallet (getWalletAddresses)
 import Contract.AssocMap (Map, empty, insert) as AssocMap
-import Contract.Log (logInfo')
-import Contract.Metadata (mkCip25String)
+import Contract.Metadata (mkCip25String, unCip25String)
 import Contract.Monad (Contract, liftContractM, liftedM, throwContractError)
-import Contract.Scripts (MintingPolicy(..), ValidatorHash, validatorHash)
+import Contract.Prim.ByteArray (byteArrayFromAscii)
+import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), validatorHash)
+import Contract.Test.Assert (checkTokenGainAtAddress', label, runChecks)
 import Contract.Test.Mote (TestPlanM)
 import Contract.Test.Plutip
   ( InitialUTxOs
@@ -38,15 +35,14 @@ import Contract.Test.Plutip
   , withKeyWallet
   , withWallets
   )
-import Contract.Wallet (getWalletBalance, getWalletUtxos)
-import Contract.Value (scriptCurrencySymbol)
-import Contract.Wallet (KeyWallet)
-import Data.Array (concatMap)
+import Contract.Value (CurrencySymbol, mkTokenName)
+import Contract.Value as Value
+import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
+import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
-import Data.Map (Map, fromFoldable, toUnfoldable) as Map
-import Effect.Ref (new) as Ref
+import Data.Map (Map, fromFoldable, lookup, toUnfoldable) as Map
 import Mote (group, test)
 import Partial.Unsafe (unsafePartial)
 
@@ -55,52 +51,76 @@ suite = group "AssetRequest" do
   test "User mints request token" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
       \(adminKey /\ treasuryKey /\ userKey) -> do
-        cRef <- liftEffect $ Ref.new 1
-        rp <- withKeyWallet adminKey createRacersParamsHelper
-        withKeyWallet adminKey $ do
-          assetRequestScriptRef <- mkAssetRequestPolicy rp >>= case _ of
+        let uniquenessNonce = "0"
+
+        rp <- withKeyWallet adminKey do
+          rp' <- createRacersParamsHelper
+          _ <- adminMintsNitroContract rp' (BigInt.fromInt 1_000_000)
+          pure rp'
+
+        (gameAssetSymbol :: CurrencySymbol) <- withKeyWallet adminKey $ do
+          assetRequestPolicy <- mkAssetRequestPolicy rp
+          gameAssetPolicy <- mkGameAssetPolicy rp
+
+          assetRequestScriptRef <- case assetRequestPolicy of
             PlutusMintingPolicy s -> pure s
             _ -> throwContractError "Not plutus script"
-          gameAssetScriptRef <- mkGameAssetPolicy rp >>= case _ of
+          gameAssetScriptRef <- case gameAssetPolicy of
             PlutusMintingPolicy s -> pure s
             _ -> throwContractError "Not plutus script"
+
+          depositAssetScriptRef <- unwrap <$> mkDepositValidator rp
+
           _ <- createRacersRefScriptOutput rp assetRequestScriptRef
           _ <- createRacersRefScriptOutput rp gameAssetScriptRef
-          pure unit
+          _ <- createRacersRefScriptOutput rp depositAssetScriptRef
+
+          liftContractM "could not get currency symbol" $
+            Value.scriptCurrencySymbol gameAssetPolicy
+
         let
           assetPrices = foldl (flip $ uncurry AssocMap.insert) AssocMap.empty
             [ (Common /\ BigInt.fromInt 5_000_000)
             , (Rare /\ BigInt.fromInt 10_000_000)
             , (Epic /\ BigInt.fromInt 20_000_000)
             ]
-        -- withKeyWallet adminKey do
-        --    col <- getWalletCollateral
-        --    logInfo' $ show col
+
         st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey) rp
           assetPrices
-        _ <- withKeyWallet userKey $ requestAssetByRarity rp Rare
-        _ <- withKeyWallet userKey $ requestAssetByRarity rp Epic
-        -- let scriptAddr = scriptHashAddress (unwrap st).depositScript Nothing
-        depRefOref <- withKeyWallet adminKey $
-          createDepositReferenceScriptOutput rp
-        _ <- withKeyWallet adminKey $ do
-          reqs <- queryRequestsWithAirdropAddress rp st
-          logInfo' $ "========== Requests\n" <>
-            ( show $ concatMap (_.requestedAssets <<< snd) $
-                (Map.toUnfoldable :: _ -> Array _) reqs
-            )
-          _ <- adminMintsNitroContract rp (BigInt.fromInt 1_000_000)
-          refTxo <- getTxoWithRefScrpt depRefOref
-          consumeAndRedeemRequests rp availableAssets (counterNonce cRef) st $
-            Just (depRefOref /\ refTxo)
-        -- withKeyWallet treasuryKey do
-        --   bal <- getWalletBalance
-        --   logInfo' $ "========== Treasury\n" <> show bal
-        withKeyWallet userKey do
-          bal <- getWalletBalance
-          logInfo' $ "========== User\n" <> show bal
-        pure unit
 
+        let
+          requests =
+            [ Common
+            , Rare
+            , Epic
+            ]
+
+        _ <- withKeyWallet userKey do
+          traverse_ (requestAssetByRarity rp) requests
+
+        userAddress <- withKeyWallet userKey
+          $ liftedM "Could not get user address"
+          $ Array.head
+          <$> getWalletAddresses
+
+        _ <- withKeyWallet adminKey $ do
+          tokenNames <- liftContractM "could not create string token names" $
+            for requests \r -> do
+              { name } <- Map.lookup r availableAssets
+              pure $ unCip25String name <> ":" <> uniquenessNonce
+
+          assertions <- for tokenNames $ \name -> do
+            tkName <-
+              liftContractM ("could not create token name from " <> name) $
+                (mkTokenName <=< byteArrayFromAscii) name
+            pure $ checkTokenGainAtAddress' (label userAddress "User")
+              (gameAssetSymbol /\ tkName /\ BigInt.fromInt 1)
+
+          runChecks assertions $ lift $
+            consumeAndRedeemRequests rp availableAssets (pure uniquenessNonce)
+              st
+
+        pure unit
   where
   walletUtxoDistr :: InitialUTxOs
   walletUtxoDistr =
@@ -114,21 +134,6 @@ suite = group "AssetRequest" do
     (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
       Map.toUnfoldable utxos
     NitroHelpers.createRacersParams txi "NITRO"
-
-  depositScriptHashHelper :: RacersParams -> Contract ValidatorHash
-  depositScriptHashHelper rp = do
-    assetRequestPolicySymbol <- liftedM "could not get asset request symbol"
-      $ mkAssetRequestPolicy rp
-      <#> scriptCurrencySymbol
-    assetPolicySymbol <- liftedM "could not get game asset symbol"
-      $ mkGameAssetPolicy rp
-      <#> scriptCurrencySymbol
-    depositVal <- mkDepositValidator rp $
-      wrap
-        { assetPolicySymbol
-        , assetRequestPolicySymbol
-        }
-    pure $ validatorHash depositVal
 
   initRacersStateWithAdminAndTreasury
     :: (KeyWallet /\ KeyWallet)
@@ -147,7 +152,7 @@ suite = group "AssetRequest" do
       ownAddr <- liftedM "Could not get address" $ Array.head <$>
         getWalletAddresses
 
-      depositScriptHash <- depositScriptHashHelper rp
+      depositScriptHash <- validatorHash <$> mkDepositValidator rp
 
       let
         rs = RacersState

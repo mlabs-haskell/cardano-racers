@@ -3,36 +3,98 @@ module CardanoRacers.NitroInit where
 import Contract.Prelude
 
 import Aeson (JsonDecodeError, decodeJsonString, encodeAeson)
-import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy, requestAssetByRarity)
+import CardanoRacers.AssetRequest.Contract
+  ( mkAssetRequestPolicy
+  , requestAssetByRarity
+  )
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.Deposit.Contract (consumeAndRedeemRequests, createDepositReferenceScriptOutput, mkDepositValidator, queryOrCreateDepositReferenceScript, queryRequestsWithAirdropAddress)
+import CardanoRacers.Deposit.Contract
+  ( consumeAndRedeemRequests
+  , mkDepositValidator
+  , queryRequestsWithAirdropAddress
+  )
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types (AssetOption, GameAssetType(..), Rarity(Common, Rare, Epic), rarityFromString)
+import CardanoRacers.GameAsset.Types
+  ( AssetOption
+  , GameAssetType(..)
+  , Rarity(Common, Rare, Epic)
+  , rarityFromString
+  )
 import CardanoRacers.Helpers (counterNonce, getTxoWithRefScrpt)
-import CardanoRacers.Nitro.Contract (adminMintsNitroContract, botMintsNitroContract, buyNitroContract, mkNitroPolicy)
+import CardanoRacers.Nitro.Contract
+  ( adminMintsNitroContract
+  , botMintsNitroContract
+  , buyNitroContract
+  , mkNitroPolicy
+  )
 import CardanoRacers.Nitro.Helpers (createRacersParams)
-import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput, initRacersStateContract, modifyRacersStateContract, queryRacersState)
+import CardanoRacers.RacersState.Contract
+  ( createRacersRefScriptOutput
+  , initRacersStateContract
+  , modifyRacersStateContract
+  , queryRacersState
+  )
 import CardanoRacers.RacersState.Types (RacersState(..))
-import Contract.Address (Address, addressFromBech32, addressToBech32, scriptHashAddress)
+import Contract.Address
+  ( Address
+  , addressFromBech32
+  , addressToBech32
+  , scriptHashAddress
+  )
 import Contract.AssocMap (empty, insert) as AssocMap
-import Contract.Config (NetworkId(..), PrivatePaymentKeySource(..), WalletSpec(..), testnetConfig, testnetEternlConfig)
+import Contract.Config
+  ( NetworkId(..)
+  , PrivatePaymentKeySource(..)
+  , WalletSpec(..)
+  , testnetConfig
+  , testnetEternlConfig
+  )
 import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Hashing (publicKeyHash)
 import Contract.Log (logError', logInfo')
 import Contract.Metadata (mkCip25String, unCip25String)
-import Contract.Monad (Contract, liftContractE, liftContractM, liftedM, runContract, throwContractError)
+import Contract.Monad
+  ( Contract
+  , liftContractE
+  , liftContractM
+  , liftedM
+  , runContract
+  , throwContractError
+  )
 import Contract.PlutusData (unitDatum)
-import Contract.Prim.ByteArray (ByteArray(..), byteArrayToIntArray, hexToByteArray)
+import Contract.Prim.ByteArray
+  ( ByteArray(..)
+  , byteArrayToIntArray
+  , hexToByteArray
+  )
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (MintingPolicy(..), ValidatorHash, validatorHash)
-import Contract.Transaction (TransactionHash, awaitTxConfirmed, submitTxFromConstraints)
+import Contract.Transaction
+  ( TransactionHash
+  , awaitTxConfirmed
+  , submitTxFromConstraints
+  )
 import Contract.TxConstraints (DatumPresence(..))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (utxosAt)
-import Contract.Value (TokenName, Value, adaSymbol, flattenNonAdaAssets, flattenValue, getTokenName, lovelaceValueOf, scriptCurrencySymbol)
+import Contract.Value
+  ( TokenName
+  , Value
+  , adaSymbol
+  , flattenNonAdaAssets
+  , flattenValue
+  , getTokenName
+  , lovelaceValueOf
+  , scriptCurrencySymbol
+  )
 import Contract.Value as Value
 import Contract.Wallet (PrivatePaymentKey(..), privateKeyFromBytes)
-import Contract.Wallet (getWalletAddress, getWalletAddresses, getWalletBalance, getWalletUtxos)
+import Contract.Wallet
+  ( getWalletAddress
+  , getWalletAddresses
+  , getWalletBalance
+  , getWalletUtxos
+  )
 import Contract.Wallet.Key (publicKeyFromPrivateKey)
 import Control.Alt ((<|>))
 import Control.Monad.Error.Class (catchError, liftMaybe, throwError)
@@ -40,7 +102,11 @@ import Control.Parallel (parTraverse)
 import Control.Promise (Promise, fromAff, toAffE)
 import Ctl.Internal.FfiHelpers (MaybeFfiHelper, maybeFfiHelper)
 import Ctl.Internal.Plutus.Conversion (toPlutusAddress)
-import Ctl.Internal.Serialization.Address (enterpriseAddress, enterpriseAddressToAddress, keyHashCredential)
+import Ctl.Internal.Serialization.Address
+  ( enterpriseAddress
+  , enterpriseAddressToAddress
+  , keyHashCredential
+  )
 import Ctl.Internal.Serialization.Types (PrivateKey)
 import Ctl.Internal.Types.RawBytes (RawBytes(RawBytes))
 import Data.Array (head) as Array
@@ -233,21 +299,23 @@ refreshWallets = fromAff do
 
 createRefScripts :: RacersParams -> Contract Unit
 createRefScripts rp = do
-    assetRequestScriptRef <- mkAssetRequestPolicy rp >>= case _ of
-      PlutusMintingPolicy s -> pure s
-      _ -> throwContractError "Not plutus script"
-    gameAssetScriptRef <- mkGameAssetPolicy rp >>= case _ of
-      PlutusMintingPolicy s -> pure s
-      _ -> throwContractError "Not plutus script"
-    nitroPolicyScriptRef <- mkNitroPolicy rp >>= case _ of
-      PlutusMintingPolicy s -> pure s
-      _ -> throwContractError "Not plutus script"
-    _ <- createRacersRefScriptOutput rp assetRequestScriptRef
-    _ <- createRacersRefScriptOutput rp gameAssetScriptRef
-    _ <- createRacersRefScriptOutput rp nitroPolicyScriptRef
-    _ <- queryOrCreateDepositReferenceScript rp
-    pure unit
+  assetRequestScriptRef <- mkAssetRequestPolicy rp >>= case _ of
+    PlutusMintingPolicy s -> pure s
+    _ -> throwContractError "Not plutus script"
+  gameAssetScriptRef <- mkGameAssetPolicy rp >>= case _ of
+    PlutusMintingPolicy s -> pure s
+    _ -> throwContractError "Not plutus script"
+  nitroPolicyScriptRef <- mkNitroPolicy rp >>= case _ of
+    PlutusMintingPolicy s -> pure s
+    _ -> throwContractError "Not plutus script"
 
+  depositAssetScriptRef <- unwrap <$> mkDepositValidator rp
+
+  _ <- createRacersRefScriptOutput rp assetRequestScriptRef
+  _ <- createRacersRefScriptOutput rp gameAssetScriptRef
+  _ <- createRacersRefScriptOutput rp nitroPolicyScriptRef
+  _ <- createRacersRefScriptOutput rp depositAssetScriptRef
+  pure unit
 
 initRacersState :: Effect (Promise String)
 initRacersState = do
@@ -334,11 +402,10 @@ redeemRequests cRef assetRef = do
     rp <- liftContractE $ decodeJsonString pjson
     (rs /\ _) <- queryRacersState rp
     logInfo' "Querying racers state"
-    depRefScriptTxi <- queryOrCreateDepositReferenceScript rp
-    depRefScriptTxo <- getTxoWithRefScrpt depRefScriptTxi
+    -- depRefScriptTxi <- queryOrCreateDepositReferenceScript rp
+    -- depRefScriptTxo <- getTxoWithRefScrpt depRefScriptTxi
     logInfo' "Queried deposit reference script"
     consumeAndRedeemRequests rp availableAssets (counterNonce cRef) rs -- Nothing
-      (Just $ depRefScriptTxi /\ depRefScriptTxo)
 
 userBuyNitro :: Effect (Promise TransactionHash)
 userBuyNitro = do
@@ -548,17 +615,7 @@ mkWalletSpec phex = Just $ UseKeys (PrivatePaymentKeyValue $ wrap pkey) Nothing
 
 depositScriptHashHelper :: RacersParams -> Contract ValidatorHash
 depositScriptHashHelper rp = do
-  assetRequestPolicySymbol <- liftedM "could not get asset request symbol"
-    $ mkAssetRequestPolicy rp
-    <#> scriptCurrencySymbol
-  assetPolicySymbol <- liftedM "could not get game asset symbol"
-    $ mkGameAssetPolicy rp
-    <#> scriptCurrencySymbol
-  depositVal <- mkDepositValidator rp $
-    wrap
-      { assetPolicySymbol
-      , assetRequestPolicySymbol
-      }
+  depositVal <- mkDepositValidator rp
   pure $ validatorHash depositVal
 
 mkPrivateKey :: String -> Maybe PrivateKey

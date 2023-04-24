@@ -7,6 +7,7 @@ import PlutusTx.Prelude
 import CommonTypes (RacersParams, RacersState, adminToken, stateToken)
 import Ledger (Datum (getDatum))
 import Ledger.Value (assetClassValue, geq)
+import Plutonomy qualified (optimizeUPLC)
 import Plutus.V2.Ledger.Api (
   OutputDatum (OutputDatum),
   Script,
@@ -65,4 +66,4 @@ mkValidator nsp _datum redeemer context =
     if result then () else traceError "Failed verification"
 
 script :: Script
-script = fromCompiledCode $$(PlutusTx.compile [||mkValidator||])
+script = fromCompiledCode $ Plutonomy.optimizeUPLC $$(PlutusTx.compile [||mkValidator||])

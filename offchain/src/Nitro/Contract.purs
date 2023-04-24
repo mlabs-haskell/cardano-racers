@@ -16,22 +16,31 @@ import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.Nitro.Types
   ( NitroPolicyRedeemer(BuyNitroToken, MintNitroToken)
   )
-import CardanoRacers.RacersState.Contract (queryRacersState)
+import CardanoRacers.RacersState.Contract
+  ( queryRacersRefScriptOutput
+  , queryRacersState
+  )
 import CardanoRacers.ScriptsFFI (nitroMintingPolicyScript)
 import Common.ContractHelpers (findOwnAuthUtxo)
 import Contract.Address (Address)
-import Contract.Monad (Contract, liftContractM, liftedM)
+import Contract.Log (logInfo')
+import Contract.Monad (Contract, liftContractM, liftedM, throwContractError)
 import Contract.PlutusData (Redeemer(Redeemer), toData)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), applyArgs)
+import Contract.Scripts
+  ( MintingPolicy(PlutusMintingPolicy)
+  , applyArgs
+  , mintingPolicyHash
+  )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
   ( TransactionHash
   , awaitTxConfirmed
+  , mkTxUnspentOut
   , submitTxFromConstraints
   )
+import Contract.TxConstraints (InputWithScriptRef(RefInput))
 import Contract.TxConstraints as Constraints
-import Contract.Wallet (getWalletUtxos)
 import Contract.Value (lovelaceValueOf, singleton) as Value
 import Contract.Value (scriptCurrencySymbol)
 import Data.Array (singleton) as Array
@@ -48,25 +57,37 @@ mintNitroConstraints
   -> Contract
        (Constraints.TxConstraints Void Void /\ Lookups.ScriptLookups Void)
 mintNitroConstraints rp nitroAmount = do
-  nitroMp <- mkNitroPolicy rp
+  nitroPolicy <- mkNitroPolicy rp
   (authTxi /\ authTxo) <- liftedM "could not find admin or bot utxo in wallet" $
     findOwnAuthUtxo rp
 
-  cs <- liftContractM "Could not get currency symbol"
-    $ scriptCurrencySymbol
-    $ nitroMp
+  mNitroPolicyRef <- queryRacersRefScriptOutput rp
+    (unwrap $ mintingPolicyHash nitroPolicy)
 
   let
     red = Redeemer $ toData $ MintNitroToken nitroAmount
 
+    mintConstraints /\ mintLookups = case mNitroPolicyRef of
+      Nothing ->
+        Constraints.mustMintCurrencyWithRedeemer
+          (mintingPolicyHash nitroPolicy)
+          red
+          (unwrap rp).nitroToken
+          nitroAmount
+          /\ Lookups.mintingPolicy nitroPolicy
+      Just (refTxi /\ refTxo) ->
+        Constraints.mustMintCurrencyWithRedeemerUsingScriptRef
+          (mintingPolicyHash nitroPolicy)
+          red
+          (unwrap rp).nitroToken
+          nitroAmount
+          (RefInput $ mkTxUnspentOut refTxi refTxo) /\ mempty
+
     constraints :: Constraints.TxConstraints Void Void
-    constraints =
-      Constraints.mustMintValueWithRedeemer red
-        (Value.singleton cs (unwrap rp).nitroToken nitroAmount)
-        <> Constraints.mustSpendPubKeyOutput authTxi
+    constraints = mintConstraints <> Constraints.mustSpendPubKeyOutput authTxi
 
     lookups :: Lookups.ScriptLookups Void
-    lookups = Lookups.mintingPolicy nitroMp
+    lookups = mintLookups
       <> Lookups.unspentOutputs (Map.singleton authTxi authTxo)
 
   pure (constraints /\ lookups)
@@ -135,13 +156,13 @@ botMintsNitroContract nsp nitroAmount = mintNitroContract
 -- |  on current onchain nitro price
 buyNitroContract :: RacersParams -> BigInt -> Contract TransactionHash
 buyNitroContract rp nitroAmount = do
-  nitroMp <- mkNitroPolicy rp
+  nitroPolicy <- mkNitroPolicy rp
   let
     red = Redeemer $ toData $ BuyNitroToken nitroAmount
   ns /\ stateTxi /\ stateTxo <- queryRacersState rp
-  cs <- liftContractM "Could not get currency symbol"
-    $ scriptCurrencySymbol
-    $ nitroMp
+
+  mNitroPolicyRef <- queryRacersRefScriptOutput rp
+    (unwrap $ mintingPolicyHash nitroPolicy)
 
   let
     totalAmount = (unwrap ns).nitroPrice * nitroAmount
@@ -150,16 +171,30 @@ buyNitroContract rp nitroAmount = do
     treasuryVal = Value.lovelaceValueOf treasuryAmt
     operatingVal = Value.lovelaceValueOf operatingAmt
 
+    mintConstraints /\ mintLookups = case mNitroPolicyRef of
+      Nothing ->
+        Constraints.mustMintCurrencyWithRedeemer
+          (mintingPolicyHash nitroPolicy)
+          red
+          (unwrap rp).nitroToken
+          nitroAmount
+          /\ Lookups.mintingPolicy nitroPolicy
+      Just (refTxi /\ refTxo) ->
+        Constraints.mustMintCurrencyUsingScriptRef
+          (mintingPolicyHash nitroPolicy)
+          (unwrap rp).nitroToken
+          nitroAmount
+          (RefInput $ mkTxUnspentOut refTxi refTxo) /\ mempty
+
     constraints :: Constraints.TxConstraints Void Void
     constraints =
       Constraints.mustReferenceOutput stateTxi
         <> paysToAddrConstraint (unwrap ns).treasuryAddress treasuryVal
         <> paysToAddrConstraint (unwrap ns).operatingAddress operatingVal
-        <> Constraints.mustMintValueWithRedeemer red
-          (Value.singleton cs (unwrap rp).nitroToken nitroAmount)
+        <> mintConstraints
 
     lookups :: Lookups.ScriptLookups Void
-    lookups = Lookups.mintingPolicy nitroMp
+    lookups = mintLookups
       <> Lookups.unspentOutputs (Map.singleton stateTxi stateTxo)
 
   txId <- submitTxFromConstraints lookups constraints

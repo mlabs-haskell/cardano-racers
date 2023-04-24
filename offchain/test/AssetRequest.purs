@@ -7,12 +7,11 @@ import CardanoRacers.AssetRequest.Contract
   , requestAssetByRarity
   )
 import CardanoRacers.AssetRequest.Types
-  ( AirdropAddressDatum(..)
-  , AssetRequestRedeemer(..)
+  ( AirdropAddressDatum(AirdropAddressDatum)
+  , AssetRequestRedeemer(MintRequestToken)
   )
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Deposit.Contract (mkDepositValidator)
-import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
 import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
@@ -20,14 +19,13 @@ import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersSta
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.RacersState.Types (RacersState(RacersState))
 import Contract.Address (scriptHashAddress)
-import Contract.Wallet (getWalletAddresses, getWalletUtxos)
 import Contract.AssocMap (Map)
 import Contract.AssocMap (empty, insert, lookup) as AssocMap
 import Contract.Monad (Contract, liftContractM, liftedM)
-import Contract.PlutusData (Datum(..), Redeemer(..), toData)
+import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (ValidatorHash, validatorHash)
+import Contract.Scripts (validatorHash)
 import Contract.Test.Assert
   ( checkGainAtAddress'
   , checkTokenGainAtAddress'
@@ -42,11 +40,10 @@ import Contract.Test.Plutip
   , withWallets
   )
 import Contract.Transaction (submitTxFromConstraints)
-import Contract.TxConstraints (DatumPresence(..))
+import Contract.TxConstraints (DatumPresence(DatumInline))
 import Contract.TxConstraints as Constraints
-import Contract.Value (scriptCurrencySymbol)
 import Contract.Value as Value
-import Contract.Wallet (KeyWallet)
+import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
 import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
@@ -195,21 +192,6 @@ suite = group "AssetRequest" do
       Map.toUnfoldable utxos
     NitroHelpers.createRacersParams txi "NITRO"
 
-  depositScriptHashHelper :: RacersParams -> Contract ValidatorHash
-  depositScriptHashHelper rp = do
-    assetRequestPolicySymbol <- liftedM "could not get asset request symbol"
-      $ mkAssetRequestPolicy rp
-      <#> scriptCurrencySymbol
-    assetPolicySymbol <- liftedM "could not get game asset symbol"
-      $ mkGameAssetPolicy rp
-      <#> scriptCurrencySymbol
-    depositVal <- mkDepositValidator rp $
-      wrap
-        { assetPolicySymbol
-        , assetRequestPolicySymbol
-        }
-    pure $ validatorHash depositVal
-
   defaultAssetPrices :: Map Rarity BigInt
   defaultAssetPrices = foldl (flip $ uncurry AssocMap.insert) AssocMap.empty
     [ (Common /\ BigInt.fromInt 5_000_000)
@@ -232,7 +214,7 @@ suite = group "AssetRequest" do
       ownAddr <- liftedM "Could not get address" $ Array.head <$>
         getWalletAddresses
 
-      depositScriptHash <- depositScriptHashHelper rp
+      depositScriptHash <- validatorHash <$> mkDepositValidator rp
 
       let
         rs = RacersState
