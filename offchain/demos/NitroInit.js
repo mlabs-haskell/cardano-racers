@@ -12,7 +12,7 @@ const createActor = (name, address, balance) => `
         </tr>
       </thead>
       <tbody id="balance-table-body">
-          ${balance.map(b => `<tr><td>${b[0]}</td><td>${b[1]}</td></tr>`)}
+          ${balance.map(b => `<tr><td>${b[0]}</td><td>${b[1]}</td></tr>`).join("")}
       </tbody>
     </table>
   </div>
