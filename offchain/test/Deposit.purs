@@ -23,6 +23,7 @@ import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput)
 import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
 import CardanoRacers.RacersState.Types (RacersState(RacersState))
 import Contract.AssocMap (Map, empty, insert) as AssocMap
+import Contract.Log (logInfo')
 import Contract.Metadata (mkCip25String, unCip25String)
 import Contract.Monad (Contract, liftContractM, liftedM, throwContractError)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
@@ -38,11 +39,13 @@ import Contract.Test.Plutip
 import Contract.Value (CurrencySymbol, mkTokenName)
 import Contract.Value as Value
 import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
+import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (Map, fromFoldable, lookup, toUnfoldable) as Map
+import Effect.Aff (delay)
 import Mote (group, test)
 import Partial.Unsafe (unsafePartial)
 
@@ -117,11 +120,27 @@ suite = group "AssetRequest" do
               (gameAssetSymbol /\ tkName /\ BigInt.fromInt 1)
 
           runChecks assertions $ lift $
-            consumeAndRedeemRequests rp availableAssets (pure uniquenessNonce)
-              st
+            retryCount
+              ( consumeAndRedeemRequests 5 rp availableAssets
+                  (pure uniquenessNonce)
+                  st
+              )
+              3
 
         pure unit
   where
+  retryCount :: forall a. Contract a -> Int -> Contract a
+  retryCount c 0 = c
+  retryCount c n = do
+    x <- try c
+    case x of
+      Left e -> do
+        logInfo' ("threw " <> show e)
+        liftAff $ delay (wrap 1000.0)
+        logInfo' ("retrying " <> show n)
+        retryCount c (n - 1)
+      Right r -> pure r
+
   walletUtxoDistr :: InitialUTxOs
   walletUtxoDistr =
     [ BigInt.fromInt 5_000_000

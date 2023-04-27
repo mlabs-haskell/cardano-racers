@@ -66,14 +66,14 @@ generateAsset ao nonce rarity = do
           , description: ao.description
           }
 
-  nameByteArrayWithSep <- liftMaybe (error "could not create name byte array")
+  nameByteArray <- liftMaybe (error "could not create name byte array")
     $ byteArrayFromAscii
     $ (unCip25String ao.name)
     <> ":"
     <> nonce
 
   tkName <- liftMaybe (error "could not create token name") $ mkTokenName
-    $ nameByteArrayWithSep
+    $ nameByteArray
 
   pure (ga /\ tkName)
 
@@ -112,15 +112,6 @@ generateNewCar rarity = do
       , aerodynamics: BigInt.fromInt p4
       }
   pure car
-
-type MintAssetNftOptions =
-  { tokenNameStr :: String
-  , nameStr :: String
-  , image :: String
-  , mediaType :: Maybe String
-  , description :: Maybe String
-  , rarity :: Rarity
-  }
 
 mintAvailableAssetByRarity
   :: Maybe

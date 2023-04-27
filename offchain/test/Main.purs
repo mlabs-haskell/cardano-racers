@@ -17,7 +17,7 @@ import Effect.Aff
   , effectCanceler
   , launchAff
   )
-import Mote (only)
+-- import Mote (only)
 import Test.CardanoRacers.AssetRequest (suite) as AssetRequest
 import Test.CardanoRacers.Deposit (suite) as Deposit
 import Test.CardanoRacers.GameAsset (suite) as GameAsset
@@ -40,7 +40,7 @@ suite = do
   Nitro.suite
   RacersState.suite
   AssetRequest.suite
-  only Deposit.suite
+  Deposit.suite
   GameAsset.suite
 
 config :: PlutipConfig

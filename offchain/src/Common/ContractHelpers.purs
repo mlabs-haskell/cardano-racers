@@ -19,21 +19,7 @@ findOwnAuthUtxo
   -> Contract (Maybe (TransactionInput /\ TransactionOutputWithRefScript))
 findOwnAuthUtxo rp = do
   utxos <- liftedM "could not get wallet utxos" $ getWalletUtxos
-
-  let
-    adminValue :: Value
-    adminValue = uncurry Value.singleton (unwrap rp).adminToken $ BigInt.fromInt
-      1
-
-    botValue :: Value
-    botValue = uncurry Value.singleton (unwrap rp).botToken $ BigInt.fromInt 1
-    mUtxo =
-      Array.find
-        ( \(_ /\ txo) -> lift2 (||) (_ `Value.geq` adminValue)
-            (_ `Value.geq` botValue)
-            (unwrap (unwrap txo).output).amount
-        ) $ Map.toUnfoldable utxos
-  pure mUtxo
+  pure $ findAuthInUtxosMap rp utxos
 
 findAuthInUtxosMap
   :: RacersParams
