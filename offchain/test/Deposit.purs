@@ -6,7 +6,6 @@ import CardanoRacers.AssetRequest.Contract
   ( mkAssetRequestPolicy
   , requestAssetByRarity
   )
-import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Deposit.Contract
   ( consumeAndRedeemRequests
   , mkDepositValidator
@@ -18,16 +17,13 @@ import CardanoRacers.GameAsset.Types
   , Rarity(Common, Rare, Epic)
   )
 import CardanoRacers.Nitro.Contract (adminMintsNitroContract)
-import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
 import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput)
-import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
-import CardanoRacers.RacersState.Types (RacersState(RacersState))
-import Contract.AssocMap (Map, empty, insert) as AssocMap
+import Contract.AssocMap (empty, insert) as AssocMap
 import Contract.Log (logInfo')
 import Contract.Metadata (mkCip25String, unCip25String)
-import Contract.Monad (Contract, liftContractM, liftedM, throwContractError)
+import Contract.Monad (liftContractM, liftedM, throwContractError)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
-import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), validatorHash)
+import Contract.Scripts (MintingPolicy(PlutusMintingPolicy))
 import Contract.Test.Assert (checkTokenGainAtAddress', label, runChecks)
 import Contract.Test.Mote (TestPlanM)
 import Contract.Test.Plutip
@@ -38,17 +34,20 @@ import Contract.Test.Plutip
   )
 import Contract.Value (CurrencySymbol, mkTokenName)
 import Contract.Value as Value
-import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
+import Contract.Wallet (getWalletAddresses)
 import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
-import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
-import Data.Map (Map, fromFoldable, lookup, toUnfoldable) as Map
+import Data.Map (Map, fromFoldable, lookup) as Map
 import Effect.Aff (delay)
 import Mote (group, test)
 import Partial.Unsafe (unsafePartial)
 import Racers (Racers, runRacers, withContract)
+import Test.CardanoRacers.Helpers
+  ( createRacersParamsHelper
+  , initRacersStateWithAdminAndTreasury
+  )
 
 suite :: TestPlanM PlutipTest Unit
 suite = group "AssetRequest" do
@@ -93,6 +92,7 @@ suite = group "AssetRequest" do
               ]
 
           st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
+            (BigInt.fromInt 1_000_000)
             assetPrices
 
           let
@@ -103,7 +103,7 @@ suite = group "AssetRequest" do
               ]
 
           _ <- withContract (withKeyWallet userKey) do
-            traverse_ (requestAssetByRarity) requests
+            traverse_ requestAssetByRarity requests
 
           userAddress <- lift $ withKeyWallet userKey
             $ liftedM "Could not get user address"
@@ -152,41 +152,6 @@ suite = group "AssetRequest" do
     [ BigInt.fromInt 5_000_000
     , BigInt.fromInt 2_000_000_000
     ]
-
-  createRacersParamsHelper :: Contract RacersParams
-  createRacersParamsHelper = do
-    utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
-    (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
-      Map.toUnfoldable utxos
-    NitroHelpers.createRacersParams txi "NITRO"
-
-  initRacersStateWithAdminAndTreasury
-    :: (KeyWallet /\ KeyWallet)
-    -> AssocMap.Map Rarity BigInt
-    -> Racers RacersState
-  initRacersStateWithAdminAndTreasury
-    (admin /\ treasury)
-    assetPrices = do
-    treasuryAddr <- lift $ withKeyWallet treasury
-      $ liftedM "Could not get address"
-      $ Array.head
-      <$> getWalletAddresses
-    withContract (withKeyWallet admin) do
-      ownAddr <- lift $ liftedM "Could not get address" $ Array.head <$>
-        getWalletAddresses
-
-      depositScriptHash <- validatorHash <$> mkDepositValidator
-
-      let
-        rs = RacersState
-          { nitroPrice: BigInt.fromInt 1_000_000
-          , treasuryAddress: treasuryAddr
-          , operatingAddress: ownAddr
-          , assetPrices: assetPrices
-          , depositScript: depositScriptHash
-          }
-      _ <- RacersState.initRacersStateContract rs
-      pure rs
 
   availableAssets :: Map.Map Rarity AssetOption
   availableAssets = Map.fromFoldable

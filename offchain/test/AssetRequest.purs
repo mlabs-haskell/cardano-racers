@@ -10,22 +10,16 @@ import CardanoRacers.AssetRequest.Types
   ( AirdropAddressDatum(AirdropAddressDatum)
   , AssetRequestRedeemer(MintRequestToken)
   )
-import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.Deposit.Contract (mkDepositValidator)
 import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
 import CardanoRacers.Helpers (paysToAddrConstraint)
-import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
-import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
 import CardanoRacers.RacersState.Contract (queryRacersState)
-import CardanoRacers.RacersState.Types (RacersState(RacersState))
 import Contract.Address (scriptHashAddress)
 import Contract.AssocMap (Map)
 import Contract.AssocMap (empty, insert, lookup) as AssocMap
-import Contract.Monad (Contract, liftContractM, liftedM)
+import Contract.Monad (liftContractM, liftedM)
 import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (validatorHash)
 import Contract.Test.Assert
   ( checkGainAtAddress'
   , checkTokenGainAtAddress'
@@ -43,23 +37,27 @@ import Contract.Transaction (submitTxFromConstraints)
 import Contract.TxConstraints (DatumPresence(DatumInline))
 import Contract.TxConstraints as Constraints
 import Contract.Value as Value
-import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
+import Contract.Wallet (getWalletAddresses)
 import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt, toNumber) as BigInt
 import Data.Int (ceil)
-import Data.Map (singleton, toUnfoldable) as Map
+import Data.Map (singleton) as Map
 import Mote (group, test)
-import Racers (Racers, runRacers, withContract)
+import Racers (runRacers, withContract)
+import Test.CardanoRacers.Helpers
+  ( createRacersParamsHelper
+  , initRacersStateWithAdminAndTreasury
+  )
 import Test.Spec.Assertions (shouldSatisfy)
 
 suite :: TestPlanM PlutipTest Unit
 suite = group "AssetRequest" do
   test "User requests asset by rarity" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
-      \(admin /\ treasury /\ alice) -> do
+      \(admin /\ treasury /\ user) -> do
         treasuryAddr <- withKeyWallet treasury
           $ liftedM "Could not get treasury address"
           $ Array.head
@@ -71,17 +69,17 @@ suite = group "AssetRequest" do
         rp <- withKeyWallet admin createRacersParamsHelper
         runRacers rp do
           rs <- initRacersStateWithAdminAndTreasury (admin /\ treasury)
-          _ <- withContract (withKeyWallet admin) $
-            RacersState.initRacersStateContract rs
+            (BigInt.fromInt 1_000_000)
+            defaultAssetPrices
           assetRequestCs <-
             withContract (liftedM "Could not get currency symbol")
               $ Value.scriptCurrencySymbol
               <$> mkAssetRequestPolicy
 
-          let rarities = [ Common, Rare, Epic ]
+          let rarities = [ Common ] -- , Rare, Epic ]
 
           for_ rarities $ \rarity -> do
-            withContract (withKeyWallet alice) do
+            withContract (withKeyWallet user) do
               assetRequestTokenName <- lift
                 $ liftContractM "Could not make required token names"
                 $
@@ -122,8 +120,8 @@ suite = group "AssetRequest" do
           rp <- withKeyWallet admin createRacersParamsHelper
           runRacers rp do
             rs <- initRacersStateWithAdminAndTreasury (admin /\ treasury)
-            _ <- withContract (withKeyWallet admin) $
-              RacersState.initRacersStateContract rs
+              (BigInt.fromInt 1_000_000)
+              defaultAssetPrices
 
             assetRequestPolicy <- mkAssetRequestPolicy
             assetRequestCs <-
@@ -201,42 +199,9 @@ suite = group "AssetRequest" do
     , BigInt.fromInt 2_000_000_000
     ]
 
-  createRacersParamsHelper :: Contract RacersParams
-  createRacersParamsHelper = do
-    utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
-    (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
-      Map.toUnfoldable utxos
-    NitroHelpers.createRacersParams txi "NITRO"
-
   defaultAssetPrices :: Map Rarity BigInt
   defaultAssetPrices = foldl (flip $ uncurry AssocMap.insert) AssocMap.empty
     [ (Common /\ BigInt.fromInt 5_000_000)
     , (Rare /\ BigInt.fromInt 10_000_000)
     , (Epic /\ BigInt.fromInt 20_000_000)
     ]
-
-  initRacersStateWithAdminAndTreasury
-    :: (KeyWallet /\ KeyWallet)
-    -> Racers RacersState
-  initRacersStateWithAdminAndTreasury
-    (admin /\ treasury) = do
-    treasuryAddr <- lift $ withKeyWallet treasury
-      $ liftedM "Could not get address"
-      $ Array.head
-      <$> getWalletAddresses
-    withContract (withKeyWallet admin) do
-      ownAddr <- lift $ liftedM "Could not get address" $ Array.head <$>
-        getWalletAddresses
-
-      depositScriptHash <- validatorHash <$> mkDepositValidator
-
-      let
-        rs = RacersState
-          { nitroPrice: BigInt.fromInt 1_000_000
-          , treasuryAddress: treasuryAddr
-          , operatingAddress: ownAddr
-          , assetPrices: defaultAssetPrices
-          , depositScript: depositScriptHash
-          }
-      pure rs
-

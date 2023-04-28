@@ -4,10 +4,9 @@ import Contract.Prelude
 
 import CardanoRacers.Common.Types (RacersParams(RacersParams))
 import CardanoRacers.Deposit.Contract (mkDepositValidator)
-import CardanoRacers.Nitro.Helpers (createRacersParams, mintBotNft) as NitroHelpers
+import CardanoRacers.Nitro.Helpers (mintBotNft) as NitroHelpers
 import CardanoRacers.RacersState.Contract
-  ( initRacersStateContract
-  , mkRacersStateValidator
+  ( mkRacersStateValidator
   , modifyRacersStateContract
   , queryRacersState
   ) as RacersState
@@ -31,15 +30,18 @@ import Contract.Transaction (submitTxFromConstraints)
 import Contract.TxConstraints as Constraints
 import Contract.Value (CurrencySymbol, TokenName)
 import Contract.Value (geq, singleton) as Value
-import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
+import Contract.Wallet (getWalletAddresses, getWalletUtxos)
 import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
-import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (singleton, toUnfoldable) as Map
 import Mote (group, test)
-import Racers (Racers, runRacers, withContract)
+import Racers (runRacers, withContract)
+import Test.CardanoRacers.Helpers
+  ( createRacersParamsHelper
+  , initRacersStateWithAdminAndTreasury
+  )
 import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
 
 suite :: TestPlanM PlutipTest Unit
@@ -61,6 +63,8 @@ suite = group "RacersState script:" do
           runRacers rp do
             _ <- initRacersStateWithAdminAndTreasury (admin /\ treasury)
               nitroPrice
+              AssocMap.empty
+
             depositScriptHash <- validatorHash <$> mkDepositValidator
             let
               expectedRacersState = RacersState
@@ -78,9 +82,9 @@ suite = group "RacersState script:" do
           rp <- withKeyWallet admin createRacersParamsHelper
           runRacers rp do
             prevState <-
-              initRacersStateWithAdminAndTreasury (admin /\ treasury) $
-                BigInt.fromInt
-                  1000000
+              initRacersStateWithAdminAndTreasury (admin /\ treasury)
+                (BigInt.fromInt 1000000)
+                AssocMap.empty
             withContract (withKeyWallet admin) do
               let
                 newState = wrap $ (unwrap prevState)
@@ -96,9 +100,10 @@ suite = group "RacersState script:" do
           rp = RacersParams $ (unwrap rpBeforeUpdate)
             { botToken = botTk }
         runRacers rp do
-          prevState <- initRacersStateWithAdminAndTreasury (admin /\ admin) $
-            BigInt.fromInt
-              1000000
+          prevState <-
+            initRacersStateWithAdminAndTreasury (admin /\ admin)
+              (BigInt.fromInt 1000000)
+              AssocMap.empty
           withContract (withKeyWallet eve) do
             nitroVal <- RacersState.mkRacersStateValidator
             let
@@ -157,38 +162,3 @@ suite = group "RacersState script:" do
     (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
       Map.toUnfoldable utxos
     NitroHelpers.mintBotNft txi
-
-  createRacersParamsHelper :: Contract RacersParams
-  createRacersParamsHelper = do
-    utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
-    (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
-      Map.toUnfoldable utxos
-    NitroHelpers.createRacersParams txi "NITRO"
-
-  initRacersStateWithAdminAndTreasury
-    :: (KeyWallet /\ KeyWallet)
-    -> BigInt
-    -> Racers RacersState
-  initRacersStateWithAdminAndTreasury (admin /\ treasury) nitroPrice = do
-    treasuryAddr <- lift $ withKeyWallet treasury
-      $ liftedM "Could not get address"
-      $ Array.head
-      <$> getWalletAddresses
-
-    withContract (withKeyWallet admin) do
-      ownAddr <- lift $ liftedM "Could not get address" $ Array.head <$>
-        getWalletAddresses
-
-      depositScriptHash <- validatorHash <$> mkDepositValidator
-
-      let
-        rs = RacersState
-          { nitroPrice: nitroPrice
-          , treasuryAddress: treasuryAddr
-          , operatingAddress: ownAddr
-          , assetPrices: AssocMap.empty
-          , depositScript: depositScriptHash
-          }
-      _ <- RacersState.initRacersStateContract rs
-      pure rs
-

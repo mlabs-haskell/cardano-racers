@@ -1,4 +1,11 @@
-module CardanoRacers.RacersState.Contract where
+module CardanoRacers.RacersState.Contract
+  ( initRacersStateContract
+  , modifyRacersStateContract
+  , queryRacersState
+  , createRacersRefScriptOutput
+  , queryRacersRefScriptOutput
+  , mkRacersStateValidator
+  ) where
 
 import Contract.Prelude
 
@@ -177,15 +184,25 @@ createRacersRefScriptOutput script = do
 queryRacersRefScriptOutput
   :: ScriptHash
   -> Racers (Maybe (TransactionInput /\ TransactionOutputWithRefScript))
-queryRacersRefScriptOutput scriptHash = do
+queryRacersRefScriptOutput targetScriptHash = do
   stateValidator <- mkRacersStateValidator
   let stateAddress = scriptHashAddress (validatorHash stateValidator) Nothing
-  utxosAtState <- lift $ utxosAt stateAddress
-  pure $ (\x -> x.index /\ x.value) <$> findWithIndex
-    ( \_ txo -> maybe false (_ == scriptHash)
-        (unwrap (unwrap txo).output).referenceScript
-    )
-    utxosAtState
+  utxos <- lift $ utxosAt stateAddress
+  pure $ findMatchingScriptHash utxos
+  where
+  -- Check if the script hash in the transaction output matches the target script hash
+  scriptHashMatches :: TransactionOutputWithRefScript -> Boolean
+  scriptHashMatches txo =
+    let
+      output = unwrap (unwrap txo).output
+      mRefScript = output.referenceScript
+    in
+      maybe false (_ == targetScriptHash) mRefScript
+
+  -- Find the UTxO with a matching script hash, and return its index and value
+  findMatchingScriptHash utxos = (\x -> x.index /\ x.value) <$> findWithIndex
+    (const scriptHashMatches)
+    utxos
 
 mkRacersStateValidator :: Racers Validator
 mkRacersStateValidator = do

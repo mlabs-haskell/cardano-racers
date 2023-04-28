@@ -1,4 +1,7 @@
-module CardanoRacers.AssetRequest.Contract where
+module CardanoRacers.AssetRequest.Contract
+  ( requestAssetByRarity
+  , mkAssetRequestPolicy
+  ) where
 
 import Contract.Prelude
 
@@ -90,10 +93,15 @@ requestAssetByRarity rarity = do
     red = Redeemer $ toData $ MintRequestToken
 
     mintRequestTokenConstraints = case mAssetRequestPolicyRef of
-      Nothing -> Constraints.mustMintValueWithRedeemer red lockedVal
+      Nothing -> Constraints.mustMintCurrencyWithRedeemer
+        (mintingPolicyHash assetRequestPolicy)
+        red
+        requestTokenName
+        (BigInt.fromInt 1)
       Just (refTxi /\ refTxo) ->
-        Constraints.mustMintCurrencyUsingScriptRef
+        Constraints.mustMintCurrencyWithRedeemerUsingScriptRef
           (mintingPolicyHash assetRequestPolicy)
+          red
           requestTokenName
           (BigInt.fromInt 1)
           (RefInput $ mkTxUnspentOut refTxi refTxo)

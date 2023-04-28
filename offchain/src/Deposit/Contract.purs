@@ -6,7 +6,7 @@ module CardanoRacers.Deposit.Contract
   ) where
 
 import Contract.Prelude
- 
+
 import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy)
 import CardanoRacers.AssetRequest.Types
   ( AirdropAddressDatum

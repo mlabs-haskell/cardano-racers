@@ -1,4 +1,4 @@
-module CardanoRacers.Common.Types where
+module CardanoRacers.Common.Types (RacersParams(RacersParams)) where
 
 import Contract.Prelude
 
