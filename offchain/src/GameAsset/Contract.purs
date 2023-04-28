@@ -6,7 +6,6 @@ module CardanoRacers.GameAsset.Contract
 
 import Contract.Prelude
 
-import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.GameAsset.Parameters (generateUniformParameters)
 import CardanoRacers.GameAsset.Types
   ( AssetOption
@@ -23,7 +22,7 @@ import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.ScriptsFFI (gameAssetPolicy)
 import Contract.Address (Address)
 import Contract.Metadata (unCip25String)
-import Contract.Monad (Contract, liftContractM)
+import Contract.Monad (liftContractM)
 import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.Scripts
@@ -42,10 +41,13 @@ import Contract.TxConstraints as Constraints
 import Contract.Value (CurrencySymbol, TokenName, mkTokenName)
 import Contract.Value as Value
 import Control.Monad.Error.Class (liftMaybe, throwError)
+import Control.Monad.Reader.Trans (asks)
+import Control.Monad.Trans.Class (lift)
 import Data.Array (singleton) as Array
 import Data.BigInt (fromInt) as BigInt
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
+import Racers (Racers)
 import Random.LCG (randomSeed)
 
 generateAsset
@@ -151,9 +153,10 @@ mintAvailableAssetByRarity
 
   pure $ constraints /\ metadata
 
-mkGameAssetPolicy :: RacersParams -> Contract MintingPolicy
-mkGameAssetPolicy np = do
-  v2script <- liftContractM "Could not decode applied script" do
+mkGameAssetPolicy :: Racers MintingPolicy
+mkGameAssetPolicy = do
+  np <- asks (_.params)
+  v2script <- lift $ liftContractM "Could not decode applied script" do
     envelope <- decodeTextEnvelope gameAssetPolicy
     plutusScriptV2FromEnvelope envelope
   appliedScript <- liftEither $ left (error <<< show) $ applyArgs v2script

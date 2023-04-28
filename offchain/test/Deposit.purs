@@ -48,6 +48,7 @@ import Data.Map (Map, fromFoldable, lookup, toUnfoldable) as Map
 import Effect.Aff (delay)
 import Mote (group, test)
 import Partial.Unsafe (unsafePartial)
+import Racers (Racers, runRacers, withContract)
 
 suite :: TestPlanM PlutipTest Unit
 suite = group "AssetRequest" do
@@ -57,79 +58,84 @@ suite = group "AssetRequest" do
         let uniquenessNonce = "0"
 
         rp <- withKeyWallet adminKey do
-          rp' <- createRacersParamsHelper
-          _ <- adminMintsNitroContract rp' (BigInt.fromInt 1_000_000)
-          pure rp'
+          rp <- createRacersParamsHelper
+          _ <- runRacers rp $ adminMintsNitroContract (BigInt.fromInt 1_000_000)
+          pure rp
 
-        (gameAssetSymbol :: CurrencySymbol) <- withKeyWallet adminKey $ do
-          assetRequestPolicy <- mkAssetRequestPolicy rp
-          gameAssetPolicy <- mkGameAssetPolicy rp
+        runRacers rp do
+          (gameAssetSymbol :: CurrencySymbol) <- withContract
+            (withKeyWallet adminKey)
+            do
+              assetRequestPolicy <- mkAssetRequestPolicy
+              gameAssetPolicy <- mkGameAssetPolicy
 
-          assetRequestScriptRef <- case assetRequestPolicy of
-            PlutusMintingPolicy s -> pure s
-            _ -> throwContractError "Not plutus script"
-          gameAssetScriptRef <- case gameAssetPolicy of
-            PlutusMintingPolicy s -> pure s
-            _ -> throwContractError "Not plutus script"
+              assetRequestScriptRef <- lift $ case assetRequestPolicy of
+                PlutusMintingPolicy s -> pure s
+                _ -> throwContractError "Not plutus script"
+              gameAssetScriptRef <- lift $ case gameAssetPolicy of
+                PlutusMintingPolicy s -> pure s
+                _ -> throwContractError "Not plutus script"
 
-          depositAssetScriptRef <- unwrap <$> mkDepositValidator rp
+              depositAssetScriptRef <- unwrap <$> mkDepositValidator
 
-          _ <- createRacersRefScriptOutput rp assetRequestScriptRef
-          _ <- createRacersRefScriptOutput rp gameAssetScriptRef
-          _ <- createRacersRefScriptOutput rp depositAssetScriptRef
+              _ <- createRacersRefScriptOutput assetRequestScriptRef
+              _ <- createRacersRefScriptOutput gameAssetScriptRef
+              _ <- createRacersRefScriptOutput depositAssetScriptRef
 
-          liftContractM "could not get currency symbol" $
-            Value.scriptCurrencySymbol gameAssetPolicy
+              lift $ liftContractM "could not get currency symbol" $
+                Value.scriptCurrencySymbol gameAssetPolicy
 
-        let
-          assetPrices = foldl (flip $ uncurry AssocMap.insert) AssocMap.empty
-            [ (Common /\ BigInt.fromInt 5_000_000)
-            , (Rare /\ BigInt.fromInt 10_000_000)
-            , (Epic /\ BigInt.fromInt 20_000_000)
-            ]
+          let
+            assetPrices = foldl (flip $ uncurry AssocMap.insert) AssocMap.empty
+              [ (Common /\ BigInt.fromInt 5_000_000)
+              , (Rare /\ BigInt.fromInt 10_000_000)
+              , (Epic /\ BigInt.fromInt 20_000_000)
+              ]
 
-        st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey) rp
-          assetPrices
+          st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
+            assetPrices
 
-        let
-          requests =
-            [ Common
-            , Rare
-            , Epic
-            ]
+          let
+            requests =
+              [ Common
+              , Rare
+              , Epic
+              ]
 
-        _ <- withKeyWallet userKey do
-          traverse_ (requestAssetByRarity rp) requests
+          _ <- withContract (withKeyWallet userKey) do
+            traverse_ (requestAssetByRarity) requests
 
-        userAddress <- withKeyWallet userKey
-          $ liftedM "Could not get user address"
-          $ Array.head
-          <$> getWalletAddresses
+          userAddress <- lift $ withKeyWallet userKey
+            $ liftedM "Could not get user address"
+            $ Array.head
+            <$> getWalletAddresses
 
-        _ <- withKeyWallet adminKey $ do
-          tokenNames <- liftContractM "could not create string token names" $
-            for requests \r -> do
-              { name } <- Map.lookup r availableAssets
-              pure $ unCip25String name <> ":" <> uniquenessNonce
+          _ <- withContract (withKeyWallet adminKey) do
+            tokenNames <- lift
+              $ liftContractM "could not create string token names"
+              $
+                for requests \r -> do
+                  { name } <- Map.lookup r availableAssets
+                  pure $ unCip25String name <> ":" <> uniquenessNonce
 
-          assertions <- for tokenNames $ \name -> do
-            tkName <-
-              liftContractM ("could not create token name from " <> name) $
-                (mkTokenName <=< byteArrayFromAscii) name
-            pure $ checkTokenGainAtAddress' (label userAddress "User")
-              (gameAssetSymbol /\ tkName /\ BigInt.fromInt 1)
+            assertions <- lift $ for tokenNames $ \name -> do
+              tkName <-
+                liftContractM ("could not create token name from " <> name) $
+                  (mkTokenName <=< byteArrayFromAscii) name
+              pure $ checkTokenGainAtAddress' (label userAddress "User")
+                (gameAssetSymbol /\ tkName /\ BigInt.fromInt 1)
 
-          runChecks assertions $ lift $
-            retryCount
-              ( consumeAndRedeemRequests 5 rp availableAssets
-                  (pure uniquenessNonce)
-                  st
-              )
-              3
+            withContract (runChecks assertions <<< lift) $
+              retryCount
+                ( consumeAndRedeemRequests 5 availableAssets
+                    (pure uniquenessNonce)
+                    st
+                )
+                3
 
-        pure unit
+          pure unit
   where
-  retryCount :: forall a. Contract a -> Int -> Contract a
+  retryCount :: forall (a :: Type). Racers a -> Int -> Racers a
   retryCount c 0 = c
   retryCount c n = do
     x <- try c
@@ -156,22 +162,20 @@ suite = group "AssetRequest" do
 
   initRacersStateWithAdminAndTreasury
     :: (KeyWallet /\ KeyWallet)
-    -> RacersParams
     -> AssocMap.Map Rarity BigInt
-    -> Contract RacersState
+    -> Racers RacersState
   initRacersStateWithAdminAndTreasury
     (admin /\ treasury)
-    rp
     assetPrices = do
-    treasuryAddr <- withKeyWallet treasury
+    treasuryAddr <- lift $ withKeyWallet treasury
       $ liftedM "Could not get address"
       $ Array.head
       <$> getWalletAddresses
-    withKeyWallet admin do
-      ownAddr <- liftedM "Could not get address" $ Array.head <$>
+    withContract (withKeyWallet admin) do
+      ownAddr <- lift $ liftedM "Could not get address" $ Array.head <$>
         getWalletAddresses
 
-      depositScriptHash <- validatorHash <$> mkDepositValidator rp
+      depositScriptHash <- validatorHash <$> mkDepositValidator
 
       let
         rs = RacersState
@@ -181,7 +185,7 @@ suite = group "AssetRequest" do
           , assetPrices: assetPrices
           , depositScript: depositScriptHash
           }
-      _ <- RacersState.initRacersStateContract rp rs
+      _ <- RacersState.initRacersStateContract rs
       pure rs
 
   availableAssets :: Map.Map Rarity AssetOption

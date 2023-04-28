@@ -51,6 +51,7 @@ import Data.BigInt (fromInt, toNumber) as BigInt
 import Data.Int (ceil)
 import Data.Map (singleton, toUnfoldable) as Map
 import Mote (group, test)
+import Racers (Racers, runRacers, withContract)
 import Test.Spec.Assertions (shouldSatisfy)
 
 suite :: TestPlanM PlutipTest Unit
@@ -61,46 +62,52 @@ suite = group "NitroToken script" do
         withKeyWallet w do
           ownAddress <- liftedM "Couldn't get wallet address" $ Array.head <$>
             getWalletAddresses
-          nsp <- createNitroParamsHelper
-          nitroSymbol <-
-            liftedM "Couldn't create currency symbol from NitroPolicy"
-              $ Value.scriptCurrencySymbol
-              <$> Nitro.mkNitroPolicy nsp
-          let
-            amountToMint = BigInt.fromInt 100
-          void
-            $ runChecks
-                [ checkTokenGainAtAddress' (label ownAddress "Admin")
-                    (nitroSymbol /\ (unwrap nsp).nitroToken /\ amountToMint)
-                ]
-            $ lift
-            $ Nitro.adminMintsNitroContract nsp amountToMint
+          rp <- createNitroParamsHelper
+          runRacers rp do
+            nitroSymbol <- withContract
+              (liftedM "Couldn't create currency symbol from NitroPolicy")
+              (Value.scriptCurrencySymbol <$> Nitro.mkNitroPolicy)
+
+            let
+              amountToMint = BigInt.fromInt 100
+            void
+              $ withContract
+                  ( runChecks
+                      [ checkTokenGainAtAddress' (label ownAddress "Admin")
+                          ( nitroSymbol /\ (unwrap rp).nitroToken /\
+                              amountToMint
+                          )
+                      ] <<< lift
+                  )
+              $ Nitro.adminMintsNitroContract amountToMint
     test "Bot can mint Nitro" do
       withWallets (walletUtxoDistr /\ walletUtxoDistr) \(admin /\ bot) -> do
-        nsp <- withKeyWallet admin createNitroParamsHelper
-        withKeyWallet bot do
-          botTk <- mintBotNftHelper
+        rp <- withKeyWallet admin createNitroParamsHelper
+        withKeyWallet bot $ runRacers rp do
+          botTk <- lift mintBotNftHelper
           let
-            nspWithBotToken = RacersParams $ (unwrap nsp)
+            nspWithBotToken = RacersParams $ (unwrap rp)
               { botToken = botTk }
-          botAddress <- liftedM "Couldn't get wallet address" $ Array.head <$>
-            getWalletAddresses
-          nitroSymbol <-
-            liftedM "Couldn't create currency symbol from NitroPolicy"
-              $ Value.scriptCurrencySymbol
-              <$> Nitro.mkNitroPolicy nspWithBotToken
+          botAddress <- lift $ liftedM "Couldn't get wallet address"
+            $ Array.head
+            <$>
+              getWalletAddresses
+          nitroSymbol <- withContract
+            (liftedM "Couldn't create currency symbol from NitroPolicy")
+            (Value.scriptCurrencySymbol <$> Nitro.mkNitroPolicy)
           let
             amountToMint = BigInt.fromInt 100
 
           void
-            $ runChecks
-                [ checkTokenGainAtAddress' (label botAddress "Admin")
-                    ( nitroSymbol /\ (unwrap nspWithBotToken).nitroToken /\
-                        amountToMint
-                    )
-                ]
-            $ lift
-            $ Nitro.botMintsNitroContract nspWithBotToken amountToMint
+            $ withContract
+                ( runChecks
+                    [ checkTokenGainAtAddress' (label botAddress "Admin")
+                        ( nitroSymbol /\ (unwrap nspWithBotToken).nitroToken /\
+                            amountToMint
+                        )
+                    ] <<< lift
+                )
+            $ Nitro.botMintsNitroContract amountToMint
     test "User buys Nitro" do
       withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
         \(admin /\ treasury /\ bob) -> do
@@ -113,52 +120,56 @@ suite = group "NitroToken script" do
             $ liftedM "Could not get treasury address"
             $ Array.head
             <$> getWalletAddresses
-          nsp <- withKeyWallet admin createNitroParamsHelper
-          _ <- initNitroPolicyWithAdminAndTreasury (admin /\ treasury) nsp
-            nitroPrice
-          nitroCs <- liftedM "Could not get currency symbol"
-            $ Value.scriptCurrencySymbol
-            <$> Nitro.mkNitroPolicy nsp
-          void $ withKeyWallet bob do
-            bobAddress <- liftedM "Could not get bob address" $ Array.head <$>
-              getWalletAddresses
-            let
-              amountToBuy = BigInt.fromInt 100
-              amountToTreasury = BigInt.fromInt <<< ceil
-                $ BigInt.toNumber (amountToBuy * nitroPrice)
-                * 0.75
-              amountToOperating = BigInt.fromInt <<< ceil
-                $ BigInt.toNumber (amountToBuy * nitroPrice)
-                * 0.25
-              assertions =
-                [ checkGainAtAddress' (label treasuryAddr "Treasury")
-                    amountToTreasury
-                , checkGainAtAddress' (label operatingAddress "Operating")
-                    amountToOperating
-                , checkTokenGainAtAddress' (label bobAddress "Bob")
-                    (nitroCs /\ (unwrap nsp).nitroToken /\ amountToBuy)
-                ]
+          rp <- withKeyWallet admin createNitroParamsHelper
+          runRacers rp do
+            _ <- initNitroPolicyWithAdminAndTreasury (admin /\ treasury)
+              nitroPrice
+            nitroSymbol <- withContract
+              (liftedM "Couldn't create currency symbol from NitroPolicy")
+              (Value.scriptCurrencySymbol <$> Nitro.mkNitroPolicy)
+            withContract (withKeyWallet bob) do
+              bobAddress <- lift $ liftedM "Could not get bob address"
+                $ Array.head
+                <$>
+                  getWalletAddresses
+              let
+                amountToBuy = BigInt.fromInt 100
+                amountToTreasury = BigInt.fromInt <<< ceil
+                  $ BigInt.toNumber (amountToBuy * nitroPrice)
+                  * 0.75
+                amountToOperating = BigInt.fromInt <<< ceil
+                  $ BigInt.toNumber (amountToBuy * nitroPrice)
+                  * 0.25
+                assertions =
+                  [ checkGainAtAddress' (label treasuryAddr "Treasury")
+                      amountToTreasury
+                  , checkGainAtAddress' (label operatingAddress "Operating")
+                      amountToOperating
+                  , checkTokenGainAtAddress' (label bobAddress "Bob")
+                      (nitroSymbol /\ (unwrap rp).nitroToken /\ amountToBuy)
+                  ]
 
-            runChecks assertions $ lift $
-              Nitro.buyNitroContract nsp amountToBuy
+              void $ withContract (runChecks assertions <<< lift) $
+                Nitro.buyNitroContract amountToBuy
     test
       "User fails to mint Nitro with incorrect amount paid to operating/treasury"
       do
         withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
           \(admin /\ treasury /\ bob) -> do
-            nsp <- withKeyWallet admin do
-              nsp <- createNitroParamsHelper
-              _ <- initNitroPolicyWithAdminAndTreasury (admin /\ treasury) nsp
-                (BigInt.fromInt 1000000)
-              pure nsp
+            rp <- withKeyWallet admin do
+              rp <- createNitroParamsHelper
+              runRacers rp do
+                _ <- initNitroPolicyWithAdminAndTreasury (admin /\ treasury)
+                  (BigInt.fromInt 1000000)
+                pure rp
 
-            withKeyWallet bob do
-              nitroMp <- Nitro.mkNitroPolicy nsp
+            withKeyWallet bob $ runRacers rp do
+              nitroMp <- Nitro.mkNitroPolicy
               let
                 nitroAmount = BigInt.fromInt 100
                 red = Redeemer $ toData $ BuyNitroToken nitroAmount
-              ns /\ stateTxi /\ stateTxo <- RacersState.queryRacersState nsp
-              cs <- liftContractM "Could not get currency symbol"
+              ns /\ stateTxi /\ stateTxo <- RacersState.queryRacersState
+              cs <- lift $ liftContractM "Could not get currency symbol"
                 $ Value.scriptCurrencySymbol
                 $ nitroMp
 
@@ -190,13 +201,13 @@ suite = group "NitroToken script" do
                     <> paysToAddrConstraint (unwrap ns).operatingAddress
                       operatingVal
                     <> Constraints.mustMintValueWithRedeemer red
-                      (Value.singleton cs (unwrap nsp).nitroToken nitroAmount)
+                      (Value.singleton cs (unwrap rp).nitroToken nitroAmount)
 
                 lookups :: Lookups.ScriptLookups Void
                 lookups = Lookups.mintingPolicy nitroMp
                   <> Lookups.unspentOutputs (Map.singleton stateTxi stateTxo)
 
-              resE <- try $ submitTxFromConstraints lookups constraints
+              resE <- try $ lift $ submitTxFromConstraints lookups constraints
               resE `shouldSatisfy` isLeft
 
               let
@@ -218,8 +229,8 @@ suite = group "NitroToken script" do
                     <> paysToAddrConstraint (unwrap ns).operatingAddress
                       operatingVal'
                     <> Constraints.mustMintValueWithRedeemer red
-                      (Value.singleton cs (unwrap nsp).nitroToken nitroAmount)
-              resE' <- try $ submitTxFromConstraints lookups constraints'
+                      (Value.singleton cs (unwrap rp).nitroToken nitroAmount)
+              resE' <- try $ lift $ submitTxFromConstraints lookups constraints'
               resE' `shouldSatisfy` isLeft
   where
   walletUtxoDistr :: InitialUTxOs
@@ -244,18 +255,17 @@ suite = group "NitroToken script" do
 
   initNitroPolicyWithAdminAndTreasury
     :: (KeyWallet /\ KeyWallet)
-    -> RacersParams
     -> BigInt
-    -> Contract RacersState
-  initNitroPolicyWithAdminAndTreasury (admin /\ treasury) rp nitroPrice = do
-    treasuryAddr <- withKeyWallet treasury
+    -> Racers RacersState
+  initNitroPolicyWithAdminAndTreasury (admin /\ treasury) nitroPrice = do
+    treasuryAddr <- lift $ withKeyWallet treasury
       $ liftedM "Could not get address"
       $ Array.head
       <$> getWalletAddresses
-    withKeyWallet admin do
-      ownAddr <- liftedM "Could not get address" $ Array.head <$>
+    withContract (withKeyWallet admin) do
+      ownAddr <- lift $ liftedM "Could not get address" $ Array.head <$>
         getWalletAddresses
-      depositScriptHash <- validatorHash <$> mkDepositValidator rp
+      depositScriptHash <- validatorHash <$> mkDepositValidator
       let
         rs = RacersState
           { nitroPrice: nitroPrice
@@ -264,5 +274,5 @@ suite = group "NitroToken script" do
           , assetPrices: AssocMap.empty
           , depositScript: depositScriptHash
           }
-      _ <- RacersState.initRacersStateContract rp rs
+      _ <- RacersState.initRacersStateContract rs
       pure rs

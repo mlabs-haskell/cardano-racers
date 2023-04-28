@@ -33,11 +33,13 @@ import Contract.Value (CurrencySymbol, TokenName)
 import Contract.Value (geq, singleton) as Value
 import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
 import Control.Monad.Error.Class (try)
+import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (singleton, toUnfoldable) as Map
 import Mote (group, test)
+import Racers (Racers, runRacers, withContract)
 import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
 
 suite :: TestPlanM PlutipTest Unit
@@ -56,34 +58,36 @@ suite = group "RacersState script:" do
             $ Array.head
             <$> getWalletAddresses
           rp <- withKeyWallet admin createRacersParamsHelper
-          _ <- initRacersStateWithAdminAndTreasury (admin /\ treasury) rp
-            nitroPrice
-          depositScriptHash <- validatorHash <$> mkDepositValidator rp
-          let
-            expectedRacersState = RacersState
-              { nitroPrice: nitroPrice
-              , treasuryAddress: treasuryAddr
-              , operatingAddress: adminAddr
-              , assetPrices: AssocMap.empty
-              , depositScript: depositScriptHash
-              }
-          onchainRacersState /\ _ <- RacersState.queryRacersState rp
-          onchainRacersState `shouldEqual` expectedRacersState
+          runRacers rp do
+            _ <- initRacersStateWithAdminAndTreasury (admin /\ treasury)
+              nitroPrice
+            depositScriptHash <- validatorHash <$> mkDepositValidator
+            let
+              expectedRacersState = RacersState
+                { nitroPrice: nitroPrice
+                , treasuryAddress: treasuryAddr
+                , operatingAddress: adminAddr
+                , assetPrices: AssocMap.empty
+                , depositScript: depositScriptHash
+                }
+            onchainRacersState /\ _ <- RacersState.queryRacersState
+            onchainRacersState `shouldEqual` expectedRacersState
     test "Admin modifies RacersState" do
       withWallets (walletUtxoDistr /\ walletUtxoDistr) \(admin /\ treasury) ->
         do
           rp <- withKeyWallet admin createRacersParamsHelper
-          prevState <-
-            initRacersStateWithAdminAndTreasury (admin /\ treasury) rp $
-              BigInt.fromInt
-                1000000
-          withKeyWallet admin do
-            let
-              newState = wrap $ (unwrap prevState)
-                { nitroPrice = BigInt.fromInt 2000000 }
-            void $ RacersState.modifyRacersStateContract rp newState
-            updatedRacersState /\ _ <- RacersState.queryRacersState rp
-            newState `shouldEqual` updatedRacersState
+          runRacers rp do
+            prevState <-
+              initRacersStateWithAdminAndTreasury (admin /\ treasury) $
+                BigInt.fromInt
+                  1000000
+            withContract (withKeyWallet admin) do
+              let
+                newState = wrap $ (unwrap prevState)
+                  { nitroPrice = BigInt.fromInt 2000000 }
+              _ <- RacersState.modifyRacersStateContract newState
+              updatedRacersState /\ _ <- RacersState.queryRacersState
+              newState `shouldEqual` updatedRacersState
     test "Attempt to change RacersState fails without admin token" do
       withWallets (walletUtxoDistr /\ walletUtxoDistr) \(admin /\ eve) -> do
         rpBeforeUpdate <- withKeyWallet admin createRacersParamsHelper
@@ -91,50 +95,55 @@ suite = group "RacersState script:" do
         let
           rp = RacersParams $ (unwrap rpBeforeUpdate)
             { botToken = botTk }
-        prevState <- initRacersStateWithAdminAndTreasury (admin /\ admin) rp $
-          BigInt.fromInt
-            1000000
-        withKeyWallet eve do
-          nitroVal <- RacersState.mkRacersStateValidator rp
-          let
-            newState = wrap $ (unwrap prevState)
-              { nitroPrice = BigInt.fromInt 2000000 }
-            vhash = validatorHash nitroVal
-            datum = Datum $ toData newState
-            red = Redeemer $ toData $ SetRacersState newState
-            stateVal = uncurry Value.singleton (unwrap rp).stateToken one
-          (_ /\ stateTxi /\ stateTxo) <- RacersState.queryRacersState rp
-          let
-            constraints :: Constraints.TxConstraints Void Void
-            constraints = Constraints.mustSpendScriptOutput stateTxi red
-              <> Constraints.mustPayToScript vhash datum Constraints.DatumInline
-                stateVal
+        runRacers rp do
+          prevState <- initRacersStateWithAdminAndTreasury (admin /\ admin) $
+            BigInt.fromInt
+              1000000
+          withContract (withKeyWallet eve) do
+            nitroVal <- RacersState.mkRacersStateValidator
+            let
+              newState = wrap $ (unwrap prevState)
+                { nitroPrice = BigInt.fromInt 2000000 }
+              vhash = validatorHash nitroVal
+              datum = Datum $ toData newState
+              red = Redeemer $ toData $ SetRacersState newState
+              stateVal = uncurry Value.singleton (unwrap rp).stateToken one
+            (_ /\ stateTxi /\ stateTxo) <- RacersState.queryRacersState
+            let
+              constraints :: Constraints.TxConstraints Void Void
+              constraints = Constraints.mustSpendScriptOutput stateTxi red
+                <> Constraints.mustPayToScript vhash datum
+                  Constraints.DatumInline
+                  stateVal
 
-            lookups :: Lookups.ScriptLookups Void
-            lookups = Lookups.validator nitroVal
-              <> Lookups.unspentOutputs (Map.singleton stateTxi stateTxo)
+              lookups :: Lookups.ScriptLookups Void
+              lookups = Lookups.validator nitroVal
+                <> Lookups.unspentOutputs (Map.singleton stateTxi stateTxo)
 
-          resE <- try $ submitTxFromConstraints lookups constraints
-          resE `shouldSatisfy` isLeft
+            resE <- try $ lift $ submitTxFromConstraints lookups constraints
+            resE `shouldSatisfy` isLeft
 
-          -- Continue to test with bot token
-          ownUtxos <- liftedM "Could not get wallet utxos" getWalletUtxos
-          let
-            botVal = uncurry Value.singleton (unwrap rp).botToken $
-              BigInt.fromInt 1
-          (botTxi /\ _) <- liftContractM "Could not find bot token in wallet"
-            $ find
-                ( \(_ /\ txo) -> (unwrap (unwrap txo).output).amount `Value.geq`
-                    botVal
-                )
-            $ (Map.toUnfoldable ownUtxos :: Array _)
-          let
-            constraints' = Constraints.mustSpendPubKeyOutput botTxi
-              <> constraints
-            lookups' = lookups <> Lookups.unspentOutputs ownUtxos
+            -- Continue to test with bot token
+            ownUtxos <- lift $ liftedM "Could not get wallet utxos"
+              getWalletUtxos
+            let
+              botVal = uncurry Value.singleton (unwrap rp).botToken $
+                BigInt.fromInt 1
+            (botTxi /\ _) <- lift
+              $ liftContractM "Could not find bot token in wallet"
+              $ find
+                  ( \(_ /\ txo) -> (unwrap (unwrap txo).output).amount
+                      `Value.geq`
+                        botVal
+                  )
+              $ (Map.toUnfoldable ownUtxos :: Array _)
+            let
+              constraints' = Constraints.mustSpendPubKeyOutput botTxi
+                <> constraints
+              lookups' = lookups <> Lookups.unspentOutputs ownUtxos
 
-          resE' <- try $ submitTxFromConstraints lookups' constraints'
-          resE' `shouldSatisfy` isLeft
+            resE' <- try $ lift $ submitTxFromConstraints lookups' constraints'
+            resE' `shouldSatisfy` isLeft
   where
   walletUtxoDistr :: InitialUTxOs
   walletUtxoDistr =
@@ -158,19 +167,19 @@ suite = group "RacersState script:" do
 
   initRacersStateWithAdminAndTreasury
     :: (KeyWallet /\ KeyWallet)
-    -> RacersParams
     -> BigInt
-    -> Contract RacersState
-  initRacersStateWithAdminAndTreasury (admin /\ treasury) rp nitroPrice = do
-    treasuryAddr <- withKeyWallet treasury
+    -> Racers RacersState
+  initRacersStateWithAdminAndTreasury (admin /\ treasury) nitroPrice = do
+    treasuryAddr <- lift $ withKeyWallet treasury
       $ liftedM "Could not get address"
       $ Array.head
       <$> getWalletAddresses
-    withKeyWallet admin do
-      ownAddr <- liftedM "Could not get address" $ Array.head <$>
+
+    withContract (withKeyWallet admin) do
+      ownAddr <- lift $ liftedM "Could not get address" $ Array.head <$>
         getWalletAddresses
 
-      depositScriptHash <- validatorHash <$> mkDepositValidator rp
+      depositScriptHash <- validatorHash <$> mkDepositValidator
 
       let
         rs = RacersState
@@ -180,6 +189,6 @@ suite = group "RacersState script:" do
           , assetPrices: AssocMap.empty
           , depositScript: depositScriptHash
           }
-      _ <- RacersState.initRacersStateContract rp rs
+      _ <- RacersState.initRacersStateContract rs
       pure rs
 
