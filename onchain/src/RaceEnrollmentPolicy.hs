@@ -5,9 +5,10 @@ module RaceEnrollmentPolicy (script) where
 import PlutusTx.Prelude
 
 import CommonTypes (RacersParams (adminToken, botToken))
+import Constants (contenderTokenName, slotTokenName)
 import GHC.Generics (Generic)
 import GHC.Show (Show)
-import Ledger.Value (AssetClass, TokenName (TokenName), assetClass, assetClassValue, assetClassValueOf, geq)
+import Ledger.Value (AssetClass, TokenName, assetClass, assetClassValue, assetClassValueOf, geq)
 import Plutonomy qualified (optimizeUPLC)
 import Plutus.V1.Ledger.Value (flattenValue)
 import Plutus.V2.Ledger.Api (
@@ -42,6 +43,12 @@ data EnrollmentPolicyRedeemer
   deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''EnrollmentPolicyRedeemer
 
+-- | Enrollment policy allows the use of cardano tokens to track race
+-- | enrollments and confirmations.
+-- | The policy is parameterized by a UTxO to ensure single initialization,
+-- | RacersParams for access to admin and bot tokens, and validator hashes for
+-- | RaceRegistryScript (where users purchase Slots) and -- RaceConfirmationScript
+-- | (where users will lock Contender tokens) to confirm their participation.
 {-# INLINEABLE mkEnrollmentPolicy #-}
 mkEnrollmentPolicy :: TxOutRef -> RacersParams -> ValidatorHash -> ValidatorHash -> EnrollmentPolicyRedeemer -> ScriptContext -> Bool
 mkEnrollmentPolicy txoref rp registryVHash confirmationVHash red ctx = case red of
@@ -85,6 +92,9 @@ mkEnrollmentPolicy txoref rp registryVHash confirmationVHash red ctx = case red 
       totalValidConfirmedRegistrations :: [ConfirmedRegistrationEntry]
       totalValidConfirmedRegistrations = concat $ mapMaybe parseValidConfirmationOutput $ scriptOutputsAt confirmationVHash info
 
+      -- Parse registration data for single UTxO. A single UTxO can hold
+      -- multiple registration entries as long as the respective amount of
+      -- Contender tokens are present in the UTxO.
       parseValidConfirmationOutput :: (OutputDatum, Value) -> Maybe [ConfirmedRegistrationEntry]
       parseValidConfirmationOutput (dat, v) = registrationEntries >>= \entries -> if length entries == contenderTokens then pure entries else Nothing
         where
@@ -97,12 +107,6 @@ mkEnrollmentPolicy txoref rp registryVHash confirmationVHash red ctx = case red 
 
     ownSymbol :: CurrencySymbol
     !ownSymbol = ownCurrencySymbol ctx
-
-    slotTokenName :: TokenName
-    !slotTokenName = TokenName "Slot"
-
-    contenderTokenName :: TokenName
-    !contenderTokenName = TokenName "Contender"
 
     slotTokenAssetClass :: AssetClass
     !slotTokenAssetClass = assetClass ownSymbol slotTokenName

@@ -1,29 +1,44 @@
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -Wno-all #-}
 
 module RaceConfirmationScript (script) where
 
 import PlutusTx.Prelude
 
+import CommonTypes (RacersParams (RacersParams, adminToken, botToken))
+import Ledger.Value (Value, assetClassValue, geq)
 import Plutonomy qualified (optimizeUPLC)
-import Plutus.V2.Ledger.Api (Script, fromCompiledCode)
+import Plutus.V2.Ledger.Api (Script, ScriptContext (scriptContextTxInfo), TxInfo, fromCompiledCode)
+import Plutus.V2.Ledger.Contexts (valueSpent)
 import PlutusTx (compile, unsafeFromBuiltinData)
 
+-- | The `RaceConfirmationScript` will hold Contender tokens, spending from
+-- | this script is only permitted if the user is the admin or bot.
 {-# INLINEABLE mkConfirmationScript #-}
-mkConfirmationScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> Bool
-mkConfirmationScript redeemer context _ _ = True
+mkConfirmationScript :: RacersParams -> ScriptContext -> Bool
+mkConfirmationScript RacersParams {adminToken, botToken} ctx = inputContainsAdminNft || inputContainsBotNft
+  where
+    info :: TxInfo
+    !info = scriptContextTxInfo ctx
 
--- Placeholder for logic implementation
+    spentValue :: Value
+    !spentValue = valueSpent info
 
+    inputContainsAdminNft :: Bool
+    inputContainsAdminNft = spentValue `geq` assetClassValue adminToken 1
+
+    inputContainsBotNft :: Bool
+    inputContainsBotNft = spentValue `geq` assetClassValue botToken 1
+
+-- | The `RaceConfirmationScript` is parameterized by the `_raceHash`
+-- | BuiltinByteString for unqiueness across multiple races.
 {-# INLINEABLE mkScript #-}
 mkScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
-mkScript racersParams registryParams _dat red ctx =
+mkScript racersParams _raceHash _dat _red ctx =
   let
     result =
       mkConfirmationScript
         (PlutusTx.unsafeFromBuiltinData racersParams)
-        (PlutusTx.unsafeFromBuiltinData registryParams)
-        (PlutusTx.unsafeFromBuiltinData red)
         (PlutusTx.unsafeFromBuiltinData ctx)
    in
     if result then () else traceError "Failed verification"

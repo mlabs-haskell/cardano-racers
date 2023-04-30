@@ -27,6 +27,8 @@ import RacersStateScript qualified
 import AssetRequestPolicy qualified
 import GameAssetPolicy qualified
 import RaceEnrollmentPolicy qualified
+import RaceRegistryScript qualified
+import RaceConfirmationScript qualified
 
 data ScriptsFFI
   = ScriptsFFI
@@ -71,6 +73,8 @@ main = do
           , ("assetRequestPolicy", AssetRequestPolicy.script)
           , ("gameAssetPolicy", GameAssetPolicy.script)
           , ("raceEnrollmentPolicy", RaceEnrollmentPolicy.script)
+          , ("raceRegistryScript", RaceRegistryScript.script)
+          , ("raceConfirmationScript", RaceConfirmationScript.script)
           ]
   writeFile (out <> "/ScriptsFFI.js") js
   writeFile (out <> "/ScriptsFFI.purs") purs

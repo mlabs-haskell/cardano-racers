@@ -3,92 +3,92 @@
 
 module RaceRegistryScript (script) where
 
-import CommonTypes (RacersParams (RacersParams, nitroToken))
+import CommonTypes (RacersParams (RacersParams, nitroToken), adminToken)
+import Constants (slotTokenName)
+import Ledger.Address (scriptHashAddress)
 import Plutonomy qualified (optimizeUPLC)
-import Plutus.V1.Ledger.Value (assetClass, assetClassValue, assetClassValueOf, geq, mpsSymbol)
+import Plutus.V1.Ledger.Value (assetClass, assetClassValue, assetClassValueOf, flattenValue, geq, mpsSymbol)
 import Plutus.V2.Ledger.Api (
-  CurrencySymbol (unCurrencySymbol),
   MintingPolicyHash,
   Script,
   ScriptContext,
-  TokenName (..),
-  TxInfo,
+  TokenName (unTokenName),
+  TxInInfo (txInInfoResolved),
+  TxInfo (txInfoInputs),
+  TxOut (txOutAddress),
   Value,
   fromCompiledCode,
   scriptContextTxInfo,
   txInfoMint,
  )
-import Plutus.V2.Ledger.Contexts (valueSpent)
+import Plutus.V2.Ledger.Contexts (ownHash, valueLockedBy, valueSpent)
+import Plutus.V2.Ledger.Tx (TxOut (txOutValue))
 import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
 import PlutusTx.Prelude
 
 data RegistryParams = RegistryParams
   { raceHash :: BuiltinByteString
-  , signerPubKey :: BuiltinByteString
-  , slotPolicyHash :: MintingPolicyHash
-  , nitroPolicyHash :: MintingPolicyHash
   , nitroFee :: Integer
+  , nitroPolicyHash :: MintingPolicyHash
   }
 PlutusTx.unstableMakeIsData ''RegistryParams
 
-data RegistryRedeemer = Register
-  { carToken :: TokenName
-  , driverToken :: TokenName
-  , assetPolicyHash :: MintingPolicyHash
-  , verifiableSignature :: BuiltinByteString
-  }
-PlutusTx.unstableMakeIsData ''RegistryRedeemer
-
+-- | The `RaceRegistryScript` holds minted Slot tokens that can be purchased by
+-- | users. It allows users to spend Slot tokens provided they burn the
+-- | parameter `nitroFee` of NITRO tokens.
 {-# INLINEABLE mkRegistryScript #-}
-mkRegistryScript :: RacersParams -> RegistryParams -> RegistryRedeemer -> ScriptContext -> Bool
+mkRegistryScript :: RacersParams -> RegistryParams -> ScriptContext -> Bool
 mkRegistryScript
-  RacersParams {nitroToken}
-  RegistryParams {raceHash, signerPubKey, slotPolicyHash, nitroPolicyHash, nitroFee}
-  Register {carToken, driverToken, verifiableSignature, assetPolicyHash}
+  RacersParams {adminToken, nitroToken}
+  RegistryParams {nitroFee, nitroPolicyHash}
   ctx =
-    traceIfFalse "bad amount of nitro burnt" burnsNitroFee
-      && traceIfFalse "slot token not burnt" burnsSlotToken
-      && traceIfFalse "invalid registration signature" signatureIsValid
-      && traceIfFalse "selected NFTs not present in inputs" nftsPresent
+    inputContainsAdminNft
+      || traceIfFalse "bad amount of nitro burnt" burnsNitroPerSlotPurchased -- to collect leftover min-ada UTxO's
     where
       info :: TxInfo
       info = scriptContextTxInfo ctx
 
-      assetSymbol :: CurrencySymbol
-      !assetSymbol = mpsSymbol assetPolicyHash
+      inputContainsAdminNft :: Bool
+      inputContainsAdminNft = valueSpent info `geq` assetClassValue adminToken 1
 
-      spentValue :: Value
-      !spentValue = valueSpent info
-
-      burnsNitroFee :: Bool
-      burnsNitroFee =
-        assetClassValueOf (txInfoMint info) (assetClass (mpsSymbol nitroPolicyHash) nitroToken) <= nitroFee
-
-      burnsSlotToken :: Bool
-      burnsSlotToken =
-        assetClassValueOf (txInfoMint info) (assetClass (mpsSymbol slotPolicyHash) (TokenName raceHash)) == -1
-
-      signatureIsValid :: Bool
-      signatureIsValid = verifyEd25519Signature signerPubKey encodedMessage verifiableSignature
+      -- Checks that value minted is less than expected nitro burn fee
+      burnsNitroPerSlotPurchased :: Bool
+      burnsNitroPerSlotPurchased = assetClassValueOf (txInfoMint info) (assetClass (mpsSymbol nitroPolicyHash) nitroToken) <= totalNitro
         where
-          encodedMessage :: BuiltinByteString
-          encodedMessage = raceHash <> unCurrencySymbol assetSymbol <> unTokenName carToken <> unTokenName driverToken
+          totalNitro = nitroFee * slotTokensSpentFromScript
 
-      nftsPresent :: Bool
-      nftsPresent = inputContainsCarNft && inputContainsDriverNft
+      -- Only checks TokenName of spent value since it is not possible to get
+      -- access to the Slot currency symbol due to cyclic dependency. It is up
+      -- to the user to ensure spending of the correct AssetClass. Enrollment
+      -- policy will reject minting of Contender tokens if Slot tokens policy
+      -- symbol doesn't match.
+      slotTokensSpentFromScript :: Integer
+      slotTokensSpentFromScript = case flattenValue valueSpentFromScript of
+        [(_, tk, amt)] ->
+          if tk == slotTokenName
+            then amt
+            else traceError $ "expected '" <> decodeUtf8 (unTokenName slotTokenName) <> "' token name"
+        _ -> traceError $ "expected single entry '" <> decodeUtf8 (unTokenName slotTokenName) <> "' token name spent"
+
+      valueSpentFromScript :: Value
+      valueSpentFromScript = totalScriptInputValue - totalScriptOutputValue
         where
-          inputContainsCarNft = spentValue `geq` assetClassValue (assetClass assetSymbol carToken) 1
-          inputContainsDriverNft = spentValue `geq` assetClassValue (assetClass assetSymbol driverToken) 1
+          ownAddress = scriptHashAddress (ownHash ctx)
+          totalScriptInputValue =
+            foldMap (txOutValue . txInInfoResolved) $
+              filter ((==) ownAddress . txOutAddress . txInInfoResolved) $
+                txInfoInputs info
+          totalScriptOutputValue = valueLockedBy info (ownHash ctx)
 
 {-# INLINEABLE mkScript #-}
 mkScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
-mkScript racersParams registryParams _dat red ctx =
+mkScript racersParams registryParams _dat _red ctx =
   let
     result =
       mkRegistryScript
         (PlutusTx.unsafeFromBuiltinData racersParams)
         (PlutusTx.unsafeFromBuiltinData registryParams)
-        (PlutusTx.unsafeFromBuiltinData red)
+        -- (PlutusTx.unsafeFromBuiltinData red)
         (PlutusTx.unsafeFromBuiltinData ctx)
    in
     if result then () else traceError "Failed verification"
