@@ -1,7 +1,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:optimize #-}
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:remove-trace #-}
-
+-- | A script where users lock their deposits to request game assets.
+-- The minting bot processes these deposits and airdrops the NFTs.
 module DepositScript (script) where
 
 import CommonTypes (AirdropAddressDatum (airdropAddress), RacersParams, Rarity, adminToken, botToken)

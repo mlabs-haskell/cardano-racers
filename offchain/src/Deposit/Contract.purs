@@ -167,6 +167,8 @@ queryRequestsWithAirdropAddress st = do
       "Epic" -> pure Epic
       _ -> Nothing
 
+-- | Processes a pending game asset request and airdrops the Game NFT to the
+-- | depositor address.
 redeemGameAsset
   :: Map Rarity AssetOption
   -> Effect String
