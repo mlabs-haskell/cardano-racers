@@ -1,4 +1,7 @@
-module CardanoRacers.AssetRequest.Contract where
+module CardanoRacers.AssetRequest.Contract
+  ( requestAssetByRarity
+  , mkAssetRequestPolicy
+  ) where
 
 import Contract.Prelude
 
@@ -6,7 +9,6 @@ import CardanoRacers.AssetRequest.Types
   ( AirdropAddressDatum(AirdropAddressDatum)
   , AssetRequestRedeemer(MintRequestToken)
   )
-import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.GameAsset.Types (Rarity)
 import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.RacersState.Contract
@@ -15,7 +17,7 @@ import CardanoRacers.RacersState.Contract
   )
 import CardanoRacers.ScriptsFFI (assetRequestPolicy)
 import Contract.AssocMap as AssocMap
-import Contract.Monad (Contract, liftContractM, liftedM)
+import Contract.Monad (liftContractM, liftedM)
 import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
@@ -44,23 +46,25 @@ import Contract.Value
   ) as Value
 import Contract.Wallet (getWalletAddresses)
 import Control.Monad.Error.Class (liftMaybe)
+import Control.Monad.Reader.Trans (asks)
+import Control.Monad.Trans.Class (lift)
 import Data.Array (head, singleton) as Array
 import Data.BigInt (fromInt, toNumber) as BigInt
 import Data.Int (ceil)
 import Data.Map (singleton) as Map
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
+import Racers (Racers)
 
 requestAssetByRarity
-  :: RacersParams
-  -> Rarity
-  -> Contract TransactionHash
-requestAssetByRarity rp rarity = do
-  assetRequestPolicy <- mkAssetRequestPolicy rp
-  ownAddr <- liftedM "could not get first address"
+  :: Rarity
+  -> Racers TransactionHash
+requestAssetByRarity rarity = do
+  assetRequestPolicy <- mkAssetRequestPolicy
+  ownAddr <- lift $ liftedM "could not get first address"
     (Array.head <$> getWalletAddresses)
-  rs /\ stateTxi /\ stateTxo <- queryRacersState rp
-  cs <- liftContractM "Could not get currency symbol"
+  rs /\ stateTxi /\ stateTxo <- queryRacersState
+  cs <- lift $ liftContractM "Could not get currency symbol"
     $ Value.scriptCurrencySymbol
     $ assetRequestPolicy
 
@@ -71,10 +75,11 @@ requestAssetByRarity rp rarity = do
       )
       $ AssocMap.lookup rarity (unwrap rs).assetPrices
 
-  requestTokenName <- liftContractM "Could not make required token names" $
-    (Value.mkTokenName <=< byteArrayFromAscii) (show rarity)
+  requestTokenName <- lift $ liftContractM "Could not make required token names"
+    $
+      (Value.mkTokenName <=< byteArrayFromAscii) (show rarity)
 
-  mAssetRequestPolicyRef <- queryRacersRefScriptOutput rp
+  mAssetRequestPolicyRef <- queryRacersRefScriptOutput
     (unwrap $ mintingPolicyHash assetRequestPolicy)
 
   let
@@ -88,10 +93,15 @@ requestAssetByRarity rp rarity = do
     red = Redeemer $ toData $ MintRequestToken
 
     mintRequestTokenConstraints = case mAssetRequestPolicyRef of
-      Nothing -> Constraints.mustMintValueWithRedeemer red lockedVal
+      Nothing -> Constraints.mustMintCurrencyWithRedeemer
+        (mintingPolicyHash assetRequestPolicy)
+        red
+        requestTokenName
+        (BigInt.fromInt 1)
       Just (refTxi /\ refTxo) ->
-        Constraints.mustMintCurrencyUsingScriptRef
+        Constraints.mustMintCurrencyWithRedeemerUsingScriptRef
           (mintingPolicyHash assetRequestPolicy)
+          red
           requestTokenName
           (BigInt.fromInt 1)
           (RefInput $ mkTxUnspentOut refTxi refTxo)
@@ -113,13 +123,15 @@ requestAssetByRarity rp rarity = do
     lookups = assetRequestPolicyLookups
       <> Lookups.unspentOutputs (Map.singleton stateTxi stateTxo)
 
-  txId <- submitTxFromConstraints lookups constraints
-  awaitTxConfirmed txId
-  pure txId
+  lift do
+    txId <- submitTxFromConstraints lookups constraints
+    awaitTxConfirmed txId
+    pure txId
 
-mkAssetRequestPolicy :: RacersParams -> Contract MintingPolicy
-mkAssetRequestPolicy params = do
-  v2script <- liftContractM "Could not decode applied script" do
+mkAssetRequestPolicy :: Racers MintingPolicy
+mkAssetRequestPolicy = do
+  params <- asks (_.params)
+  v2script <- lift $ liftContractM "Could not decode applied script" do
     envelope <- decodeTextEnvelope assetRequestPolicy
     plutusScriptV2FromEnvelope envelope
   appliedScript <- liftEither $ left (error <<< show) $ applyArgs v2script

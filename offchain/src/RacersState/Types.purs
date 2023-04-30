@@ -1,4 +1,7 @@
-module CardanoRacers.RacersState.Types where
+module CardanoRacers.RacersState.Types
+  ( RacersState(RacersState)
+  , RacersStateRedeemer(SetRacersState)
+  ) where
 
 import Contract.Prelude
 

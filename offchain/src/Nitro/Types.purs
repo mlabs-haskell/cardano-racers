@@ -1,4 +1,6 @@
-module CardanoRacers.Nitro.Types where
+module CardanoRacers.Nitro.Types
+  ( NitroPolicyRedeemer(MintNitroToken, BuyNitroToken, BurnNitroToken)
+  ) where
 
 import Contract.Prelude
 
