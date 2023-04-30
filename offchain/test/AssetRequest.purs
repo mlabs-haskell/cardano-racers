@@ -103,10 +103,7 @@ suite = group "AssetRequest" do
                   , checkGainAtAddress' (label operatingAddress "Operating")
                       amountToOperating
                   , checkTokenGainAtAddress' (label depositAddress "Deposit")
-                      ( assetRequestCs /\ assetRequestTokenName /\
-                          BigInt.fromInt
-                            1
-                      )
+                      (assetRequestCs /\ assetRequestTokenName /\ one)
                   ]
 
               withContract (runChecks assertions <<< lift) $
@@ -167,8 +164,7 @@ suite = group "AssetRequest" do
                     operatingVal = Value.lovelaceValueOf amountToOperating
 
                     lockedVal =
-                      Value.singleton assetRequestCs assetRequestTokenName $
-                        BigInt.fromInt 1
+                      Value.singleton assetRequestCs assetRequestTokenName one
 
                     constraints :: Constraints.TxConstraints Void Void
                     constraints = Constraints.mustReferenceOutput stateTxi
@@ -178,7 +174,7 @@ suite = group "AssetRequest" do
                         operatingVal
                       <> Constraints.mustMintValueWithRedeemer red
                         ( Value.singleton assetRequestCs assetRequestTokenName
-                            (BigInt.fromInt 1)
+                            one
                         )
                       <> Constraints.mustPayToScript (unwrap rs).depositScript
                         dat
