@@ -5,15 +5,15 @@ module RaceConfirmationScript (script) where
 
 import PlutusTx.Prelude
 
+import Plutonomy qualified (optimizeUPLC)
 import Plutus.V2.Ledger.Api (Script, fromCompiledCode)
 import PlutusTx (compile, unsafeFromBuiltinData)
-import Plutonomy qualified (optimizeUPLC)
 
 {-# INLINEABLE mkConfirmationScript #-}
 mkConfirmationScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> Bool
 mkConfirmationScript redeemer context _ _ = True
-    -- Placeholder for logic implementation
 
+-- Placeholder for logic implementation
 
 {-# INLINEABLE mkScript #-}
 mkScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()

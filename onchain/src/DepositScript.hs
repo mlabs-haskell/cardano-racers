@@ -23,7 +23,7 @@ import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
 import PlutusTx.AssocMap (Map)
 import PlutusTx.AssocMap qualified as AssocMap (empty, singleton, toList, unionWith)
 import PlutusTx.Prelude
-import Utils (getInlineDatum, parseToken, valueToAddr, withTraceM)
+import Utils (getInlineDatumFromTxOut, parseToken, valueToAddr, withTraceM)
 
 data DepositValidatorParams = DepositValidatorParams
   { assetPolicySymbol :: CurrencySymbol
@@ -59,7 +59,7 @@ mkDepositValidator rp dps ctx =
     inputsWithAirdropAddr =
       mapMaybe
         ( ( \txo ->
-              (,) <$> (airdropAddress <$> getInlineDatum txo) <*> getRequestEntriesGrouped (txOutValue txo)
+              (,) <$> (airdropAddress <$> getInlineDatumFromTxOut txo) <*> getRequestEntriesGrouped (txOutValue txo)
           )
             . txInInfoResolved
         )

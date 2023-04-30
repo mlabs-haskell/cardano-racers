@@ -9,17 +9,20 @@ import GHC.Generics (Generic)
 import GHC.Show (Show)
 import Ledger.Value (AssetClass, TokenName (TokenName), assetClass, assetClassValue, assetClassValueOf, geq)
 import Plutonomy qualified (optimizeUPLC)
+import Plutus.V1.Ledger.Value (flattenValue)
 import Plutus.V2.Ledger.Api (
+  CurrencySymbol,
+  OutputDatum,
   Script,
   ScriptContext (scriptContextTxInfo),
   TxInfo (txInfoInputs, txInfoMint),
-  fromCompiledCode, Value, CurrencySymbol, ValidatorHash, OutputDatum
+  ValidatorHash,
+  Value,
+  fromCompiledCode,
  )
-import Plutus.V2.Ledger.Contexts (TxInInfo (txInInfoOutRef), TxOutRef, ownCurrencySymbol, valueSpent, valueLockedBy, scriptOutputsAt)
+import Plutus.V2.Ledger.Contexts (TxInInfo (txInInfoOutRef), TxOutRef, ownCurrencySymbol, scriptOutputsAt, valueLockedBy, valueSpent)
 import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
-import Plutus.V1.Ledger.Value (flattenValue)
 import Utils (getInlineDatum)
-
 
 data ConfirmedRegistrationEntry = ConfirmedRegistrationEntry
   { car :: TokenName
@@ -68,11 +71,10 @@ mkEnrollmentPolicy txoref rp registryVHash confirmationVHash red ctx = case red 
       -- and so it is sufficient to check that the value locked by the registry script is greater than or equal to `ownMintedValue`
       locksOwnMintedValueAtRegistry :: Bool
       locksOwnMintedValueAtRegistry = valueLockedBy info registryVHash `geq` ownMintedValue
-
   ConfirmParticipation ->
     traceIfFalse "burns slot tokens" (burntSlotTokens > 0)
-    && traceIfFalse "mismatch between slot tokens burnt and contender tokens minted" (burntSlotTokens == mintedContenderTokens)
-    && traceIfFalse "mismatch between contender tokens minted vs contender tokens locked" (mintedContenderTokens == length totalValidConfirmedRegistrations)
+      && traceIfFalse "mismatch between slot tokens burnt and contender tokens minted" (burntSlotTokens == mintedContenderTokens)
+      && traceIfFalse "mismatch between contender tokens minted vs contender tokens locked" (mintedContenderTokens == length totalValidConfirmedRegistrations)
     where
       burntSlotTokens :: Integer
       !burntSlotTokens = assetClassValueOf (negate ownMintedValue) slotTokenAssetClass
@@ -89,8 +91,6 @@ mkEnrollmentPolicy txoref rp registryVHash confirmationVHash red ctx = case red 
           contenderTokens = assetClassValueOf v contenderTokenAssetClass
           registrationEntries :: Maybe [ConfirmedRegistrationEntry]
           registrationEntries = (\(ConfirmedRegistrationDatum entries) -> entries) <$> getInlineDatum dat
-
-
   where
     info :: TxInfo
     !info = scriptContextTxInfo ctx
