@@ -13,7 +13,7 @@ import CardanoRacers.AssetRequest.Types
   , AssetRequestRedeemer(BurnRequestToken)
   )
 import CardanoRacers.Deposit.Types
-  ( DepositValidatorParams(DepositValidatorParams)
+  ( DepositScriptParams(DepositScriptParams)
   )
 import CardanoRacers.GameAsset.Contract
   ( mintAvailableAssetByRarity
@@ -422,7 +422,7 @@ mkDepositValidator = do
     Value.scriptCurrencySymbol gameAssetMP
 
   let
-    depositParams = DepositValidatorParams
+    depositParams = DepositScriptParams
       { assetPolicySymbol: gameAssetSymbol
       , assetRequestPolicySymbol: assetRequestSymbol
       }
