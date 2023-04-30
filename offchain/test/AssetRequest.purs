@@ -143,7 +143,12 @@ suite = group "AssetRequest" do
                   AssocMap.lookup rarity (unwrap rs).assetPrices
 
               let
-                incorrectPayments = [ (0.74 /\ 0.25), (0.75 /\ 0.24) ]
+                incorrectPayments =
+                  [ (0.74 /\ 0.25)
+                  , (0.75 /\ 0.24)
+                  , (0.76 /\ 0.24)
+                  , (0.74 /\ 0.26)
+                  ]
 
                 dat = Datum $ toData $ AirdropAddressDatum
                   { airdropAddress: ownAddr }
