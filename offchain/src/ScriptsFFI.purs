@@ -1,4 +1,14 @@
-module CardanoRacers.ScriptsFFI (nitroMintingPolicyScript,racersStateValidatorScript,adminNftMintingPolicy,depositScript,assetRequestPolicy,gameAssetPolicy,raceEnrollmentPolicy,raceRegistryScript,raceConfirmationScript) where
+module CardanoRacers.ScriptsFFI
+  ( nitroMintingPolicyScript
+  , racersStateValidatorScript
+  , adminNftMintingPolicy
+  , depositScript
+  , assetRequestPolicy
+  , gameAssetPolicy
+  , raceEnrollmentPolicy
+  , raceRegistryScript
+  , raceConfirmationScript
+  ) where
 
 foreign import nitroMintingPolicyScript :: String
 foreign import racersStateValidatorScript :: String

@@ -43,6 +43,12 @@ data EnrollmentPolicyRedeemer
   deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''EnrollmentPolicyRedeemer
 
+data EnrollmentPolicyParams = EnrollmentPolicyParams
+  { registryVHash :: ValidatorHash
+  , confirmationVHash :: ValidatorHash
+  }
+PlutusTx.unstableMakeIsData ''EnrollmentPolicyParams
+
 -- | Enrollment policy allows the use of cardano tokens to track race
 -- | enrollments and confirmations.
 -- | The policy is parameterized by a UTxO to ensure single initialization,
@@ -50,8 +56,8 @@ PlutusTx.unstableMakeIsData ''EnrollmentPolicyRedeemer
 -- | RaceRegistryScript (where users purchase Slots) and -- RaceConfirmationScript
 -- | (where users will lock Contender tokens) to confirm their participation.
 {-# INLINEABLE mkEnrollmentPolicy #-}
-mkEnrollmentPolicy :: TxOutRef -> RacersParams -> ValidatorHash -> ValidatorHash -> EnrollmentPolicyRedeemer -> ScriptContext -> Bool
-mkEnrollmentPolicy txoref rp registryVHash confirmationVHash red ctx = case red of
+mkEnrollmentPolicy :: TxOutRef -> RacersParams -> EnrollmentPolicyParams -> EnrollmentPolicyRedeemer -> ScriptContext -> Bool
+mkEnrollmentPolicy txoref rp rgp red ctx = case red of
   MintInitialSlotTokens ->
     ( traceIfFalse "admin token not present" inputContainsAdminNft
         || traceIfFalse "bot token not present" inputContainsBotNft
@@ -77,7 +83,7 @@ mkEnrollmentPolicy txoref rp registryVHash confirmationVHash red ctx = case red 
       -- The script will check that the only token in own minted value is the slot token
       -- and so it is sufficient to check that the value locked by the registry script is greater than or equal to `ownMintedValue`
       locksOwnMintedValueAtRegistry :: Bool
-      locksOwnMintedValueAtRegistry = valueLockedBy info registryVHash `geq` ownMintedValue
+      locksOwnMintedValueAtRegistry = valueLockedBy info (registryVHash rgp) `geq` ownMintedValue
   ConfirmParticipation ->
     traceIfFalse "burns slot tokens" (burntSlotTokens > 0)
       && traceIfFalse "mismatch between slot tokens burnt and contender tokens minted" (burntSlotTokens == mintedContenderTokens)
@@ -90,7 +96,7 @@ mkEnrollmentPolicy txoref rp registryVHash confirmationVHash red ctx = case red 
       !mintedContenderTokens = assetClassValueOf ownMintedValue contenderTokenAssetClass
 
       totalValidConfirmedRegistrations :: [ConfirmedRegistrationEntry]
-      totalValidConfirmedRegistrations = concat $ mapMaybe parseValidConfirmationOutput $ scriptOutputsAt confirmationVHash info
+      totalValidConfirmedRegistrations = concat $ mapMaybe parseValidConfirmationOutput $ scriptOutputsAt (confirmationVHash rgp) info
 
       -- Parse registration data for single UTxO. A single UTxO can hold
       -- multiple registration entries as long as the respective amount of
@@ -118,15 +124,14 @@ mkEnrollmentPolicy txoref rp registryVHash confirmationVHash red ctx = case red 
     !ownMintedValue = foldMap (\(cs, tk, i) -> assetClassValue (assetClass cs tk) i) $ filter (\(cs, _, _) -> cs == ownSymbol) $ flattenValue $ txInfoMint info
 
 {-# INLINEABLE mkPolicy #-}
-mkPolicy :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
-mkPolicy utxo rp registryVHash confirmationVHash redeemer context =
+mkPolicy :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
+mkPolicy utxo rp rgp redeemer context =
   let
     result =
       mkEnrollmentPolicy
         (PlutusTx.unsafeFromBuiltinData utxo)
         (PlutusTx.unsafeFromBuiltinData rp)
-        (PlutusTx.unsafeFromBuiltinData registryVHash)
-        (PlutusTx.unsafeFromBuiltinData confirmationVHash)
+        (PlutusTx.unsafeFromBuiltinData rgp)
         (PlutusTx.unsafeFromBuiltinData redeemer)
         (PlutusTx.unsafeFromBuiltinData context)
    in
