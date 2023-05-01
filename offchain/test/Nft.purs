@@ -59,9 +59,9 @@ suite = group "AdminNft" do
         v2script <- liftContractM "Error decoding alwaysSucceeds" do
           envelope <- decodeTextEnvelope adminNftMintingPolicy
           plutusScriptV2FromEnvelope envelope
-        let appliedScriptE = applyArgs v2script $ [ toData txi ]
+        let appliedScriptE = applyArgs v2script [ toData txi ]
         shouldSatisfy appliedScriptE isRight
-  test "Mints NFT" do
+  test "Mints Admin NFT" do
     let
       checkNftGain
         :: forall (r :: Row Type)
@@ -107,8 +107,7 @@ suite = group "AdminNft" do
       withKeyWallet w do
         utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
         txi /\ _ <- liftContractM "Could not find some utxo"
-          $ (Array.head <<< toUnfoldable)
-          $ utxos
+          $ (Array.head <<< toUnfoldable) utxos
         tkname <- liftContractM "Cannot make token name"
           <<< (Value.mkTokenName <=< byteArrayFromAscii)
           $ "Token"

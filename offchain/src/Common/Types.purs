@@ -19,6 +19,7 @@ import Contract.PlutusData
   )
 import Contract.Value (CurrencySymbol, TokenName)
 
+-- | Game parameters that uniquely identify an instance of the game.
 newtype RacersParams = RacersParams
   { adminToken :: (CurrencySymbol /\ TokenName)
   , botToken :: (CurrencySymbol /\ TokenName)

@@ -1,5 +1,5 @@
 module CardanoRacers.Deposit.Types
-  ( DepositValidatorParams(DepositValidatorParams)
+  ( DepositScriptParams(DepositScriptParams)
   ) where
 
 import Contract.Prelude
@@ -21,18 +21,18 @@ import Contract.PlutusData
   )
 import Contract.Value (CurrencySymbol)
 
-newtype DepositValidatorParams = DepositValidatorParams
+newtype DepositScriptParams = DepositScriptParams
   { assetPolicySymbol :: CurrencySymbol
   , assetRequestPolicySymbol :: CurrencySymbol
   }
 
-derive instance Generic DepositValidatorParams _
-derive instance Newtype DepositValidatorParams _
-derive instance Eq DepositValidatorParams
+derive instance Generic DepositScriptParams _
+derive instance Newtype DepositScriptParams _
+derive instance Eq DepositScriptParams
 
 instance
-  HasPlutusSchema DepositValidatorParams
-    ( "DepositValidatorParams"
+  HasPlutusSchema DepositScriptParams
+    ( "DepositScriptParams"
         :=
           ( "assetPolicySymbol"
               := I CurrencySymbol
@@ -44,18 +44,18 @@ instance
         :+ PNil
     )
 
-instance ToData DepositValidatorParams where
+instance ToData DepositScriptParams where
   toData = genericToData
 
-instance FromData DepositValidatorParams where
+instance FromData DepositScriptParams where
   fromData = genericFromData
 
-instance EncodeAeson DepositValidatorParams where
-  encodeAeson = wrapEncodeAeson "DepositValidatorParams" <<< unwrap
+instance EncodeAeson DepositScriptParams where
+  encodeAeson = wrapEncodeAeson "DepositScriptParams" <<< unwrap
 
-instance DecodeAeson DepositValidatorParams where
-  decodeAeson = decodeWrappedAeson "DepositValidatorParams" \obj -> do
+instance DecodeAeson DepositScriptParams where
+  decodeAeson = decodeWrappedAeson "DepositScriptParams" \obj -> do
     assetPolicySymbol <- obj .: "assetPolicySymbol"
     assetRequestPolicySymbol <- obj .: "assetRequestPolicySymbol"
-    pure $ DepositValidatorParams
+    pure $ DepositScriptParams
       { assetPolicySymbol, assetRequestPolicySymbol }

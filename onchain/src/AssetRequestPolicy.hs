@@ -1,5 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
-
+-- | A minting policy for asset requests.
 module AssetRequestPolicy where
 
 import CommonTypes (RacersParams (adminToken, botToken, stateToken), RacersState (depositScript), Rarity, airdropAddress, assetPrices, depositScript)
@@ -41,7 +41,10 @@ mkAssetRequestPolicy rp red ctx =
             txInfoMint info
    in
     case red of
-      BurnRequestToken -> traceIfFalse "admin token not present" inputContainsAdminNft || traceIfFalse "bot token not present" inputContainsBotNft && traceIfFalse "all request tokens minted are not negative" burnsRequestTokens
+      BurnRequestToken ->
+        traceIfFalse "admin token not present" inputContainsAdminNft
+        || traceIfFalse "bot token not present" inputContainsBotNft
+        && traceIfFalse "all request tokens minted are not negative" burnsRequestTokens
         where
           spentValue :: Value
           !spentValue = valueSpent info

@@ -13,7 +13,7 @@ import CardanoRacers.AssetRequest.Types
   , AssetRequestRedeemer(BurnRequestToken)
   )
 import CardanoRacers.Deposit.Types
-  ( DepositValidatorParams(DepositValidatorParams)
+  ( DepositScriptParams(DepositScriptParams)
   )
 import CardanoRacers.GameAsset.Contract
   ( mintAvailableAssetByRarity
@@ -167,6 +167,8 @@ queryRequestsWithAirdropAddress st = do
       "Epic" -> pure Epic
       _ -> Nothing
 
+-- | Processes a pending game asset request and airdrops the Game NFT to the
+-- | depositor address.
 redeemGameAsset
   :: Map Rarity AssetOption
   -> Effect String
@@ -420,7 +422,7 @@ mkDepositValidator = do
     Value.scriptCurrencySymbol gameAssetMP
 
   let
-    depositParams = DepositValidatorParams
+    depositParams = DepositScriptParams
       { assetPolicySymbol: gameAssetSymbol
       , assetRequestPolicySymbol: assetRequestSymbol
       }

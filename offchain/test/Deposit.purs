@@ -113,8 +113,7 @@ suite = group "AssetRequest" do
           _ <- withContract (withKeyWallet adminKey) do
             tokenNames <- lift
               $ liftContractM "could not create string token names"
-              $
-                for requests \r -> do
+              $ for requests \r -> do
                   { name } <- Map.lookup r availableAssets
                   pure $ unCip25String name <> ":" <> uniquenessNonce
 

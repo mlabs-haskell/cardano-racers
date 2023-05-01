@@ -1,5 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
-
+-- | A minting policy for NITRO
 module NitroPolicy (script) where
 
 import PlutusTx.Prelude
