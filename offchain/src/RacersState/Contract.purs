@@ -68,7 +68,7 @@ initRacersStateContract
 initRacersStateContract ns = do
   utxos <- lift $ liftedM "Could not get wallet utxos" getWalletUtxos
   racersVal <- mkRacersStateValidator
-  rp <- asks (_.params)
+  rp <- asks _.params
   let
     datum = Datum $ toData ns
     stateVal = uncurry Value.singleton (unwrap rp).stateToken one
@@ -81,7 +81,7 @@ initRacersStateContract ns = do
     lookups :: Lookups.ScriptLookups Void
     lookups = Lookups.validator racersVal <> Lookups.unspentOutputs utxos
 
-  lift $ do
+  lift do
     txId <- submitTxFromConstraints lookups constraints
     awaitTxConfirmed txId
     pure txId
@@ -94,7 +94,7 @@ modifyRacersStateContract
   :: RacersState -> Racers TransactionHash
 modifyRacersStateContract rs = do
   racersVal <- mkRacersStateValidator
-  rp <- asks (_.params)
+  rp <- asks _.params
   let
     vhash = validatorHash racersVal
     datum = Datum $ toData $ rs
@@ -119,7 +119,7 @@ modifyRacersStateContract rs = do
             (Map.singleton stateTxi stateTxo)
         )
 
-  lift $ do
+  lift do
     txId <- submitTxFromConstraints lookups constraints
     awaitTxConfirmed txId
     pure txId
@@ -130,7 +130,7 @@ queryRacersState
        (RacersState /\ TransactionInput /\ TransactionOutputWithRefScript)
 queryRacersState = do
   vhash <- validatorHash <$> mkRacersStateValidator
-  rp <- asks (_.params)
+  rp <- asks _.params
   let
     stateAssetClass = (unwrap rp).stateToken
     scriptAddress = scriptHashAddress vhash Nothing
@@ -173,7 +173,7 @@ createRacersRefScriptOutput script = do
     lookups :: Lookups.ScriptLookups PlutusData
     lookups = mempty
 
-  lift $ do
+  lift do
     txHash <- submitTxFromConstraints lookups constraints
     awaitTxConfirmed txHash
     pure $ wrap
@@ -206,7 +206,7 @@ queryRacersRefScriptOutput targetScriptHash = do
 
 mkRacersStateValidator :: Racers Validator
 mkRacersStateValidator = do
-  params <- asks (_.params)
+  params <- asks _.params
   v2script <- lift $ liftContractM "Could not decode applied script" do
     envelope <- decodeTextEnvelope racersStateValidatorScript
     plutusScriptV2FromEnvelope envelope

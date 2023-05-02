@@ -1,6 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:optimize #-}
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:remove-trace #-}
+
 -- | A script where users lock their deposits to request game assets.
 -- The minting bot processes these deposits and airdrops the NFTs.
 module DepositScript (script) where
@@ -36,7 +37,8 @@ PlutusTx.unstableMakeIsData ''DepositValidatorParams
 {-# INLINEABLE mkDepositValidator #-}
 mkDepositValidator :: RacersParams -> DepositValidatorParams -> ScriptContext -> Bool
 mkDepositValidator rp dps ctx =
-  ( traceIfFalse "admin token not present" inputContainsAdminNft
+  ( -- traceIfFalse "admin token not present"
+    inputContainsAdminNft
       || traceIfFalse "bot token not present" inputContainsBotNft
   )
     && traceIfFalse "not all asset nfts due are paid to airdrop address" mintsAndPaysAssetNfts

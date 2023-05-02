@@ -155,7 +155,7 @@ mintAvailableAssetByRarity
 
 mkGameAssetPolicy :: Racers MintingPolicy
 mkGameAssetPolicy = do
-  np <- asks (_.params)
+  np <- asks _.params
   v2script <- lift $ liftContractM "Could not decode applied script" do
     envelope <- decodeTextEnvelope gameAssetPolicy
     plutusScriptV2FromEnvelope envelope

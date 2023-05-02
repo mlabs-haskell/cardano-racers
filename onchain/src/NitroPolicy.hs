@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+
 -- | A minting policy for NITRO
 module NitroPolicy (script) where
 
@@ -6,7 +7,8 @@ import PlutusTx.Prelude
 
 import Utils (distributesToAddrs, findCurrentGameStateFromRefInputs)
 
-import CommonTypes (RacersParams, RacersState, adminToken, botToken, nitroPrice, nitroToken, stateToken)
+import CommonTypes (RacersParams, RacersState, adminToken, botToken, nitroPrice, stateToken)
+import Constants (nitroTokenName)
 import GHC.Generics (Generic)
 import GHC.Show (Show)
 import Ledger (AssetClass)
@@ -64,7 +66,7 @@ mkNitroMintiingPolicy rp red ctx = case red of
     inputContainsBotNft = valueSpent info `geq` assetClassValue (botToken rp) 1
 
     nitroAssetClass :: AssetClass
-    nitroAssetClass = assetClass (ownCurrencySymbol ctx) (nitroToken rp)
+    nitroAssetClass = assetClass (ownCurrencySymbol ctx) nitroTokenName
 
     mintedNitroToken :: Integer -> Bool
     mintedNitroToken i = i == assetClassValueOf (txInfoMint info) nitroAssetClass

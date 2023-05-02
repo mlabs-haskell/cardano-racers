@@ -18,7 +18,7 @@ import CardanoRacers.GameAsset.Types
   )
 import CardanoRacers.Nitro.Contract (adminMintsNitroContract)
 import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput)
-import Contract.AssocMap (empty, insert) as AssocMap
+import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Log (logInfo')
 import Contract.Metadata (mkCip25String, unCip25String)
 import Contract.Monad (liftContractM, liftedM, throwContractError)
@@ -51,7 +51,7 @@ import Test.CardanoRacers.Helpers
 
 suite :: TestPlanM PlutipTest Unit
 suite = group "AssetRequest" do
-  test "User mints request token" do
+  test "admin redeems user asset requests" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
       \(adminKey /\ treasuryKey /\ userKey) -> do
         let uniquenessNonce = "0"
@@ -85,11 +85,12 @@ suite = group "AssetRequest" do
                 Value.scriptCurrencySymbol gameAssetPolicy
 
           let
-            assetPrices = foldl (flip $ uncurry AssocMap.insert) AssocMap.empty
-              [ (Common /\ BigInt.fromInt 5_000_000)
-              , (Rare /\ BigInt.fromInt 10_000_000)
-              , (Epic /\ BigInt.fromInt 20_000_000)
-              ]
+            assetPrices :: AssetPrices
+            assetPrices = AssetPrices
+              { common: BigInt.fromInt 5000000
+              , rare: BigInt.fromInt 1000000
+              , epic: BigInt.fromInt 20000000
+              }
 
           st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
             (BigInt.fromInt 1_000_000)

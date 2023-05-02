@@ -101,6 +101,7 @@ import Data.String.CodeUnits (fromCharArray)
 import Effect.Exception (error)
 import Racers (Racers)
 
+-- | Represents a request for a game NFT
 type PendingAssetRequest =
   { airdropAddress :: Address
   , requestTxo :: TransactionOutputWithRefScript
@@ -112,7 +113,7 @@ queryRequestsWithAirdropAddress
   -> Racers (Map TransactionInput PendingAssetRequest)
 queryRequestsWithAirdropAddress st = do
   assetRequestPolicy <- mkAssetRequestPolicy
-  assetRequestSymmol <- lift $ liftContractM "Could not get currency symbol"
+  assetRequestSymbol <- lift $ liftContractM "Could not get currency symbol"
     $ Value.scriptCurrencySymbol
     $ assetRequestPolicy
 
@@ -122,7 +123,7 @@ queryRequestsWithAirdropAddress st = do
   let
     requestUtxos =
       Array.filter
-        ( Array.elem assetRequestSymmol <<< map fst <<< Value.flattenValue
+        ( Array.elem assetRequestSymbol <<< map fst <<< Value.flattenValue
             <<< _.amount
             <<< unwrap
             <<< _.output
@@ -300,7 +301,7 @@ redeemGameAsset
       <> assetRequestPolicyLookups
       <> depositLookups
 
-  lift $ do
+  lift do
     unbalancedTx <- liftedE $ mkUnbalancedTx lookups constraints
     unbalancedTxWithMetadata <- setTxMetadata unbalancedTx allMetadata
     pure unbalancedTxWithMetadata
@@ -378,7 +379,7 @@ consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
     -> Array (TransactionInput /\ PendingAssetRequest)
     -> Racers (Array BalancedSignedTransaction)
   consumeAndRedeemChained redeemTx pendingRequests = do
-    rp <- asks (_.params)
+    rp <- asks _.params
 
     let
       loop additionalUtxos reqs acc = case Array.uncons reqs of
@@ -391,8 +392,10 @@ consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
           -- Create the unbalanced transaction by redeeming the current request.
           unbalancedTx <- do
             (authTxi /\ authTxo) <-
-              liftContractM "could not get auth txi in utxos" $
-                (findAuthInUtxosMap rp additionalUtxos)
+              liftContractM
+                "could not get auth UTxO containing token (RacersAdminNFT/BotNFT) in current wallet UTxOs"
+                $
+                  (findAuthInUtxosMap rp additionalUtxos)
             runReaderT (redeemTx (authTxi /\ Map.singleton authTxi authTxo) req)
               { params: rp }
           withChainedTx unbalancedTx balanceTxConstraints $
@@ -410,16 +413,18 @@ consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
 mkDepositValidator
   :: Racers Validator
 mkDepositValidator = do
-  rp <- asks (_.params)
+  rp <- asks _.params
 
   assetRequestMP <- mkAssetRequestPolicy
   assetRequestSymbol <- lift
-    $ liftContractM "could not get currency symbol of asset request policy"
+    $ liftContractM "Could not get currency symbol of asset request policy"
     $ Value.scriptCurrencySymbol assetRequestMP
 
   gameAssetMP <- mkGameAssetPolicy
-  gameAssetSymbol <- lift $ liftContractM "Could not get currency symbol" $
-    Value.scriptCurrencySymbol gameAssetMP
+  gameAssetSymbol <- lift
+    $ liftContractM "Could not get currency symbol of game asset policy"
+    $
+      Value.scriptCurrencySymbol gameAssetMP
 
   let
     depositParams = DepositScriptParams

@@ -24,7 +24,7 @@ import Racers (Racers)
 findAnyAuthUtxo
   :: Racers (Maybe (TransactionInput /\ TransactionOutputWithRefScript))
 findAnyAuthUtxo = do
-  rp <- asks (_.params)
+  rp <- asks _.params
   utxos <- lift $ liftedM "could not get wallet utxos" $ getWalletUtxos
   pure $ findAuthInUtxosMap rp utxos
 
@@ -32,7 +32,7 @@ findAdminAuthUtxo
   :: Racers (Maybe (TransactionInput /\ TransactionOutputWithRefScript))
 findAdminAuthUtxo = do
   utxos <- lift $ liftedM "could not get wallet utxos" $ getWalletUtxos
-  asks (_.params) <#> \rp ->
+  asks _.params <#> \rp ->
     let
       adminValue :: Value
       adminValue = uncurry Value.singleton (unwrap rp).adminToken $

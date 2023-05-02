@@ -1,4 +1,4 @@
-module CardanoRacers.Common.Types (RacersParams(RacersParams)) where
+module CardanoRacers.Common.Types (RacersParams(RacersParams), nitroToken) where
 
 import Contract.Prelude
 
@@ -17,14 +17,15 @@ import Contract.PlutusData
   , genericFromData
   , genericToData
   )
-import Contract.Value (CurrencySymbol, TokenName)
+import Contract.Prim.ByteArray (byteArrayFromAscii)
+import Contract.Value (CurrencySymbol, TokenName, mkTokenName)
+import Partial.Unsafe (unsafePartial)
 
 -- | Game parameters that uniquely identify an instance of the game.
 newtype RacersParams = RacersParams
   { adminToken :: (CurrencySymbol /\ TokenName)
   , botToken :: (CurrencySymbol /\ TokenName)
   , stateToken :: (CurrencySymbol /\ TokenName)
-  , nitroToken :: TokenName
   }
 
 derive instance Generic RacersParams _
@@ -40,8 +41,6 @@ instance
               := I (CurrencySymbol /\ TokenName)
               :+ "stateToken"
               := I (CurrencySymbol /\ TokenName)
-              :+ "nitroToken"
-              := I TokenName
               :+ PNil
           )
         @@ Z
@@ -65,5 +64,8 @@ instance DecodeAeson RacersParams where
     adminToken <- obj .: "adminToken"
     botToken <- obj .: "botToken"
     stateToken <- obj .: "stateToken"
-    nitroToken <- obj .: "nitroToken"
-    pure $ RacersParams { adminToken, botToken, stateToken, nitroToken }
+    pure $ RacersParams { adminToken, botToken, stateToken }
+
+nitroToken :: TokenName
+nitroToken = unsafePartial $ fromJust $ mkTokenName <=< byteArrayFromAscii $
+  "NITRO"

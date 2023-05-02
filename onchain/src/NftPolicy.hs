@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+
 -- | A generic NFT minting policy. These NFTs are used for state treads.
 -- https://github.com/Plutonomicon/plutonomicon/blob/main/statethread.md#state-thread-tokens
 -- For game NFTs (cars/drivers), see GameAssetPolicy

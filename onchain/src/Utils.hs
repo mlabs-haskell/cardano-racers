@@ -58,6 +58,9 @@ distributesToAddrs info state totalLovelace = fromMaybe False $ do
       operatingValue = lovelaceValueOf . ceiling $ oneForth * total
   paysToTreasury <- (`geq` treasuryValue) <$> valueToAddr info (treasuryAddress state)
   paysToOperating <- (`geq` operatingValue) <$> valueToAddr info (operatingAddress state)
+  -- This check is to cover the edge case where the operating and treasury
+  -- addresses are the same, in this case we need to make sure that the total
+  -- sum is paid to that address
   combinedValueCheck <- do
     addrV <- valueToAddr info (treasuryAddress state)
     operV <- valueToAddr info (operatingAddress state)

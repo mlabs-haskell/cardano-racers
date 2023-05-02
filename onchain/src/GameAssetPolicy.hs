@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+
 -- | A minting policy for game NFTs - only bot can mint them (to airdrop later).
 -- Requires a bot token or an admin token.
 module GameAssetPolicy (script) where

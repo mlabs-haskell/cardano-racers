@@ -3,8 +3,8 @@
 
 module RaceRegistryScript (script) where
 
-import CommonTypes (RacersParams (RacersParams, nitroToken), adminToken)
-import Constants (slotTokenName)
+import CommonTypes (RacersParams (RacersParams), adminToken)
+import Constants (nitroTokenName, slotTokenName)
 import Ledger.Address (scriptHashAddress)
 import Plutonomy qualified (optimizeUPLC)
 import Plutus.V1.Ledger.Value (assetClass, assetClassValue, assetClassValueOf, flattenValue, geq, mpsSymbol)
@@ -39,7 +39,7 @@ PlutusTx.unstableMakeIsData ''RegistryParams
 {-# INLINEABLE mkRegistryScript #-}
 mkRegistryScript :: RacersParams -> RegistryParams -> ScriptContext -> Bool
 mkRegistryScript
-  RacersParams {adminToken, nitroToken}
+  RacersParams {adminToken}
   RegistryParams {nitroFee, nitroPolicyHash}
   ctx =
     inputContainsAdminNft
@@ -53,7 +53,7 @@ mkRegistryScript
 
       -- Checks that value minted is less than expected nitro burn fee
       burnsNitroPerSlotPurchased :: Bool
-      burnsNitroPerSlotPurchased = assetClassValueOf (txInfoMint info) (assetClass (mpsSymbol nitroPolicyHash) nitroToken) <= totalNitro
+      burnsNitroPerSlotPurchased = assetClassValueOf (txInfoMint info) (assetClass (mpsSymbol nitroPolicyHash) nitroTokenName) <= totalNitro
         where
           totalNitro = nitroFee * slotTokensSpentFromScript
 
