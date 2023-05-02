@@ -15,8 +15,8 @@ import CardanoRacers.RacersState.Contract
   ( queryRacersRefScriptOutput
   , queryRacersState
   )
+import CardanoRacers.RacersState.Types (getAssetPrice)
 import CardanoRacers.ScriptsFFI (assetRequestPolicy)
-import Contract.AssocMap as AssocMap
 import Contract.Monad (liftContractM, liftedM)
 import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
@@ -45,7 +45,6 @@ import Contract.Value
   , singleton
   ) as Value
 import Contract.Wallet (getWalletAddresses)
-import Control.Monad.Error.Class (liftMaybe)
 import Control.Monad.Reader.Trans (asks)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head, singleton) as Array
@@ -68,13 +67,6 @@ requestAssetByRarity rarity = do
     $ Value.scriptCurrencySymbol
     $ assetRequestPolicy
 
-  totalAdaDue <-
-    liftMaybe
-      ( error $ show rarity <>
-          " is unavailable for purchase. Could not find rarity in state"
-      )
-      $ AssocMap.lookup rarity (unwrap rs).assetPrices
-
   requestTokenName <- lift $ liftContractM "Could not make required token names"
     $
       (Value.mkTokenName <=< byteArrayFromAscii) (show rarity)
@@ -83,6 +75,7 @@ requestAssetByRarity rarity = do
     (unwrap $ mintingPolicyHash assetRequestPolicy)
 
   let
+    totalAdaDue = getAssetPrice rarity (unwrap rs).assetPrices
     treasuryAmt = BigInt.fromInt <<< ceil $ BigInt.toNumber totalAdaDue * 0.75
     operatingAmt = BigInt.fromInt <<< ceil $ BigInt.toNumber totalAdaDue * 0.25
     treasuryVal = Value.lovelaceValueOf treasuryAmt
@@ -130,7 +123,7 @@ requestAssetByRarity rarity = do
 
 mkAssetRequestPolicy :: Racers MintingPolicy
 mkAssetRequestPolicy = do
-  params <- asks (_.params)
+  params <- asks _.params
   v2script <- lift $ liftContractM "Could not decode applied script" do
     envelope <- decodeTextEnvelope assetRequestPolicy
     plutusScriptV2FromEnvelope envelope

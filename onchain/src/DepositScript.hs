@@ -36,7 +36,8 @@ PlutusTx.unstableMakeIsData ''DepositValidatorParams
 {-# INLINEABLE mkDepositValidator #-}
 mkDepositValidator :: RacersParams -> DepositValidatorParams -> ScriptContext -> Bool
 mkDepositValidator rp dps ctx =
-  ( traceIfFalse "admin token not present" inputContainsAdminNft
+  ( -- traceIfFalse "admin token not present" 
+      inputContainsAdminNft
       || traceIfFalse "bot token not present" inputContainsBotNft
   )
     && traceIfFalse "not all asset nfts due are paid to airdrop address" mintsAndPaysAssetNfts

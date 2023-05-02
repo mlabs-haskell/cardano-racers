@@ -8,11 +8,11 @@ import CardanoRacers.Nitro.Types
   ( NitroPolicyRedeemer(MintNitroToken, BuyNitroToken)
   )
 import CardanoRacers.RacersState.Types
-  ( RacersState(RacersState)
+  ( AssetPrices(AssetPrices)
+  , RacersState(RacersState)
   , RacersStateRedeemer(SetRacersState)
   )
 import Contract.Address (PubKeyHash(PubKeyHash))
-import Contract.AssocMap as Map
 import Contract.Credential (Credential(PubKeyCredential))
 import Contract.Prim.ByteArray (hexToByteArrayUnsafe)
 import Contract.Scripts (ValidatorHash(ValidatorHash))
@@ -63,7 +63,7 @@ nitroScriptParamsFixture :: RacersParams /\ String
 nitroScriptParamsFixture =
   let
     jsonStr =
-      "{\"RacersParams\":{\"stateToken\":[{\"unCurrencySymbol\":\"a130d78694de04aa1570706e1a4e7afa83e8d85ad1cba379b6135bb5\"},{\"unTokenName\":\"RacersStateNFT\"}],\"nitroToken\":{\"unTokenName\":\"NITRO\"},\"botToken\":[{\"unCurrencySymbol\":\"8028e67f22ae8dcc562eb486977642c8a273ac96f9394b5905989302\"},{\"unTokenName\":\"RacersAdminNFT\"}],\"adminToken\":[{\"unCurrencySymbol\":\"8028e67f22ae8dcc562eb486977642c8a273ac96f9394b5905989302\"},{\"unTokenName\":\"RacersAdminNFT\"}]}}"
+      "{\"RacersParams\":{\"stateToken\":[{\"unCurrencySymbol\":\"a130d78694de04aa1570706e1a4e7afa83e8d85ad1cba379b6135bb5\"},{\"unTokenName\":\"RacersStateNFT\"}],\"botToken\":[{\"unCurrencySymbol\":\"8028e67f22ae8dcc562eb486977642c8a273ac96f9394b5905989302\"},{\"unTokenName\":\"RacersAdminNFT\"}],\"adminToken\":[{\"unCurrencySymbol\":\"8028e67f22ae8dcc562eb486977642c8a273ac96f9394b5905989302\"},{\"unTokenName\":\"RacersAdminNFT\"}]}}"
     csAdmin = unsafePartial $ fromJust $ mkCurrencySymbol $
       hexToByteArrayUnsafe
         "8028e67f22ae8dcc562eb486977642c8a273ac96f9394b5905989302"
@@ -74,13 +74,10 @@ nitroScriptParamsFixture =
         "a130d78694de04aa1570706e1a4e7afa83e8d85ad1cba379b6135bb5"
     tkState = unsafePartial $ fromJust $ mkTokenName $ hexToByteArrayUnsafe
       "52616365727353746174654E4654"
-    nitroTk = unsafePartial $ fromJust $ mkTokenName $ hexToByteArrayUnsafe
-      "4e4954524f"
     nsp = RacersParams
       { adminToken: csAdmin /\ tkAdmin
       , botToken: csAdmin /\ tkAdmin
       , stateToken: csState /\ tkState
-      , nitroToken: nitroTk
       }
   in
     nsp /\ jsonStr
@@ -89,7 +86,7 @@ nitroStateFixture :: RacersState /\ String
 nitroStateFixture =
   let
     jsonStr =
-      "{\"RacersState\":{\"treasuryAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"operatingAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"nitroPrice\":1000000,\"depositScript\":\"1f6f394b032b42d1be3abb7bf6db1355ec6753f30d56d265fb826aa8\",\"assetPrices\":[]}}"
+      "{\"RacersState\":{\"treasuryAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"operatingAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"nitroPrice\":1000000,\"depositScript\":\"1f6f394b032b42d1be3abb7bf6db1355ec6753f30d56d265fb826aa8\",\"assetPrices\":{\"AssetPrices\":{\"rare\":2000000,\"epic\":3000000,\"common\":1000000}}}}"
     treasuryAddress =
       Address
         { addressCredential: PubKeyCredential
@@ -109,8 +106,12 @@ nitroStateFixture =
       { nitroPrice: BigInt.fromInt 1000000
       , treasuryAddress
       , operatingAddress: treasuryAddress
-      , assetPrices: Map.empty
       , depositScript: depositScriptHash
+      , assetPrices: AssetPrices
+          { common: BigInt.fromInt 1000000
+          , rare: BigInt.fromInt 2000000
+          , epic: BigInt.fromInt 3000000
+          }
       }
   in
     ns /\ jsonStr
@@ -130,6 +131,6 @@ nitroStateRedeemerFixture =
   let
     ns = fst nitroStateFixture
     setNsRedStr =
-      "{\"SetRacersState\":{\"RacersState\":{\"treasuryAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"operatingAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"nitroPrice\":1000000,\"depositScript\":\"1f6f394b032b42d1be3abb7bf6db1355ec6753f30d56d265fb826aa8\",\"assetPrices\":[]}}}"
+      "{\"SetRacersState\":{\"RacersState\":{\"treasuryAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"operatingAddress\":{\"addressStakingCredential\":null,\"addressCredential\":{\"tag\":\"PubKeyCredential\",\"contents\":{\"getPubKeyHash\":\"1730b1b700d616d51555538e83d67f13c113ad5f9b22212703482cb3\"}}},\"nitroPrice\":1000000,\"depositScript\":\"1f6f394b032b42d1be3abb7bf6db1355ec6753f30d56d265fb826aa8\",\"assetPrices\":{\"AssetPrices\":{\"rare\":2000000,\"epic\":3000000,\"common\":1000000}}}}}"
   in
     SetRacersState ns /\ setNsRedStr

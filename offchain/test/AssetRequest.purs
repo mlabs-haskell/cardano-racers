@@ -10,12 +10,11 @@ import CardanoRacers.AssetRequest.Types
   ( AirdropAddressDatum(AirdropAddressDatum)
   , AssetRequestRedeemer(MintRequestToken)
   )
-import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
+import CardanoRacers.GameAsset.Types (Rarity(Rare, Common))
 import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.RacersState.Contract (queryRacersState)
+import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices), getAssetPrice)
 import Contract.Address (scriptHashAddress)
-import Contract.AssocMap (Map)
-import Contract.AssocMap (empty, insert, lookup) as AssocMap
 import Contract.Monad (liftContractM, liftedM)
 import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
@@ -41,7 +40,6 @@ import Contract.Wallet (getWalletAddresses)
 import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
-import Data.BigInt (BigInt)
 import Data.BigInt (fromInt, toNumber) as BigInt
 import Data.Int (ceil)
 import Data.Map (singleton) as Map
@@ -84,11 +82,9 @@ suite = group "AssetRequest" do
                 $ liftContractM "Could not make required token names"
                 $
                   (Value.mkTokenName <=< byteArrayFromAscii) (show rarity)
-              assetPrice <- lift
-                $ liftContractM "could not get asset price from state"
-                $
-                  AssocMap.lookup rarity (unwrap rs).assetPrices
+
               let
+                assetPrice = getAssetPrice rarity (unwrap rs).assetPrices
                 depositAddress = scriptHashAddress (unwrap rs).depositScript
                   Nothing
                 amountToTreasury = BigInt.fromInt <<< ceil
@@ -134,12 +130,9 @@ suite = group "AssetRequest" do
                 $ liftContractM "Could not make required token names"
                 $
                   (Value.mkTokenName <=< byteArrayFromAscii) (show rarity)
-              rarePrice <- lift
-                $ liftContractM "could not get rare asset price from state"
-                $
-                  AssocMap.lookup rarity (unwrap rs).assetPrices
 
               let
+                assetPrice = getAssetPrice rarity (unwrap rs).assetPrices
                 incorrectPayments =
                   [ (0.74 /\ 0.25)
                   , (0.75 /\ 0.24)
@@ -155,10 +148,10 @@ suite = group "AssetRequest" do
                   (_ /\ stateTxi /\ stateTxo) <- queryRacersState
                   let
                     amountToTreasury = BigInt.fromInt <<< ceil
-                      $ BigInt.toNumber rarePrice
+                      $ BigInt.toNumber assetPrice
                       * treasuryRatio
                     amountToOperating = BigInt.fromInt <<< ceil
-                      $ BigInt.toNumber rarePrice
+                      $ BigInt.toNumber assetPrice
                       * operatingRatio
                     treasuryVal = Value.lovelaceValueOf amountToTreasury
                     operatingVal = Value.lovelaceValueOf amountToOperating
@@ -200,9 +193,9 @@ suite = group "AssetRequest" do
     , BigInt.fromInt 2_000_000_000
     ]
 
-  defaultAssetPrices :: Map Rarity BigInt
-  defaultAssetPrices = foldl (flip $ uncurry AssocMap.insert) AssocMap.empty
-    [ (Common /\ BigInt.fromInt 5_000_000)
-    , (Rare /\ BigInt.fromInt 10_000_000)
-    , (Epic /\ BigInt.fromInt 20_000_000)
-    ]
+  defaultAssetPrices :: AssetPrices
+  defaultAssetPrices = AssetPrices
+    { common: BigInt.fromInt 5_000_000
+    , rare: BigInt.fromInt 10_000_000
+    , epic: BigInt.fromInt 20_000_000
+    }

@@ -2,7 +2,7 @@ module Test.CardanoRacers.Nitro.Contract (suite) where
 
 import Contract.Prelude
 
-import CardanoRacers.Common.Types (RacersParams(RacersParams))
+import CardanoRacers.Common.Types (RacersParams(RacersParams), nitroToken)
 import CardanoRacers.Nitro.Contract
   ( adminMintsNitroContract
   , botMintsNitroContract
@@ -12,8 +12,8 @@ import CardanoRacers.Nitro.Contract
 import CardanoRacers.Nitro.Helpers (mintBotNft) as NitroHelpers
 import CardanoRacers.Nitro.Types (NitroPolicyRedeemer(BuyNitroToken))
 import CardanoRacers.RacersState.Contract (queryRacersState) as RacersState
+import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Address (Address)
-import Contract.AssocMap as AssocMap
 import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData (Redeemer(Redeemer), toData, unitDatum)
@@ -71,7 +71,7 @@ suite = group "NitroToken script" do
               $ withContract
                   ( runChecks
                       [ checkTokenGainAtAddress' (label ownAddress "Admin")
-                          ( nitroSymbol /\ (unwrap rp).nitroToken /\
+                          ( nitroSymbol /\ nitroToken /\
                               amountToMint
                           )
                       ] <<< lift
@@ -100,7 +100,7 @@ suite = group "NitroToken script" do
               $ withContract
                   ( runChecks
                       [ checkTokenGainAtAddress' (label botAddress "Admin")
-                          ( nitroSymbol /\ (unwrap rpWithBotToken).nitroToken /\
+                          ( nitroSymbol /\ nitroToken /\
                               amountToMint
                           )
                       ] <<< lift
@@ -122,7 +122,7 @@ suite = group "NitroToken script" do
           runRacers rp do
             _ <- initRacersStateWithAdminAndTreasury (admin /\ treasury)
               nitroPrice
-              AssocMap.empty
+              defaultAssetPrices
             nitroSymbol <- withContract
               (liftedM "Couldn't create currency symbol from NitroPolicy")
               (Value.scriptCurrencySymbol <$> Nitro.mkNitroPolicy)
@@ -145,7 +145,7 @@ suite = group "NitroToken script" do
                   , checkGainAtAddress' (label operatingAddress "Operating")
                       amountToOperating
                   , checkTokenGainAtAddress' (label bobAddress "Bob")
-                      (nitroSymbol /\ (unwrap rp).nitroToken /\ amountToBuy)
+                      (nitroSymbol /\ nitroToken /\ amountToBuy)
                   ]
 
               void $ withContract (runChecks assertions <<< lift) $
@@ -160,7 +160,7 @@ suite = group "NitroToken script" do
               runRacers rp do
                 _ <- initRacersStateWithAdminAndTreasury (admin /\ treasury)
                   (BigInt.fromInt 1000000)
-                  AssocMap.empty
+                  defaultAssetPrices
                 pure rp
 
             withKeyWallet bob $ runRacers rp do
@@ -201,7 +201,7 @@ suite = group "NitroToken script" do
                     <> paysToAddrConstraint (unwrap ns).operatingAddress
                       operatingVal
                     <> Constraints.mustMintValueWithRedeemer red
-                      (Value.singleton cs (unwrap rp).nitroToken nitroAmount)
+                      (Value.singleton cs nitroToken nitroAmount)
 
                 lookups :: Lookups.ScriptLookups Void
                 lookups = Lookups.mintingPolicy nitroMp
@@ -229,7 +229,7 @@ suite = group "NitroToken script" do
                     <> paysToAddrConstraint (unwrap ns).operatingAddress
                       operatingVal'
                     <> Constraints.mustMintValueWithRedeemer red
-                      (Value.singleton cs (unwrap rp).nitroToken nitroAmount)
+                      (Value.singleton cs nitroToken nitroAmount)
               resE' <- try $ lift $ submitTxFromConstraints lookups constraints'
               resE' `shouldSatisfy` isLeft
   where
@@ -238,6 +238,13 @@ suite = group "NitroToken script" do
     [ BigInt.fromInt 5_000_000
     , BigInt.fromInt 2_000_000_000
     ]
+
+  defaultAssetPrices :: AssetPrices
+  defaultAssetPrices = AssetPrices
+    { common: BigInt.fromInt 1000000
+    , rare: BigInt.fromInt 2000000
+    , epic: BigInt.fromInt 3000000
+    }
 
   mintBotNftHelper :: Contract (CurrencySymbol /\ TokenName)
   mintBotNftHelper = do

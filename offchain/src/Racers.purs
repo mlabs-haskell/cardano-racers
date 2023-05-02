@@ -17,5 +17,5 @@ runRacers rp = flip runReaderT { params: rp }
 
 withContract :: forall a b. (Contract a -> Contract b) -> Racers a -> Racers b
 withContract f c = do
-  rp <- asks (_.params)
+  rp <- asks _.params
   lift $ f (runRacers rp c)

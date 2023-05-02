@@ -2,7 +2,7 @@
 -- | A minting policy for asset requests.
 module AssetRequestPolicy where
 
-import CommonTypes (RacersParams (adminToken, botToken, stateToken), RacersState (depositScript), Rarity, airdropAddress, assetPrices, depositScript)
+import CommonTypes (RacersParams (adminToken, botToken, stateToken), RacersState (depositScript), Rarity, airdropAddress, assetPrices, depositScript, getPrice)
 import Ledger.Value (Value, assetClass, assetClassValue, flattenValue, geq)
 import Plutonomy qualified (optimizeUPLC)
 import Plutus.V2.Ledger.Api (
@@ -16,9 +16,8 @@ import Plutus.V2.Ledger.Api (
  )
 import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, scriptOutputsAt, valueLockedBy, valueSpent)
 import PlutusTx qualified (FromData (fromBuiltinData), compile, unsafeFromBuiltinData, unstableMakeIsData)
-import PlutusTx.AssocMap (lookup)
 import PlutusTx.Prelude
-import Utils (distributesToAddrs, findCurrentGameStateFromRefInputs, parseToken, withTraceM)
+import Utils (distributesToAddrs, findCurrentGameStateFromRefInputs, parseToken)
 
 data AssetRequestRedeemer = MintRequestToken | BurnRequestToken
 PlutusTx.unstableMakeIsData ''AssetRequestRedeemer
@@ -117,11 +116,8 @@ mkAssetRequestPolicy rp red ctx =
           totalLovelaceDue :: [(Rarity, Integer)] -> Maybe Integer
           totalLovelaceDue requestEntries = do
             st <- currentStateFromRefInput
-            let lovelaceOfEntry (r, i) =
-                  fmap (* i) $
-                    withTraceM "state does not contain price entry for given rarity" $
-                      lookup r (assetPrices st)
-            sum <$> traverse lovelaceOfEntry requestEntries
+            let lovelaceOfEntry (r, i) = i * getPrice r (assetPrices st)
+            pure $ sum $ map lovelaceOfEntry requestEntries
 
 {-# INLINEABLE mkPolicy #-}
 mkPolicy :: BuiltinData -> BuiltinData -> BuiltinData -> ()

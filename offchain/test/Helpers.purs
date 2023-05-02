@@ -7,11 +7,9 @@ import Contract.Prelude
 
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Deposit.Contract (mkDepositValidator)
-import CardanoRacers.GameAsset.Types (Rarity)
 import CardanoRacers.Nitro.Helpers as NitroHelpers
 import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
-import CardanoRacers.RacersState.Types (RacersState(RacersState))
-import Contract.AssocMap (Map) as AssocMap
+import CardanoRacers.RacersState.Types (AssetPrices, RacersState(RacersState))
 import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.Scripts (validatorHash)
 import Contract.Test.Plutip (withKeyWallet)
@@ -27,12 +25,12 @@ createRacersParamsHelper = do
   utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
   (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
     Map.toUnfoldable utxos
-  NitroHelpers.createRacersParams txi "NITRO"
+  NitroHelpers.createRacersParams txi
 
 initRacersStateWithAdminAndTreasury
   :: (KeyWallet /\ KeyWallet)
   -> BigInt
-  -> AssocMap.Map Rarity BigInt
+  -> AssetPrices
   -> Racers RacersState
 initRacersStateWithAdminAndTreasury
   (admin /\ treasury)

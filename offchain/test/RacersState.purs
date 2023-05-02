@@ -11,10 +11,10 @@ import CardanoRacers.RacersState.Contract
   , queryRacersState
   ) as RacersState
 import CardanoRacers.RacersState.Types
-  ( RacersState(RacersState)
+  ( AssetPrices(AssetPrices)
+  , RacersState(RacersState)
   , RacersStateRedeemer(SetRacersState)
   )
-import Contract.AssocMap as AssocMap
 import Contract.Monad (Contract, liftContractM, liftedM)
 import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
 import Contract.ScriptLookups as Lookups
@@ -63,7 +63,7 @@ suite = group "RacersState script:" do
           runRacers rp do
             _ <- initRacersStateWithAdminAndTreasury (admin /\ treasury)
               nitroPrice
-              AssocMap.empty
+              defaultAssetPrices
 
             depositScriptHash <- validatorHash <$> mkDepositValidator
             let
@@ -71,7 +71,7 @@ suite = group "RacersState script:" do
                 { nitroPrice: nitroPrice
                 , treasuryAddress: treasuryAddr
                 , operatingAddress: adminAddr
-                , assetPrices: AssocMap.empty
+                , assetPrices: defaultAssetPrices
                 , depositScript: depositScriptHash
                 }
             onchainRacersState /\ _ <- RacersState.queryRacersState
@@ -84,7 +84,7 @@ suite = group "RacersState script:" do
             prevState <-
               initRacersStateWithAdminAndTreasury (admin /\ treasury)
                 (BigInt.fromInt 1000000)
-                AssocMap.empty
+                defaultAssetPrices
             withContract (withKeyWallet admin) do
               let
                 newState = wrap $ (unwrap prevState)
@@ -103,7 +103,7 @@ suite = group "RacersState script:" do
           prevState <-
             initRacersStateWithAdminAndTreasury (admin /\ admin)
               (BigInt.fromInt 1000000)
-              AssocMap.empty
+              defaultAssetPrices
           withContract (withKeyWallet eve) do
             nitroVal <- RacersState.mkRacersStateValidator
             let
@@ -155,6 +155,13 @@ suite = group "RacersState script:" do
     [ BigInt.fromInt 5_000_000
     , BigInt.fromInt 2_000_000_000
     ]
+
+  defaultAssetPrices :: AssetPrices
+  defaultAssetPrices = AssetPrices
+    { common: BigInt.fromInt 1000000
+    , rare: BigInt.fromInt 2000000
+    , epic: BigInt.fromInt 3000000
+    }
 
   mintBotNftHelper :: Contract (CurrencySymbol /\ TokenName)
   mintBotNftHelper = do

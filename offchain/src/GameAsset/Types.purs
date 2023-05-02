@@ -74,15 +74,10 @@ data Rarity = Common | Rare | Epic
 
 derive instance Generic Rarity _
 derive instance Eq Rarity
+derive instance Ord Rarity
+
 instance Show Rarity where
   show = genericShow
-
-instance Ord Rarity where
-  compare = compare `on` toInt
-    where
-    toInt Common = 0
-    toInt Rare = 1
-    toInt Epic = 2
 
 instance EncodeAeson Rarity where
   encodeAeson Common = wrapEncodeAeson "Common" {}

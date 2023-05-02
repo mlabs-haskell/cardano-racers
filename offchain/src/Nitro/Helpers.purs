@@ -15,20 +15,17 @@ import Contract.Transaction (TransactionInput)
 import Contract.Value (CurrencySymbol, TokenName, mkTokenName)
 
 createRacersParams
-  :: TransactionInput -> String -> Contract RacersParams
-createRacersParams txi nitroTkStr = do
+  :: TransactionInput -> Contract RacersParams
+createRacersParams txi = do
   tkNames <- liftContractM "Could not make required token names" $ traverse
     (mkTokenName <=< byteArrayFromAscii)
     [ "RacersAdminNFT", "RacersBotNFT", "RacersStateNFT" ]
-  nitroTk <- liftContractM "Could not make nitro token name" $
-    (mkTokenName <=< byteArrayFromAscii) nitroTkStr
   nfts <- mintManyNfts txi tkNames
   case nfts of
     [ adminAsset, botAsset, stateAsset ] -> pure $ RacersParams
       { adminToken: adminAsset
       , botToken: botAsset
       , stateToken: stateAsset
-      , nitroToken: nitroTk
       }
     _ -> throwContractError "Impossible"
 

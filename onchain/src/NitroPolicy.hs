@@ -6,7 +6,7 @@ import PlutusTx.Prelude
 
 import Utils (distributesToAddrs, findCurrentGameStateFromRefInputs)
 
-import CommonTypes (RacersParams, RacersState, adminToken, botToken, nitroPrice, nitroToken, stateToken)
+import CommonTypes (RacersParams, RacersState, adminToken, botToken, nitroPrice, stateToken)
 import GHC.Generics (Generic)
 import GHC.Show (Show)
 import Ledger (AssetClass)
@@ -20,6 +20,7 @@ import Plutus.V2.Ledger.Api (
  )
 import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, valueSpent)
 import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
+import Constants (nitroToken)
 
 data NitroPolicyRedeemer
   = MintNitroToken Integer
@@ -59,7 +60,7 @@ mkNitroMintiingPolicy nsp red ctx = case red of
     inputContainsBotNft = valueSpent info `geq` assetClassValue (botToken nsp) 1
 
     nitroAssetClass :: AssetClass
-    nitroAssetClass = assetClass (ownCurrencySymbol ctx) (nitroToken nsp)
+    nitroAssetClass = assetClass (ownCurrencySymbol ctx) nitroToken
 
     mintedNitroToken :: Integer -> Bool
     mintedNitroToken i = i == assetClassValueOf (txInfoMint info) nitroAssetClass
