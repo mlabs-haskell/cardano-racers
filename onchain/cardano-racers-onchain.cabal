@@ -62,7 +62,6 @@ library
     , NitroPolicy
     , RaceEnrollmentPolicy
     , RaceRegistryScript
-    , RaceConfirmationScript
     , NftPolicy
     , GameAssetPolicy
     , AssetRequestPolicy

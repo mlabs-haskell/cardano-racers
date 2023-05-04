@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fno-specialise #-}
@@ -7,7 +6,6 @@ module RaceRegistryScript (script) where
 
 import CommonTypes (RacersParams (RacersParams), adminToken, botToken)
 import Constants (nitroTokenName)
-import Data.Eq qualified (Eq)
 import Data.Function (on)
 import GHC.Generics
 import GHC.Show (Show)
@@ -41,29 +39,37 @@ data RaceParticipant = RaceParticipant
   , driver :: TokenName
   , payoutAddress :: Address
   }
-  deriving (Data.Eq.Eq, Show, Generic)
+  deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''RaceParticipant
 
 instance Eq RaceParticipant where
   RaceParticipant car1 driver1 payoutAddress1 == RaceParticipant car2 driver2 payoutAddress2 =
     car1 == car2 && driver1 == driver2 && payoutAddress1 == payoutAddress2
 
--- TODO: find a better way to implement/derive this
-instance Ord RaceParticipant where
-  compare = compare `on` (serialiseData . toBuiltinData)
+-- TODO: Fix broken Ord instance / derive
+compareRaceParticipant :: RaceParticipant -> RaceParticipant -> Ordering
+compareRaceParticipant = compare `on` (serialiseData . toBuiltinData)
 
-data RegistryEntry = PendingSelection PubKeyHash | ConfirmedSelection RaceParticipant
-  deriving (Data.Eq.Eq, Show, Generic)
+-- instance Ord RaceParticipant where
+--   {-# INLINEABLE compare #-}
+--   compare = compare `on` (serialiseData . toBuiltinData)
+
+data RegistryEntry = PendingSelection PubKeyHash | AssetSelection RaceParticipant
+  deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''RegistryEntry
 
 instance Eq RegistryEntry where
   PendingSelection pkh1 == PendingSelection pkh2 = pkh1 == pkh2
-  ConfirmedSelection rp1 == ConfirmedSelection rp2 = rp1 == rp2
+  AssetSelection rp1 == AssetSelection rp2 = rp1 == rp2
   _ == _ = False
 
 -- TODO: find a better way to implement/derive this
-instance Ord RegistryEntry where
-  compare = compare `on` (serialiseData . toBuiltinData)
+compareRegistryEntry :: RegistryEntry -> RegistryEntry -> Ordering
+compareRegistryEntry = compare `on` (serialiseData . toBuiltinData)
+
+-- instance Ord RegistryEntry where
+--   {-# INLINEABLE compare #-}
+--   compare = compare `on` (serialiseData . toBuiltinData)
 
 newtype RegistryDatum = RegistryDatum [RegistryEntry]
 PlutusTx.unstableMakeIsData ''RegistryDatum
@@ -133,7 +139,7 @@ mkRegistryScript
           where
             spentValue = valueSpent info
             gameAssetSymbol = mpsSymbol gameAssetPolicyHash
-            aux (ConfirmedSelection RaceParticipant {car, driver}) =
+            aux (AssetSelection RaceParticipant {car, driver}) =
               spentValue `geq` ((<>) `on` (flip assetClassValue 1 . assetClass gameAssetSymbol)) car driver
             aux _ = False
     where
@@ -165,14 +171,15 @@ mkRegistryScript
       !outputRegistry = map (\txo -> (txo, getTxoRegistry txo)) $ filter ((`geq` singletonSlot) . txOutValue) $ getContinuingOutputs ctx
 
       diffedRegistry :: ([RegistryEntry], [RegistryEntry], [RegistryEntry])
-      !diffedRegistry = go (sort inputRegistryEntries) outputRegistryEntries [] [] []
+      !diffedRegistry =
+        go (sortBy compareRegistryEntry inputRegistryEntries) (sortBy compareRegistryEntry outputRegistryEntries) [] [] []
         where
           go [] [] left commons right = (reverse left, reverse commons, reverse right)
           go xs [] left commons right = (reverse xs ++ left, reverse commons, reverse right)
           go [] ys left commons right = (reverse left, reverse commons, reverse ys ++ right)
           go (x : xs) (y : ys) left commons right
-            | x < y = go xs (y : ys) (x : left) commons right
-            | x > y = go (x : xs) ys left commons (y : right)
+            | compareRegistryEntry x y == LT = go xs (y : ys) (x : left) commons right
+            | compareRegistryEntry x y == GT = go (x : xs) ys left commons (y : right)
             | otherwise = go xs ys left (x : commons) right
 
       getTxoRegistry :: TxOut -> [RegistryEntry]
@@ -194,4 +201,4 @@ mkScript racersParams registryParams _raceHash _dat red ctx =
     if result then () else traceError "Failed verification"
 
 script :: Script
-script = fromCompiledCode $ Plutonomy.optimizeUPLC $$(PlutusTx.compile [||mkScript'||])
+script = fromCompiledCode $ Plutonomy.optimizeUPLC $$(PlutusTx.compile [||mkScript||])
