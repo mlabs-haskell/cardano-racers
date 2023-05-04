@@ -1,8 +1,8 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -fno-specialise #-}
+{-# OPTIONS_GHC -Wno-all -fno-specialise #-}
 
-module RaceRegistryScript (script) where
+module RaceRegistryScript (script, r, rr) where
 
 import CommonTypes (RacersParams (RacersParams), adminToken, botToken)
 import Constants (nitroTokenName)
@@ -46,14 +46,6 @@ instance Eq RaceParticipant where
   RaceParticipant car1 driver1 payoutAddress1 == RaceParticipant car2 driver2 payoutAddress2 =
     car1 == car2 && driver1 == driver2 && payoutAddress1 == payoutAddress2
 
--- TODO: Fix broken Ord instance / derive
-compareRaceParticipant :: RaceParticipant -> RaceParticipant -> Ordering
-compareRaceParticipant = compare `on` (serialiseData . toBuiltinData)
-
--- instance Ord RaceParticipant where
---   {-# INLINEABLE compare #-}
---   compare = compare `on` (serialiseData . toBuiltinData)
-
 data RegistryEntry = PendingSelection PubKeyHash | AssetSelection RaceParticipant
   deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''RegistryEntry
@@ -62,14 +54,6 @@ instance Eq RegistryEntry where
   PendingSelection pkh1 == PendingSelection pkh2 = pkh1 == pkh2
   AssetSelection rp1 == AssetSelection rp2 = rp1 == rp2
   _ == _ = False
-
--- TODO: find a better way to implement/derive this
-compareRegistryEntry :: RegistryEntry -> RegistryEntry -> Ordering
-compareRegistryEntry = compare `on` (serialiseData . toBuiltinData)
-
--- instance Ord RegistryEntry where
---   {-# INLINEABLE compare #-}
---   compare = compare `on` (serialiseData . toBuiltinData)
 
 newtype RegistryDatum = RegistryDatum [RegistryEntry]
 PlutusTx.unstableMakeIsData ''RegistryDatum
@@ -171,21 +155,45 @@ mkRegistryScript
       !outputRegistry = map (\txo -> (txo, getTxoRegistry txo)) $ filter ((`geq` singletonSlot) . txOutValue) $ getContinuingOutputs ctx
 
       diffedRegistry :: ([RegistryEntry], [RegistryEntry], [RegistryEntry])
-      !diffedRegistry =
-        go (sortBy compareRegistryEntry inputRegistryEntries) (sortBy compareRegistryEntry outputRegistryEntries) [] [] []
-        where
-          go [] [] left commons right = (reverse left, reverse commons, reverse right)
-          go xs [] left commons right = (reverse xs ++ left, reverse commons, reverse right)
-          go [] ys left commons right = (reverse left, reverse commons, reverse ys ++ right)
-          go (x : xs) (y : ys) left commons right
-            | compareRegistryEntry x y == LT = go xs (y : ys) (x : left) commons right
-            | compareRegistryEntry x y == GT = go (x : xs) ys left commons (y : right)
-            | otherwise = go xs ys left (x : commons) right
+      !diffedRegistry = diffDatas inputRegistryEntries outputRegistryEntries
 
       getTxoRegistry :: TxOut -> [RegistryEntry]
       getTxoRegistry txo = case getInlineDatumFromTxOut txo of
         Just (RegistryDatum registry) -> registry
         Nothing -> traceError "could not get registry from txo inline datum"
+
+{-# INLINEABLE diffDatas #-}
+diffDatas :: ToData a => [a] -> [a] -> ([a], [a], [a])
+diffDatas as bs =
+  go (sorted as) (sorted bs) [] [] []
+  where
+    sorted = sortBy (compare `on` snd) . map (\x -> (x, serialiseData (toBuiltinData x)))
+
+    go [] [] left commons right = (reverse left, reverse commons, reverse right)
+    go xs [] left commons right = (reverse left ++ map fst xs , reverse commons, reverse right)
+    go [] ys left commons right = (reverse left, reverse commons, reverse right ++ map fst ys)
+    go ((x, xSerialized) : xs) ((y, ySerialized) : ys) left commons right
+      | xSerialized < ySerialized = go xs ((y, ySerialized) : ys) (x : left) commons right
+      | xSerialized > ySerialized = go ((x, xSerialized) : xs) ys left commons (y : right)
+      | otherwise = go xs ys left (x : commons) right
+
+tests :: [(([Integer],[Integer]), ([Integer],[Integer],[Integer]))]
+tests = [
+    (([], []), ([], [], [])),
+    (([1], [1]), ([], [1], [])),
+    (([1], [2]), ([1], [], [2])),
+    (([1, 2, 3], [1, 2, 3]), ([], [1, 2, 3], [])),
+    (([1, 2, 3], [4, 5, 6]), ([1, 2, 3], [], [4, 5, 6])),
+    (([1, 2, 3], [2, 3, 4]), ([1], [2, 3], [4])),
+    (([1, 2], [1, 2, 3, 4]), ([], [1, 2], [3, 4])),
+    (([1, 2, 2, 3], [2, 2, 3, 4]), ([1], [2, 2, 3], [4])),
+    (([3, 2, 1], [1, 2, 3]), ([], [1, 2, 3], [])),
+    (([1, 2, 3, 4, 5], [4, 5, 6, 7, 8]), ([1, 2, 3], [4, 5], [6, 7, 8])) 
+    ]
+
+rr = diffDatas @Integer [1,2,3] [4,5,6]
+r = map (\((a, b), (ar, ir, br)) -> let (a',i,b') = diffDatas a b in a' == ar && i == ir && b' == br) tests
+
 
 {-# INLINEABLE mkScript #-}
 mkScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
