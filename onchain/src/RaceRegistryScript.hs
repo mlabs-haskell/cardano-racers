@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wno-all -fno-specialise #-}
 
-module RaceRegistryScript (script, r, rr) where
+module RaceRegistryScript (script) where
 
 import CommonTypes (RacersParams (RacersParams), adminToken, botToken)
 import Constants (nitroTokenName)
@@ -167,6 +167,9 @@ diffDatas :: ToData a => [a] -> [a] -> ([a], [a], [a])
 diffDatas as bs =
   go (sorted as) (sorted bs) [] [] []
   where
+    -- Hacky sort leveraging Ord on BuiltinByteString on RegistryEntry. This is
+    -- done as deriving/implementing Ord seems to be broken
+    -- TODO: find out how to derive/implement Ord on the custom data types
     sorted = sortBy (compare `on` snd) . map (\x -> (x, serialiseData (toBuiltinData x)))
 
     go [] [] left commons right = (reverse left, reverse commons, reverse right)
@@ -176,24 +179,6 @@ diffDatas as bs =
       | xSerialized < ySerialized = go xs ((y, ySerialized) : ys) (x : left) commons right
       | xSerialized > ySerialized = go ((x, xSerialized) : xs) ys left commons (y : right)
       | otherwise = go xs ys left (x : commons) right
-
-tests :: [(([Integer],[Integer]), ([Integer],[Integer],[Integer]))]
-tests = [
-    (([], []), ([], [], [])),
-    (([1], [1]), ([], [1], [])),
-    (([1], [2]), ([1], [], [2])),
-    (([1, 2, 3], [1, 2, 3]), ([], [1, 2, 3], [])),
-    (([1, 2, 3], [4, 5, 6]), ([1, 2, 3], [], [4, 5, 6])),
-    (([1, 2, 3], [2, 3, 4]), ([1], [2, 3], [4])),
-    (([1, 2], [1, 2, 3, 4]), ([], [1, 2], [3, 4])),
-    (([1, 2, 2, 3], [2, 2, 3, 4]), ([1], [2, 2, 3], [4])),
-    (([3, 2, 1], [1, 2, 3]), ([], [1, 2, 3], [])),
-    (([1, 2, 3, 4, 5], [4, 5, 6, 7, 8]), ([1, 2, 3], [4, 5], [6, 7, 8])) 
-    ]
-
-rr = diffDatas @Integer [1,2,3] [4,5,6]
-r = map (\((a, b), (ar, ir, br)) -> let (a',i,b') = diffDatas a b in a' == ar && i == ir && b' == br) tests
-
 
 {-# INLINEABLE mkScript #-}
 mkScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
