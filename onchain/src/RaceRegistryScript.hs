@@ -181,8 +181,8 @@ diffDatas as bs =
       | otherwise = go xs ys left (x : commons) right
 
 {-# INLINEABLE mkScript #-}
-mkScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
-mkScript racersParams registryParams _raceHash _dat red ctx =
+mkScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
+mkScript racersParams registryParams _dat red ctx =
   let
     result =
       mkRegistryScript

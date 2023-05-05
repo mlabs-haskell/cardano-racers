@@ -26,7 +26,7 @@ import NitroPolicy qualified
 import RacersStateScript qualified
 import AssetRequestPolicy qualified
 import GameAssetPolicy qualified
-import RaceEnrollmentPolicy qualified
+import RacePositionPolicy qualified
 import RaceRegistryScript qualified
 
 data ScriptsFFI
@@ -71,7 +71,7 @@ main = do
           , ("depositScript", DepositScript.script)
           , ("assetRequestPolicy", AssetRequestPolicy.script)
           , ("gameAssetPolicy", GameAssetPolicy.script)
-          , ("raceEnrollmentPolicy", RaceEnrollmentPolicy.script)
+          , ("racePositionPolicy", RacePositionPolicy.script)
           , ("raceRegistryScript", RaceRegistryScript.script)
           ]
   writeFile (out <> "/ScriptsFFI.js") js
