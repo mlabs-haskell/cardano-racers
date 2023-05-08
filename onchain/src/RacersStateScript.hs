@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 
+-- | The script where state NFT is locked at.
 module RacersStateScript (script) where
 
 import PlutusTx.Prelude

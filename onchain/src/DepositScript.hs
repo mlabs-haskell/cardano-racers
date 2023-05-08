@@ -2,6 +2,8 @@
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:optimize #-}
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:remove-trace #-}
 
+-- | A script where users lock their deposits to request game assets.
+-- The minting bot processes these deposits and airdrops the NFTs.
 module DepositScript (script) where
 
 import CommonTypes (AirdropAddressDatum (airdropAddress), RacersParams, Rarity, adminToken, botToken)
@@ -23,7 +25,7 @@ import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
 import PlutusTx.AssocMap (Map)
 import PlutusTx.AssocMap qualified as AssocMap (empty, singleton, toList, unionWith)
 import PlutusTx.Prelude
-import Utils (getInlineDatum, parseToken, valueToAddr, withTraceM)
+import Utils (getInlineDatumFromTxOut, parseToken, valueToAddr, withTraceM)
 
 data DepositValidatorParams = DepositValidatorParams
   { assetPolicySymbol :: CurrencySymbol
@@ -35,7 +37,8 @@ PlutusTx.unstableMakeIsData ''DepositValidatorParams
 {-# INLINEABLE mkDepositValidator #-}
 mkDepositValidator :: RacersParams -> DepositValidatorParams -> ScriptContext -> Bool
 mkDepositValidator rp dps ctx =
-  ( traceIfFalse "admin token not present" inputContainsAdminNft
+  ( -- traceIfFalse "admin token not present"
+    inputContainsAdminNft
       || traceIfFalse "bot token not present" inputContainsBotNft
   )
     && traceIfFalse "not all asset nfts due are paid to airdrop address" mintsAndPaysAssetNfts
@@ -59,7 +62,7 @@ mkDepositValidator rp dps ctx =
     inputsWithAirdropAddr =
       mapMaybe
         ( ( \txo ->
-              (,) <$> (airdropAddress <$> getInlineDatum txo) <*> getRequestEntriesGrouped (txOutValue txo)
+              (,) <$> (airdropAddress <$> getInlineDatumFromTxOut txo) <*> getRequestEntriesGrouped (txOutValue txo)
           )
             . txInInfoResolved
         )

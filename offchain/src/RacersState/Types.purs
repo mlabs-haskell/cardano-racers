@@ -1,12 +1,16 @@
-module CardanoRacers.RacersState.Types where
+module CardanoRacers.RacersState.Types
+  ( RacersState(RacersState)
+  , AssetPrices(AssetPrices)
+  , RacersStateRedeemer(SetRacersState)
+  , getAssetPrice
+  ) where
 
 import Contract.Prelude
 
 import Aeson (class DecodeAeson, class EncodeAeson, (.:))
-import CardanoRacers.GameAsset.Types (Rarity)
+import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
 import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
 import Contract.Address (Address)
-import Contract.AssocMap (Map)
 import Contract.PlutusData
   ( class FromData
   , class HasPlutusSchema
@@ -23,11 +27,62 @@ import Contract.PlutusData
 import Contract.Scripts (ValidatorHash)
 import Data.BigInt (BigInt)
 
+newtype AssetPrices = AssetPrices
+  { common :: BigInt
+  , rare :: BigInt
+  , epic :: BigInt
+  }
+
+derive instance Generic AssetPrices _
+derive instance Newtype AssetPrices _
+derive instance Eq AssetPrices
+
+instance Show AssetPrices where
+  show = genericShow
+
+instance
+  HasPlutusSchema
+    AssetPrices
+    ( "AssetPrices"
+        :=
+          ( "common" := I BigInt
+              :+ "rare"
+              := I BigInt
+              :+ "epic"
+              := I BigInt
+              :+ PNil
+          )
+        @@ Z
+        :+ PNil
+    )
+
+instance ToData AssetPrices where
+  toData = genericToData
+
+instance FromData AssetPrices where
+  fromData = genericFromData
+
+instance EncodeAeson AssetPrices where
+  encodeAeson = wrapEncodeAeson "AssetPrices" <<< unwrap
+
+instance DecodeAeson AssetPrices where
+  decodeAeson = decodeWrappedAeson "AssetPrices" \obj -> do
+    common <- obj .: "common"
+    rare <- obj .: "rare"
+    epic <- obj .: "epic"
+    pure $ AssetPrices { common, rare, epic }
+
+getAssetPrice :: Rarity -> AssetPrices -> BigInt
+getAssetPrice r (AssetPrices ap) = case r of
+  Common -> ap.common
+  Rare -> ap.rare
+  Epic -> ap.epic
+
 newtype RacersState = RacersState
   { nitroPrice :: BigInt -- Nitro price in Lovelace
   , treasuryAddress :: Address
   , operatingAddress :: Address
-  , assetPrices :: Map Rarity BigInt
+  , assetPrices :: AssetPrices
   , depositScript :: ValidatorHash
   }
 
@@ -45,7 +100,7 @@ instance
               :+ "operatingAddress"
               := I Address
               :+ "assetPrices"
-              := I (Map Rarity BigInt)
+              := I AssetPrices
               :+ "depositScript"
               := I ValidatorHash
               :+ PNil

@@ -185,7 +185,6 @@
                 nodePackages.eslint
                 nodePackages.prettier
                 ogmios
-                # ogmios-datum-cache
                 plutip-server
                 postgresql
               ];

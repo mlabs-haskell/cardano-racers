@@ -20,9 +20,9 @@ import Effect.Aff
 import Mote (only)
 import Test.CardanoRacers.AssetRequest (suite) as AssetRequest
 import Test.CardanoRacers.Deposit (suite) as Deposit
-import Test.CardanoRacers.GameAsset (suite) as GameAsset
 import Test.CardanoRacers.Nft (suite) as Nft
 import Test.CardanoRacers.Nitro.Contract (suite) as Nitro
+import Test.CardanoRacers.RaceRegistry (suite) as RaceRegistry
 import Test.CardanoRacers.RacersState.Contract (suite) as RacersState
 import Test.Spec.Runner (defaultConfig)
 
@@ -42,6 +42,7 @@ suite = do
   AssetRequest.suite
   Deposit.suite
   GameAsset.suite
+  only RaceRegistry.suite
 
 config :: PlutipConfig
 config =

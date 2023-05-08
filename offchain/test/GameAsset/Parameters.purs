@@ -1,4 +1,4 @@
-module Test.CardanoRacers.GameAsset.Parameters where
+module Test.CardanoRacers.GameAsset.Parameters (suite) where
 
 import Contract.Prelude
 

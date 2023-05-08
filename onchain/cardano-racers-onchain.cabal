@@ -60,6 +60,8 @@ library
   import:          common
   exposed-modules: 
     , NitroPolicy
+    , RacePositionPolicy
+    , RaceRegistryScript
     , NftPolicy
     , GameAssetPolicy
     , AssetRequestPolicy
@@ -69,6 +71,7 @@ library
   other-modules:
     , Utils
     , CommonTypes
+    , Constants
 
   build-depends:
     , plutus-ledger
