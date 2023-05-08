@@ -7,15 +7,14 @@ module CardanoRacers.Nitro.Contract
   , mintNitroAndPayToAddressContract
   , paysNitroConstraints
   , mkNitroPolicy
+  , burnNitroConstraints
   ) where
 
 import Contract.Prelude
 
 import CardanoRacers.Common.Types (nitroToken)
 import CardanoRacers.Helpers (paysToAddrConstraint)
-import CardanoRacers.Nitro.Types
-  ( NitroPolicyRedeemer(BuyNitroToken, MintNitroToken)
-  )
+import CardanoRacers.Nitro.Types (NitroPolicyRedeemer(..))
 import CardanoRacers.RacersState.Contract
   ( queryRacersRefScriptOutput
   , queryRacersState
@@ -92,6 +91,36 @@ mintNitroConstraints nitroAmount = do
       <> Lookups.unspentOutputs (Map.singleton authTxi authTxo)
 
   pure (constraints /\ lookups)
+
+burnNitroConstraints
+  :: BigInt
+  -> Racers (Constraints.TxConstraints Void Void /\ Lookups.ScriptLookups Void)
+burnNitroConstraints nitroAmount = do
+  nitroPolicy <- mkNitroPolicy
+  mNitroPolicyRef <- queryRacersRefScriptOutput
+    (unwrap $ mintingPolicyHash nitroPolicy)
+
+  let
+    red = Redeemer $ toData $ BurnNitroToken
+
+    nitroToMint = negate nitroAmount
+
+    mintConstraints /\ mintLookups = case mNitroPolicyRef of
+      Nothing ->
+        Constraints.mustMintCurrencyWithRedeemer
+          (mintingPolicyHash nitroPolicy)
+          red
+          nitroToken
+          nitroToMint
+          /\ Lookups.mintingPolicy nitroPolicy
+      Just (refTxi /\ refTxo) ->
+        Constraints.mustMintCurrencyWithRedeemerUsingScriptRef
+          (mintingPolicyHash nitroPolicy)
+          red
+          nitroToken
+          nitroToMint
+          (RefInput $ mkTxUnspentOut refTxi refTxo) /\ mempty
+  pure (mintConstraints /\ mintLookups)
 
 paysNitroConstraints
   :: Address
@@ -172,8 +201,9 @@ buyNitroContract nitroAmount = do
           nitroAmount
           /\ Lookups.mintingPolicy nitroPolicy
       Just (refTxi /\ refTxo) ->
-        Constraints.mustMintCurrencyUsingScriptRef
+        Constraints.mustMintCurrencyWithRedeemerUsingScriptRef
           (mintingPolicyHash nitroPolicy)
+          red
           nitroToken
           nitroAmount
           (RefInput $ mkTxUnspentOut refTxi refTxo) /\ mempty

@@ -1,22 +1,14 @@
-module Test.CardanoRacers.Deposit (suite) where
+module Test.CardanoRacers.RaceRegistry (suite) where
 
 import Contract.Prelude
 
-import CardanoRacers.AssetRequest.Contract
-  ( mkAssetRequestPolicy
-  , requestAssetByRarity
-  )
-import CardanoRacers.Deposit.Contract
-  ( consumeAndRedeemRequests
-  , mkDepositValidator
-  )
+import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy, requestAssetByRarity)
+import CardanoRacers.Deposit.Contract (consumeAndRedeemRequests, mkDepositValidator)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types
-  ( AssetOption
-  , GameAssetType(CarType, DriverType)
-  , Rarity(Common, Rare, Epic)
-  )
-import CardanoRacers.Nitro.Contract (adminMintsNitroContract)
+import CardanoRacers.GameAsset.Types (AssetOption, GameAssetType(CarType, DriverType), Rarity(Common, Rare, Epic))
+import CardanoRacers.Helpers (counterNonce)
+import CardanoRacers.Nitro.Contract (adminMintsNitroContract, buyNitroContract, mkNitroPolicy)
+import CardanoRacers.RaceRegistry.Contract (confirmParticipatingAssets, findUtxoWithAvailableSlotToken, initRace, queryRegistryUtxos, registerPositionInRace)
 import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Log (logInfo')
@@ -26,57 +18,52 @@ import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.Scripts (MintingPolicy(PlutusMintingPolicy))
 import Contract.Test.Assert (checkTokenGainAtAddress', label, runChecks)
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip
-  ( InitialUTxOs
-  , PlutipTest
-  , withKeyWallet
-  , withWallets
-  )
+import Contract.Test.Plutip (InitialUTxOs, PlutipTest, withKeyWallet, withWallets)
 import Contract.Value (CurrencySymbol, mkTokenName)
 import Contract.Value as Value
-import Contract.Wallet (getWalletAddresses)
+import Contract.Wallet (getWalletAddresses, getWalletUtxos)
 import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
+import Ctl.Internal.Contract.Wallet (ownPubKeyHashes)
 import Data.Array (head) as Array
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (Map, fromFoldable, lookup) as Map
 import Effect.Aff (delay)
+import Effect.Ref as Ref
 import Mote (group, test)
 import Partial.Unsafe (unsafePartial)
 import Racers (Racers, runRacers, withContract)
-import Test.CardanoRacers.Helpers
-  ( createRacersParamsHelper
-  , initRacersStateWithAdminAndTreasury
-  )
+import Test.CardanoRacers.Helpers (createRacersParamsHelper, initRacersStateWithAdminAndTreasury)
 
 suite :: TestPlanM PlutipTest Unit
-suite = group "Deposit" do
-  test "admin redeems user asset requests" do
+suite = group "Race Registry" do
+  test "playground" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
       \(adminKey /\ treasuryKey /\ userKey) -> do
-        let uniquenessNonce = "0"
-
         rp <- withKeyWallet adminKey do
           rp <- createRacersParamsHelper
           _ <- runRacers rp $ adminMintsNitroContract (BigInt.fromInt 1_000_000)
           pure rp
 
         runRacers rp do
-          (gameAssetSymbol :: CurrencySymbol) <- withContract
-            (withKeyWallet adminKey)
+          _gameAssetSymbol <- withContract (withKeyWallet adminKey)
             do
               assetRequestPolicy <- mkAssetRequestPolicy
               gameAssetPolicy <- mkGameAssetPolicy
+              nitroPolicy <- mkNitroPolicy
 
+              nitroScriptRef <- lift $ case nitroPolicy of
+                PlutusMintingPolicy s -> pure s
+                _ -> throwContractError "Not plutus script"
               assetRequestScriptRef <- lift $ case assetRequestPolicy of
                 PlutusMintingPolicy s -> pure s
                 _ -> throwContractError "Not plutus script"
               gameAssetScriptRef <- lift $ case gameAssetPolicy of
                 PlutusMintingPolicy s -> pure s
                 _ -> throwContractError "Not plutus script"
-
               depositAssetScriptRef <- unwrap <$> mkDepositValidator
 
+              _ <- createRacersRefScriptOutput nitroScriptRef
               _ <- createRacersRefScriptOutput assetRequestScriptRef
               _ <- createRacersRefScriptOutput gameAssetScriptRef
               _ <- createRacersRefScriptOutput depositAssetScriptRef
@@ -99,54 +86,71 @@ suite = group "Deposit" do
           let
             requests =
               [ Common
-              , Rare
-              , Epic
+              -- , Rare
+              -- , Epic
               ]
+
+          counterRef <- liftEffect $ Ref.new 0
 
           _ <- withContract (withKeyWallet userKey) do
             traverse_ requestAssetByRarity requests
 
-          userAddress <- lift $ withKeyWallet userKey
-            $ liftedM "Could not get user address"
-            $ Array.head
-            <$> getWalletAddresses
+          logInfo' $ "submitted request"
 
-          _ <- withContract (withKeyWallet adminKey) do
-            tokenNames <- lift
-              $ liftContractM "could not create string token names"
-              $ for requests \r -> do
-                  { name } <- Map.lookup r availableAssets
-                  pure $ unCip25String name <> ":" <> uniquenessNonce
+          _ <- withContract (withKeyWallet adminKey) $ consumeAndRedeemRequests
+            5
+            availableAssets
+            (counterNonce counterRef)
+            st
 
-            assertions <- lift $ for tokenNames $ \name -> do
-              tkName <-
-                liftContractM ("could not create token name from " <> name) $
-                  (mkTokenName <=< byteArrayFromAscii) name
-              pure $ checkTokenGainAtAddress' (label userAddress "User")
-                (gameAssetSymbol /\ tkName /\ BigInt.fromInt 1)
+          logInfo' $ "redeemed requests"
 
-            withContract (runChecks assertions <<< lift) $
-              retryCount
-                ( consumeAndRedeemRequests 5 availableAssets
-                    (pure uniquenessNonce)
-                    st
-                )
-                3
+          (rgp /\ _) <- withContract (withKeyWallet adminKey) $ initRace "abcde"
+            (BigInt.fromInt 10)
+            (BigInt.fromInt 2)
+          logInfo' $ show rgp
 
-          pure unit
+          logInfo' "initialized race"
+
+          -- _ <- withContract (withKeyWallet adminKey)
+          --   $ lift (liftedM "asdf" $ ownPubKeyHashes <#> Array.head)
+          --   >>= registerPositionInRace rgp
+
+          -- logInfo' $ "registreing admin"
+
+          withContract (withKeyWallet userKey) do
+            _ <- buyNitroContract $ BigInt.fromInt 100
+
+            lift getWalletUtxos >>= logInfo' <<< show
+
+            firstPkh <- lift $ liftedM "Could not get first own public key hash"
+              $ ownPubKeyHashes
+              <#> Array.head
+            firstAddr <- lift $ liftedM "Could not get first address"
+              $ getWalletAddresses
+              <#> Array.head
+
+            testTokenName <- lift $ liftContractM "not token name" $ mkTokenName
+              <=< byteArrayFromAscii
+              $ "CommonCar:0"
+
+            _ <- registerPositionInRace rgp firstPkh
+
+            logInfo' $ "registering user"
+
+            _ <- confirmParticipatingAssets rgp firstPkh
+              ( wrap
+                  { car: testTokenName
+                  , driver: testTokenName
+                  , payoutAddress: firstAddr
+                  }
+              )
+
+            us <- queryRegistryUtxos rgp
+            logInfo' $ show us
+
+            pure unit
   where
-  retryCount :: forall (a :: Type). Racers a -> Int -> Racers a
-  retryCount c 0 = c
-  retryCount c n = do
-    x <- try c
-    case x of
-      Left e -> do
-        logInfo' ("threw " <> show e)
-        liftAff $ delay (wrap 1000.0)
-        logInfo' ("retrying " <> show n)
-        retryCount c (n - 1)
-      Right r -> pure r
-
   walletUtxoDistr :: InitialUTxOs
   walletUtxoDistr =
     [ BigInt.fromInt 5_000_000

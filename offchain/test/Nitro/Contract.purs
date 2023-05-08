@@ -2,8 +2,8 @@ module Test.CardanoRacers.Nitro.Contract (suite) where
 
 import Contract.Prelude
 
-import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.Common.Types (RacersParams(RacersParams), nitroToken)
+import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.Nitro.Contract
   ( adminMintsNitroContract
   , botMintsNitroContract

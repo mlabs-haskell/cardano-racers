@@ -22,6 +22,7 @@ import Test.CardanoRacers.AssetRequest (suite) as AssetRequest
 import Test.CardanoRacers.Deposit (suite) as Deposit
 import Test.CardanoRacers.Nft (suite) as Nft
 import Test.CardanoRacers.Nitro.Contract (suite) as Nitro
+import Test.CardanoRacers.RaceRegistry (suite) as RaceRegistry
 import Test.CardanoRacers.RacersState.Contract (suite) as RacersState
 import Test.Spec.Runner (defaultConfig)
 
@@ -36,10 +37,11 @@ main = interruptOnSignal SIGINT =<< launchAff do
 suite :: TestPlanM PlutipTest Unit
 suite = do
   Nft.suite
-  only Nitro.suite
+  Nitro.suite
   RacersState.suite
   AssetRequest.suite
   Deposit.suite
+  only RaceRegistry.suite
 
 config :: PlutipConfig
 config =

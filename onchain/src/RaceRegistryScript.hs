@@ -10,7 +10,7 @@ import Data.Function (on)
 import GHC.Generics
 import GHC.Show (Show)
 import Plutonomy qualified (optimizeUPLC)
-import Plutus.V1.Ledger.Value (AssetClass, assetClass, assetClassValue, assetClassValueOf, geq, mpsSymbol)
+import Plutus.V1.Ledger.Value (AssetClass(AssetClass), assetClass, assetClassValue, assetClassValueOf, geq, mpsSymbol)
 import Plutus.V2.Ledger.Api (
   Address,
   MintingPolicyHash,
@@ -25,7 +25,7 @@ import Plutus.V2.Ledger.Api (
   Value,
   fromCompiledCode,
   scriptContextTxInfo,
-  txInfoMint,
+  txInfoMint, CurrencySymbol
  )
 import Plutus.V2.Ledger.Contexts (findOwnInput, getContinuingOutputs, txSignedBy, valueSpent)
 import Plutus.V2.Ledger.Tx (TxOut (txOutValue))
@@ -62,7 +62,8 @@ data RegistryRedeemer = Enroll [PubKeyHash] | SelectAssets | Collect
 PlutusTx.unstableMakeIsData ''RegistryRedeemer
 
 data RegistryParams = RegistryParams
-  { slotAssetClass :: AssetClass
+  { slotAssetClass :: (CurrencySymbol, TokenName)
+  -- ^ can't reuse tokens across races, if that's desired an additional raceHash parameters should be included to ensure uniqueness
   , nitroPolicyHash :: MintingPolicyHash
   , gameAssetPolicyHash :: MintingPolicyHash
   , nitroFee :: Integer
@@ -85,13 +86,15 @@ mkRegistryScript
 
         inputContainsBotNft :: Bool
         inputContainsBotNft = valueSpent info `geq` assetClassValue botToken 1
+
     Enroll pkhs ->
       traceIfFalse "value at registry not conserved" valueAtRegistryIsConserved
-        && traceIfFalse "existing regitry entries must not be altered" doesNotAlterExistingEntries
+        && traceIfFalse "existing registry entries must not be altered" doesNotAlterExistingEntries
         && traceIfFalse "only one new signer entry must be added" addsPkhsToRegistry
-        && traceIfFalse "does not burn enought NITRO" burnsNitroPerSlotPurchased
+        && traceIfFalse "does not burn enough NITRO" burnsNitroPerSlotPurchased
+        && traceIfFalse "registry entries don't exceed slot counts per output" outputsWithRegistryDatumDontExceedSlotCounts
       where
-        (removedEntries, _, addedEntries) = diffedRegistry
+        (removedEntries, commonEntries, addedEntries) = diffedRegistry
 
         -- When removedEntries is empty, the input registry is a subset of the output registry and so the registry is unaltered
         doesNotAlterExistingEntries :: Bool
@@ -100,16 +103,21 @@ mkRegistryScript
         addsPkhsToRegistry :: Bool
         addsPkhsToRegistry = all aux addedEntries
           where
-            aux (PendingSelection pkh) = pkh `elem` pkhs
+            aux (PendingSelection pkh) = pkh `elem` pkhs -- this check is possible not needed, Enroll can be modified to take no constructor params
             aux _ = False -- Only pending selections can be added
+
         burnsNitroPerSlotPurchased :: Bool
-        burnsNitroPerSlotPurchased = assetClassValueOf (txInfoMint info) (assetClass (mpsSymbol nitroPolicyHash) nitroTokenName) <= totalNitro
+        burnsNitroPerSlotPurchased = totalNitroBurnt >= requiredNitroBurnt
           where
-            totalNitro = nitroFee * length addedEntries
+            requiredNitroBurnt = nitroFee * length addedEntries
+            totalNitroBurnt = assetClassValueOf (negate $ txInfoMint info) (assetClass (mpsSymbol nitroPolicyHash) nitroTokenName)
+
     SelectAssets ->
       traceIfFalse "value at registry not conserved" valueAtRegistryIsConserved
         && traceIfFalse "not signed by all removed pending pubkey hashes" signedByRemovedEntries
+        -- && traceIfFalse "does not have 1 to 1 mapping of entries removed and added" (length removedEntries == length addedEntries)
         && traceIfFalse "input does not contain all selected assets " inputContainsAssetSelections
+        && traceIfFalse "registry entries exceed slot counts per output" outputsWithRegistryDatumDontExceedSlotCounts
       where
         (removedEntries, _, addedEntries) = diffedRegistry
 
@@ -124,7 +132,8 @@ mkRegistryScript
             spentValue = valueSpent info
             gameAssetSymbol = mpsSymbol gameAssetPolicyHash
             aux (AssetSelection RaceParticipant {car, driver}) =
-              spentValue `geq` ((<>) `on` (flip assetClassValue 1 . assetClass gameAssetSymbol)) car driver
+              spentValue `geq` assetClassValue (assetClass gameAssetSymbol car) 1
+              -- ((<>) `on` (flip assetClassValue 1 . assetClass gameAssetSymbol)) car driver
             aux _ = False
     where
       info :: TxInfo
@@ -140,7 +149,7 @@ mkRegistryScript
       !ownInputs = filter ((== ownAddress) . txOutAddress) $ map txInInfoResolved $ txInfoInputs info
 
       singletonSlot :: Value
-      !singletonSlot = assetClassValue slotAssetClass 1
+      !singletonSlot = assetClassValue (AssetClass slotAssetClass) 1
 
       valueAtRegistryIsConserved :: Bool
       !valueAtRegistryIsConserved = foldMap txOutValue (getContinuingOutputs ctx) `geq` foldMap txOutValue ownInputs
@@ -156,6 +165,12 @@ mkRegistryScript
 
       diffedRegistry :: ([RegistryEntry], [RegistryEntry], [RegistryEntry])
       !diffedRegistry = diffDatas inputRegistryEntries outputRegistryEntries
+
+      -- previous checks operate on total input and output registry entries, this check ensures that an attacker can't move datums around in such a way to break the correspondence between locked slot tokens and attached entries per utxo
+      outputsWithRegistryDatumDontExceedSlotCounts :: Bool
+      !outputsWithRegistryDatumDontExceedSlotCounts = all aux outputRegistry
+        where
+          aux (txo, registry) = assetClassValueOf (txOutValue txo) (AssetClass slotAssetClass) >= length registry
 
       getTxoRegistry :: TxOut -> [RegistryEntry]
       getTxoRegistry txo = case getInlineDatumFromTxOut txo of
