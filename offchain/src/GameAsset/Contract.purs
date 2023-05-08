@@ -57,6 +57,15 @@ generateAsset ao nonce rarity = do
     CarType -> CarAttrs <$> generateNewCar rarity
     DriverType -> DriverAttrs <$> generateNewDriver rarity
 
+  nameByteArray <- liftMaybe (error "could not create name byte array")
+    $ byteArrayFromAscii
+    $ (unCip25String ao.name)
+    <> ":"
+    <> nonce
+
+  tkName <- liftMaybe (error "could not create token name") $ mkTokenName
+    $ nameByteArray
+
   ga <-
     liftMaybe (error "invalid game asset params, could not create game asset")
       $ mkGameAsset
@@ -66,16 +75,8 @@ generateAsset ao nonce rarity = do
           , imageUrl: ao.imageUrl
           , mediaType: Nothing
           , description: ao.description
+          , tokenName: tkName
           }
-
-  nameByteArray <- liftMaybe (error "could not create name byte array")
-    $ byteArrayFromAscii
-    $ (unCip25String ao.name)
-    <> ":"
-    <> nonce
-
-  tkName <- liftMaybe (error "could not create token name") $ mkTokenName
-    $ nameByteArray
 
   pure (ga /\ tkName)
 

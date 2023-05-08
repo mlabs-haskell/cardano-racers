@@ -5,10 +5,12 @@ module CardanoRacers.GameAsset.Types
   , GameAssetType(DriverType, CarType)
   , GameAssetAttributes(DriverAttrs, CarAttrs)
   , GameAsset
+  , GameAssetObject
   , GameAssetNftMetadataEntry(GameAssetNftMetadataEntry)
   , GameAssetNftMetadata(GameAssetNftMetadata)
   , AssetOption
   , mkGameAsset
+  , unGameAsset
   ) where
 
 import Contract.Prelude
@@ -334,25 +336,26 @@ type CommonAssetNftMetadata r =
   | r
   }
 
-newtype GameAsset = GameAsset
+type GameAssetObject =
   { assetType :: GameAssetType
   , attributes :: GameAssetAttributes
   , imageUrl :: String
   , mediaType :: Maybe String
   , name :: Cip25String
+  , tokenName :: TokenName
   , description :: String
   }
 
+newtype GameAsset = GameAsset GameAssetObject
+
+unGameAsset :: GameAsset -> GameAssetObject
+unGameAsset (GameAsset ga) = ga
+
 mkGameAsset
-  :: { assetType :: GameAssetType
-     , attributes :: GameAssetAttributes
-     , imageUrl :: String
-     , mediaType :: Maybe String
-     , name :: Cip25String
-     , description :: String
-     }
+  :: GameAssetObject
   -> Maybe GameAsset
-mkGameAsset { assetType, attributes, imageUrl, mediaType, name, description }
+mkGameAsset
+  { assetType, attributes, imageUrl, mediaType, name, description, tokenName }
   | assetType == DriverType && isJust (driverAttrsFromAttributes attributes) =
       Just $ GameAsset
         { assetType
@@ -361,6 +364,7 @@ mkGameAsset { assetType, attributes, imageUrl, mediaType, name, description }
         , mediaType
         , name
         , description
+        , tokenName
         }
   | assetType == CarType && isJust (carAttrsFromAttributes attributes) = Just $
       GameAsset
@@ -370,6 +374,7 @@ mkGameAsset { assetType, attributes, imageUrl, mediaType, name, description }
         , mediaType
         , name
         , description
+        , tokenName
         }
   | otherwise = Nothing
 
@@ -389,8 +394,16 @@ instance DecodeAeson GameAsset where
     mediaType <- obj .: "mediaType"
     name <- obj .: "name"
     description <- obj .: "description"
+    tokenName <- obj .: "tokenName"
     pure $ GameAsset
-      { assetType, attributes, imageUrl, mediaType, name, description }
+      { assetType
+      , attributes
+      , imageUrl
+      , mediaType
+      , name
+      , description
+      , tokenName
+      }
 
 type GameAssetMeta =
   { asset :: GameAsset
@@ -401,6 +414,8 @@ newtype GameAssetNftMetadataEntry = GameAssetNftMetadataEntry
   { asset :: GameAsset
   , assetClass :: CurrencySymbol /\ TokenName
   }
+
+derive instance Newtype GameAssetNftMetadataEntry _
 
 gameAssetMetadataEntryToKeyValue
   :: GameAssetNftMetadataEntry -> Array (String /\ TransactionMetadatum)
@@ -472,6 +487,7 @@ gameAssetMetadataEntryFromMetadata policy tk md = do
         , mediaType: mbMediaType
         , name
         , description
+        , tokenName: (unwrap tk)
         }
     , assetClass: cs /\ (unwrap tk)
     }

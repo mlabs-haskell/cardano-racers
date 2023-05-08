@@ -20,7 +20,6 @@ import CardanoRacers.RaceRegistry.Types
 import CardanoRacers.ScriptsFFI (raceRegistryScript)
 import Contract.Address (PubKeyHash(..), scriptHashAddress)
 import Contract.AssocMap (mapMaybe)
-import Contract.Log (logInfo')
 import Contract.Monad (liftContractM, liftedM, withContractEnv)
 import Contract.PlutusData
   ( Datum(..)

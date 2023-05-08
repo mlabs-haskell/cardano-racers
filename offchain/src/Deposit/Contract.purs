@@ -12,17 +12,18 @@ import CardanoRacers.AssetRequest.Types
   ( AirdropAddressDatum
   , AssetRequestRedeemer(BurnRequestToken)
   )
-import CardanoRacers.Deposit.Types
-  ( DepositScriptParams(DepositScriptParams)
-  )
+import CardanoRacers.Deposit.Types (DepositScriptParams(DepositScriptParams))
 import CardanoRacers.GameAsset.Contract
   ( mintAvailableAssetByRarity
   , mkGameAssetPolicy
   )
 import CardanoRacers.GameAsset.Types
   ( AssetOption
+  , GameAsset
   , GameAssetNftMetadata
+  , GameAssetObject
   , Rarity(Epic, Rare, Common)
+  , unGameAsset
   )
 import CardanoRacers.Nitro.Contract (paysNitroConstraints)
 import CardanoRacers.RacersState.Contract (queryRacersRefScriptOutput)
@@ -178,7 +179,7 @@ redeemGameAsset
   -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
   -> (TransactionInput /\ UtxoMap)
   -> (TransactionInput /\ PendingAssetRequest)
-  -> Racers UnbalancedTx
+  -> Racers (UnbalancedTx /\ Array GameAssetObject)
 redeemGameAsset
   availableAssets
   generateNonce
@@ -304,14 +305,17 @@ redeemGameAsset
   lift do
     unbalancedTx <- liftedE $ mkUnbalancedTx lookups constraints
     unbalancedTxWithMetadata <- setTxMetadata unbalancedTx allMetadata
-    pure unbalancedTxWithMetadata
+    pure
+      ( unbalancedTxWithMetadata /\ map (unGameAsset <<< _.asset <<< unwrap)
+          (unwrap allMetadata)
+      )
 
 consumeAndRedeemRequests
   :: Int
   -> Map Rarity AssetOption
   -> Effect String
   -> RacersState
-  -> Racers (Array TransactionHash)
+  -> Racers (Array GameAssetObject)
 consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
   do
     assetRequestMP <- mkAssetRequestPolicy
@@ -331,9 +335,9 @@ consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
       <$>
         queryRequestsWithAirdropAddress st
 
-    txIds <- traverse
+    mintedAssets <- traverse
       ( \reqs -> do
-          txs <- consumeAndRedeemChained
+          txsAndAssets <- consumeAndRedeemChained
             ( redeemGameAsset availableAssets generateNonce
                 mAssetRequestPolicyRef
                 mAssetPolicyRef
@@ -341,13 +345,13 @@ consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
             )
             reqs
           lift do
-            txIds <- traverse submit txs
+            txIds <- traverse submit $ fst <$> txsAndAssets
             traverse_ awaitTxConfirmed txIds
-            pure txIds
+            pure $ Array.concat $ snd <$> txsAndAssets
       )
       pendingRequestsChunked
 
-    pure $ Array.concat txIds
+    pure $ Array.concat mintedAssets
 
   where
   -- | Allows chaining of transactions together by processing 
@@ -374,10 +378,10 @@ consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
   consumeAndRedeemChained
     :: ( (TransactionInput /\ UtxoMap)
          -> (TransactionInput /\ PendingAssetRequest)
-         -> Racers UnbalancedTx
+         -> Racers (UnbalancedTx /\ Array GameAssetObject)
        )
     -> Array (TransactionInput /\ PendingAssetRequest)
-    -> Racers (Array BalancedSignedTransaction)
+    -> Racers (Array (BalancedSignedTransaction /\ Array GameAssetObject))
   consumeAndRedeemChained redeemTx pendingRequests = do
     rp <- asks _.params
 
@@ -390,7 +394,7 @@ consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
               if null acc then mempty
               else BalanceTxConstraints.mustUseAdditionalUtxos additionalUtxos
           -- Create the unbalanced transaction by redeeming the current request.
-          unbalancedTx <- do
+          (unbalancedTx /\ assets) <- do
             (authTxi /\ authTxo) <-
               liftContractM
                 "could not get auth UTxO containing token (RacersAdminNFT/BotNFT) in current wallet UTxOs"
@@ -400,7 +404,8 @@ consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
               { params: rp }
           withChainedTx unbalancedTx balanceTxConstraints $
             \balSignedTx nextAdditionalUtxos ->
-              loop nextAdditionalUtxos rest (acc `Array.snoc` balSignedTx)
+              loop nextAdditionalUtxos rest
+                (acc `Array.snoc` (balSignedTx /\ assets))
 
     -- Get the initial wallet UTXOs
     lift $ liftedM "could not get wallet utxos" getWalletUtxos >>=

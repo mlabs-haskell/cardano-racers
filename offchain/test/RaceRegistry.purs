@@ -2,38 +2,55 @@ module Test.CardanoRacers.RaceRegistry (suite) where
 
 import Contract.Prelude
 
-import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy, requestAssetByRarity)
-import CardanoRacers.Deposit.Contract (consumeAndRedeemRequests, mkDepositValidator)
+import CardanoRacers.AssetRequest.Contract
+  ( mkAssetRequestPolicy
+  , requestAssetByRarity
+  )
+import CardanoRacers.Deposit.Contract
+  ( consumeAndRedeemRequests
+  , mkDepositValidator
+  )
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types (AssetOption, GameAssetType(CarType, DriverType), Rarity(Common, Rare, Epic))
+import CardanoRacers.GameAsset.Types
+  ( AssetOption
+  , GameAssetType(..)
+  , Rarity(Common, Rare, Epic)
+  )
 import CardanoRacers.Helpers (counterNonce)
-import CardanoRacers.Nitro.Contract (adminMintsNitroContract, buyNitroContract, mkNitroPolicy)
-import CardanoRacers.RaceRegistry.Contract (confirmParticipatingAssets, findUtxoWithAvailableSlotToken, initRace, queryRegistryUtxos, registerPositionInRace)
+import CardanoRacers.Nitro.Contract
+  ( adminMintsNitroContract
+  , buyNitroContract
+  , mkNitroPolicy
+  )
+import CardanoRacers.RaceRegistry.Contract (confirmParticipatingAssets, initRace, queryRegistryUtxos, registerPositionInRace)
 import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Log (logInfo')
-import Contract.Metadata (mkCip25String, unCip25String)
+import Contract.Metadata (mkCip25String)
 import Contract.Monad (liftContractM, liftedM, throwContractError)
-import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.Scripts (MintingPolicy(PlutusMintingPolicy))
-import Contract.Test.Assert (checkTokenGainAtAddress', label, runChecks)
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip (InitialUTxOs, PlutipTest, withKeyWallet, withWallets)
-import Contract.Value (CurrencySymbol, mkTokenName)
+import Contract.Test.Plutip
+  ( InitialUTxOs
+  , PlutipTest
+  , withKeyWallet
+  , withWallets
+  )
 import Contract.Value as Value
 import Contract.Wallet (getWalletAddresses, getWalletUtxos)
-import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Ctl.Internal.Contract.Wallet (ownPubKeyHashes)
 import Data.Array (head) as Array
 import Data.BigInt (fromInt) as BigInt
-import Data.Map (Map, fromFoldable, lookup) as Map
-import Effect.Aff (delay)
+import Data.Map (Map, fromFoldable, toUnfoldable) as Map
 import Effect.Ref as Ref
 import Mote (group, test)
 import Partial.Unsafe (unsafePartial)
-import Racers (Racers, runRacers, withContract)
-import Test.CardanoRacers.Helpers (createRacersParamsHelper, initRacersStateWithAdminAndTreasury)
+import Racers (runRacers, withContract)
+import Test.CardanoRacers.Helpers
+  ( createRacersParamsHelper
+  , initRacersStateWithAdminAndTreasury
+  )
 
 suite :: TestPlanM PlutipTest Unit
 suite = group "Race Registry" do
@@ -86,8 +103,8 @@ suite = group "Race Registry" do
           let
             requests =
               [ Common
-              -- , Rare
-              -- , Epic
+              , Rare
+              , Epic
               ]
 
           counterRef <- liftEffect $ Ref.new 0
@@ -95,22 +112,21 @@ suite = group "Race Registry" do
           _ <- withContract (withKeyWallet userKey) do
             traverse_ requestAssetByRarity requests
 
-          logInfo' $ "submitted request"
+          -- logInfo' $ "submitted request"
 
-          _ <- withContract (withKeyWallet adminKey) $ consumeAndRedeemRequests
-            5
-            availableAssets
-            (counterNonce counterRef)
-            st
-
-          logInfo' $ "redeemed requests"
+          assets <- withContract (withKeyWallet adminKey) $
+            consumeAndRedeemRequests
+              5
+              availableAssets
+              (counterNonce counterRef)
+              st
 
           (rgp /\ _) <- withContract (withKeyWallet adminKey) $ initRace "abcde"
             (BigInt.fromInt 10)
             (BigInt.fromInt 2)
-          logInfo' $ show rgp
+          -- logInfo' $ show rgp
 
-          logInfo' "initialized race"
+          -- logInfo' "initialized race"
 
           -- _ <- withContract (withKeyWallet adminKey)
           --   $ lift (liftedM "asdf" $ ownPubKeyHashes <#> Array.head)
@@ -130,9 +146,14 @@ suite = group "Race Registry" do
               $ getWalletAddresses
               <#> Array.head
 
-            testTokenName <- lift $ liftContractM "not token name" $ mkTokenName
-              <=< byteArrayFromAscii
-              $ "CommonCar:0"
+            (carTk /\ driverTk) <- lift $ liftContractM
+              "Could not get driver and car"
+              do
+                d <- _.tokenName <$> find ((_ == DriverType) <<< _.assetType)
+                  assets
+                c <- _.tokenName <$> find ((_ == CarType) <<< _.assetType)
+                  assets
+                pure $ c /\ d
 
             _ <- registerPositionInRace rgp firstPkh
 
@@ -140,14 +161,14 @@ suite = group "Race Registry" do
 
             _ <- confirmParticipatingAssets rgp firstPkh
               ( wrap
-                  { car: testTokenName
-                  , driver: testTokenName
+                  { car: carTk
+                  , driver: driverTk
                   , payoutAddress: firstAddr
                   }
               )
 
             us <- queryRegistryUtxos rgp
-            logInfo' $ show us
+            logInfo' $ show $ (snd <<< snd) <$> (Map.toUnfoldable us :: Array _)
 
             pure unit
   where
