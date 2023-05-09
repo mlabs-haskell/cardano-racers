@@ -1,7 +1,12 @@
 {
   inputs = {
     plutip.url = github:mlabs-haskell/plutip/8364c43ac6bc9ea140412af9a23c691adf67a18b;
-    cardano-transaction-lib.url = github:Plutonomicon/cardano-transaction-lib/fcdd234cfe71345990f09eb1d6b4e2274faa2405;
+    cardano-transaction-lib.url = github:Plutonomicon/cardano-transaction-lib/d9ef85a964a49ea8c9d1898599aceb45a341db65;
+    nixpkgs.follows = "cardano-transaction-lib/nixpkgs";
+    plutonomy = {
+      url = github:well-typed/plutonomy/6c01302ba8cf3be4f71617e106cd5ef7ed10fc63;
+      flake = false;
+    };
     haskell-nix.follows = "plutip/haskell-nix";
   };
 
@@ -80,10 +85,17 @@
             compiler-nix-name = ghcVersion;
             index-state = "2022-05-25T00:00:00Z";
             cabalProject = ''
+              package plutonomy
+                flags: +plutus-f680ac697
+
               packages: ./.
             '';
             inherit (plutip) cabalProjectLocal;
             extraSources = plutip.extraSources ++ [
+              {
+                src = "${inputs.plutonomy}";
+                subdirs = [ "." ];
+              }
               {
                 src = "${plutip}";
                 subdirs = [ "." ];
@@ -112,6 +124,7 @@
                   plutus-script-utils
                   plutus-tx
                   plutus-tx-plugin
+                  plutonomy
                   serialise
                 ];
             };
@@ -163,6 +176,7 @@
             packageLock = ./offchain/package-lock.json;
             nodejs = pkgs.nodejs-16_x;
             shell = {
+              withRuntime = true;
               packageLockOnly = true;
               packages = with pkgs; [
                 bashInteractive
@@ -171,7 +185,6 @@
                 nodePackages.eslint
                 nodePackages.prettier
                 ogmios
-                ogmios-datum-cache
                 plutip-server
                 postgresql
               ];
@@ -220,6 +233,8 @@
       apps = perSystem (system: {
         docs = self.offchain.project.${system}.launchSearchablePursDocs { };
         ctl-docs = cardano-transaction-lib.apps.${system}.docs;
+
+        runtime = (nixpkgsFor system).launchCtlRuntime {};
         script-exporter = {
           # nix run .#script-exporter -- offchain/src
           type = "app";
