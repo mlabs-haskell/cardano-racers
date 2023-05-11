@@ -133,6 +133,7 @@ width: 300px;
       <button id="refresh-wallets">Refresh Wallets</button>
       <button id="refresh-state">Refresh State</button>
       <button id="refresh-requests">Refresh Requests</button>
+      <button id="refresh-registry">Refresh Race Registry</button>
       <button id="reset">Reset tokens</button>
       <input id="params-input" placeholder="RacersParams JSON"></input>
     </div>
@@ -152,6 +153,9 @@ width: 300px;
       <button id="init">Initialise Racers State</button>
       <button id="modify-state">Change Racers State</button>
       <button id="redeem-requests">Redeem Requests</button>
+      <button id="create-race">Create New Race</button>
+      <button id="close-race-manual">Manually Close Race</button>
+      <button id="close-race">Close Race</button>
       <!-- <button id="mint-driver" class="btn-disabled">Mint Driver</button> -->
     </div>
 
@@ -164,6 +168,8 @@ width: 300px;
       <button id="mint-nitro">Mint Nitro</button>
       <button id="buy">Buy Nitro</button>
       <button id="request-asset">Request Asset</button>
+      <button id="register">Register in a Race</button>
+      <button id="race-with-assets">Select Race Assets</button>
       <!-- <button id="mint-driver" class="btn-disabled">Mint Driver</button> -->
     </div>
 
@@ -186,6 +192,8 @@ width: 300px;
         </div>
         <label for="name">Name:</label><br>
         <input type="text" id="name" name="name"><br><br>
+        <label for="nitroAmount">Nitro:</label><br>
+        <input type="text" id="nitroAmount" name="nitroAmount"><br><br>
         <label for="description">Description:</label><br>
         <textarea id="description" name="description"></textarea><br><br>
         <label for="image-url">Image URL:</label><br>

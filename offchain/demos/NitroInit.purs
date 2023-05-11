@@ -7,7 +7,7 @@ import CardanoRacers.AssetRequest.Contract
   ( mkAssetRequestPolicy
   , requestAssetByRarity
   )
-import CardanoRacers.Common.Types (RacersParams)
+import CardanoRacers.Common.Types (RacersParams(..))
 import CardanoRacers.Deposit.Contract
   ( consumeAndRedeemRequests
   , mkDepositValidator
@@ -16,9 +16,10 @@ import CardanoRacers.Deposit.Contract
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types
   ( AssetOption
+  , GameAssetAttributes(..)
+  , GameAssetObject
   , GameAssetType(..)
   , Rarity(Common, Rare, Epic)
-  , rarityFromString
   )
 import CardanoRacers.Helpers (counterNonce, getTxoWithRefScrpt)
 import CardanoRacers.Nitro.Contract
@@ -28,6 +29,20 @@ import CardanoRacers.Nitro.Contract
   , mkNitroPolicy
   )
 import CardanoRacers.Nitro.Helpers (createRacersParams)
+import CardanoRacers.RacePosition.Contract (mkRacePositionPolicy)
+import CardanoRacers.RacePosition.Types (slotTokenName)
+import CardanoRacers.RaceRegistry.Contract
+  ( collectRegistryScriptLeftovers
+  , confirmParticipatingAssets
+  , initRace
+  , queryRegistryUtxos
+  , registerPositionInRace
+  )
+import CardanoRacers.RaceRegistry.Types
+  ( RaceParticipant(..)
+  , RegistryEntry(..)
+  , RegistryParams(..)
+  )
 import CardanoRacers.RacersState.Contract
   ( createRacersRefScriptOutput
   , initRacersStateContract
@@ -64,11 +79,17 @@ import Contract.Monad
 import Contract.PlutusData (unitDatum)
 import Contract.Prim.ByteArray
   ( ByteArray(..)
+  , byteArrayFromAscii
   , byteArrayToIntArray
   , hexToByteArray
   )
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (MintingPolicy(..), ValidatorHash, validatorHash)
+import Contract.Scripts
+  ( MintingPolicy(..)
+  , ValidatorHash
+  , mintingPolicyHash
+  , validatorHash
+  )
 import Contract.Transaction
   ( TransactionHash
   , awaitTxConfirmed
@@ -85,6 +106,8 @@ import Contract.Value
   , flattenValue
   , getTokenName
   , lovelaceValueOf
+  , mkTokenName
+  , mpsSymbol
   , scriptCurrencySymbol
   )
 import Contract.Value as Value
@@ -98,8 +121,10 @@ import Contract.Wallet
 import Contract.Wallet.Key (publicKeyFromPrivateKey)
 import Control.Alt ((<|>))
 import Control.Monad.Error.Class (catchError, liftMaybe, throwError)
+import Control.Monad.Trans.Class (lift)
 import Control.Parallel (parTraverse)
 import Control.Promise (Promise, fromAff, toAffE)
+import Ctl.Internal.Contract.Wallet (ownPubKeyHashes)
 import Ctl.Internal.FfiHelpers (MaybeFfiHelper, maybeFfiHelper)
 import Ctl.Internal.Plutus.Conversion (toPlutusAddress)
 import Ctl.Internal.Serialization.Address
@@ -109,7 +134,7 @@ import Ctl.Internal.Serialization.Address
   )
 import Ctl.Internal.Serialization.Types (PrivateKey)
 import Ctl.Internal.Types.RawBytes (RawBytes(RawBytes))
-import Data.Array (head) as Array
+import Data.Array (concat, filter, head, mapMaybe) as Array
 import Data.Bifunctor (lmap)
 import Data.BigInt (BigInt)
 import Data.BigInt as BigInt
@@ -117,19 +142,20 @@ import Data.Char (fromCharCode)
 import Data.FoldableWithIndex (foldWithIndexM, foldrWithIndex)
 import Data.Int (round, toNumber)
 import Data.Map (Map)
-import Data.Map (fromFoldable, insert, toUnfoldable) as Map
-import Data.String (stripPrefix)
+import Data.Map (empty, fromFoldable, insert, lookup, toUnfoldable) as Map
+import Data.String (Pattern(..), split, stripPrefix)
 import Data.String.CodeUnits (fromCharArray)
 import Data.String.Pattern (Pattern(Pattern))
 import Effect.Aff (error)
 import Effect.Aff.Compat (EffectFn1, EffectFn2, mkEffectFn2)
 import Effect.Ref as Ref
 import Foreign.Object (Object)
-import Foreign.Object (empty, insert) as Object
+import Foreign.Object (empty, insert, lookup) as Object
 import Partial.Unsafe (unsafePartial)
+import Racers (Racers, runRacers, withContract)
 
 foreign import setupListeners :: Listeners -> Effect Unit
-foreign import getParams :: Effect String
+foreign import _getParams :: Effect String
 foreign import promptFor :: String -> Effect String
 foreign import _getSelectedActor :: MaybeFfiHelper -> Effect (Maybe String)
 
@@ -146,13 +172,20 @@ type Listeners =
   { refreshWallet :: Effect (Promise WalletStates)
   , refreshState :: Effect (Promise String)
   , refreshRequests :: Effect (Promise String)
+  , refreshRace :: Effect (Promise String)
+
+  -- general
   , initRacersState :: Effect (Promise String)
-  , mintNitro :: Effect (Promise TransactionHash)
   , modifyRacersState :: Effect (Promise TransactionHash)
-  , userBuyNitro :: Effect (Promise TransactionHash)
   , resetTokens :: Effect (Promise (Array TransactionHash))
+
+  --nitro
+  , mintNitro :: Effect (Promise TransactionHash)
+  , userBuyNitro :: Effect (Promise TransactionHash)
+
+  -- assets
   , makeAssetRequest :: Effect (Promise TransactionHash)
-  , redeemRequests :: Effect (Promise (Array TransactionHash))
+  , redeemRequests :: Effect (Promise (Array GameAssetObject))
   , getAvailableAssets ::
       Effect
         ( Promise
@@ -170,10 +203,16 @@ type Listeners =
         , assetType :: String
         , description :: String
         , imageUrl :: String
-        , nitroAmount :: BigInt
+        , nitroAmount :: String
         }
         Unit
-  --   , mintDriver :: Effect (Promise TransactionHash)
+
+  --  races
+  , createRace :: Effect (Promise TransactionHash)
+  , registerInRace :: Effect (Promise TransactionHash)
+  , raceWithAssets :: Effect (Promise String)
+  , closeRace :: Effect (Promise TransactionHash)
+  , closeRaceManual :: Effect (Promise TransactionHash)
   }
 
 keys :: Array (Tuple String String)
@@ -196,6 +235,7 @@ main :: Effect Unit
 main = do
   cRef <- Ref.new 0
   assetRef <- Ref.new initialAvailableAssets
+  mintedAssetsRef <- Ref.new Map.empty
   setupListeners
     { refreshWallet: refreshWallets
     , initRacersState
@@ -206,9 +246,15 @@ main = do
     , userBuyNitro
     , resetTokens
     , makeAssetRequest
-    , redeemRequests: redeemRequests cRef assetRef
+    , redeemRequests: redeemRequests cRef assetRef mintedAssetsRef
     , getAvailableAssets: getAvailableAssets assetRef
     , setAssetOption: mkEffectFn2 $ setAssetOption assetRef
+    , createRace
+    , registerInRace
+    , refreshRace
+    , raceWithAssets: raceWithAssets mintedAssetsRef
+    , closeRaceManual
+    , closeRace: closeRace mintedAssetsRef
     }
   pure unit
 
@@ -242,6 +288,11 @@ getAvailableAssets r = fromAff do
     Object.empty
     assets
 
+getParams :: Effect RacersParams
+getParams = do
+  paramsStr <- _getParams
+  either (throwError <<< error <<< show) pure $ decodeJsonString paramsStr
+
 setAssetOption
   :: Ref.Ref (Map Rarity AssetOption)
   -> String
@@ -249,7 +300,7 @@ setAssetOption
      , assetType :: String
      , description :: String
      , imageUrl :: String
-     , nitroAmount :: BigInt
+     , nitroAmount :: String
      }
   -> Effect Unit
 setAssetOption r rarityStr option = do
@@ -261,83 +312,87 @@ setAssetOption r rarityStr option = do
     _ -> Nothing
   cip25Name <- liftMaybe (error "could not create cip25 string") $ mkCip25String
     option.name
+  nitroAmount <- liftMaybe (error "could not convert nitro amount to bigint") $
+    BigInt.fromString option.nitroAmount
   let
     assetOption =
       { name: cip25Name
       , assetType
       , description: option.description
       , imageUrl: option.imageUrl
-      , nitroAmount: option.nitroAmount
+      , nitroAmount: nitroAmount
       }
   Ref.write (Map.insert rarity assetOption availableAssets) r
 
 refreshWallets :: Effect (Promise WalletStates)
 refreshWallets = fromAff do
+  -- rp <- liftEffect $ getParams
   wallets <- parTraverse refreshWallet keys
-  pjson <- liftEffect $ getParams
-  depositBalance <- toAffE $ withActor "Admin"
+  depositBalance <- toAffE $ withActor "Admin" $
     ( flip catchError (\e -> logError' ("Deposit script: " <> show e) $> []) do
-        rp <- liftContractE $ decodeJsonString pjson
-        (rs /\ _) <- queryRacersState rp
-        let depAddr = scriptHashAddress (unwrap rs).depositScript Nothing
-        depAddrString <- addressToBech32 depAddr
-        utxos <- utxosAt depAddr
-        let
-          totalValue = foldMap (_.amount <<< unwrap <<< _.output <<< unwrap)
-            utxos
-        pure $
-          [ { name: ""
-            , address: depAddrString
-            , balance: prettifyBalance totalValue
-            }
-          ]
+        rp <- liftEffect getParams
+        runRacers rp do
+          (rs /\ _) <- queryRacersState
+          let depAddr = scriptHashAddress (unwrap rs).depositScript Nothing
+          depAddrString <- lift $ addressToBech32 depAddr
+          utxos <- lift $ utxosAt depAddr
+          let
+            totalValue = foldMap (_.amount <<< unwrap <<< _.output <<< unwrap)
+              utxos
+          pure $
+            [ { name: ""
+              , address: depAddrString
+              , balance: prettifyBalance totalValue
+              }
+            ]
     )
   pure
     { wallets
     , depositScript: depositBalance
     }
 
-createRefScripts :: RacersParams -> Contract Unit
-createRefScripts rp = do
-  assetRequestScriptRef <- mkAssetRequestPolicy rp >>= case _ of
+createRefScripts :: Racers Unit
+createRefScripts = do
+  assetRequestScriptRef <- mkAssetRequestPolicy >>= case _ of
     PlutusMintingPolicy s -> pure s
-    _ -> throwContractError "Not plutus script"
-  gameAssetScriptRef <- mkGameAssetPolicy rp >>= case _ of
+    _ -> lift $ throwContractError "Not plutus script"
+  gameAssetScriptRef <- mkGameAssetPolicy >>= case _ of
     PlutusMintingPolicy s -> pure s
-    _ -> throwContractError "Not plutus script"
-  nitroPolicyScriptRef <- mkNitroPolicy rp >>= case _ of
+    _ -> lift $ throwContractError "Not plutus script"
+  nitroPolicyScriptRef <- mkNitroPolicy >>= case _ of
     PlutusMintingPolicy s -> pure s
-    _ -> throwContractError "Not plutus script"
+    _ -> lift $ throwContractError "Not plutus script"
 
-  depositAssetScriptRef <- unwrap <$> mkDepositValidator rp
+  depositAssetScriptRef <- unwrap <$> mkDepositValidator
 
-  _ <- createRacersRefScriptOutput rp assetRequestScriptRef
-  _ <- createRacersRefScriptOutput rp gameAssetScriptRef
-  _ <- createRacersRefScriptOutput rp nitroPolicyScriptRef
-  _ <- createRacersRefScriptOutput rp depositAssetScriptRef
+  _ <- createRacersRefScriptOutput assetRequestScriptRef
+  _ <- createRacersRefScriptOutput gameAssetScriptRef
+  _ <- createRacersRefScriptOutput nitroPolicyScriptRef
+  _ <- createRacersRefScriptOutput depositAssetScriptRef
   pure unit
 
 initRacersState :: Effect (Promise String)
 initRacersState = do
   nitroPriceStr <- promptFor "Enter nitro price in lovelace"
   withActor "Admin" do
+    nitroPrice <- liftContractM "couldn't convert to bigint" $ BigInt.fromString
+      nitroPriceStr
     utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
     (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
       Map.toUnfoldable utxos
-    rp <- createRacersParams txi "NITRO"
+    rp <- createRacersParams txi
     ownAddr <- liftedM "Could not get wallet address" getWalletAddress
     treasuryAddr <- liftContractM "could not get address" $ actorAddress
       "Treasury"
     botAddr <- liftContractM "could not get address" $ actorAddress "Bot"
-    nitroPrice <- liftContractM "couldn't convert to bigint" $ BigInt.fromString
-      nitroPriceStr
     depositScriptHash <- depositScriptHashHelper rp
     let
-      assetPrices = foldl (flip $ uncurry AssocMap.insert) AssocMap.empty
-        [ (Common /\ BigInt.fromInt 5_000_000)
-        , (Rare /\ BigInt.fromInt 10_000_000)
-        , (Epic /\ BigInt.fromInt 20_000_000)
-        ]
+      assetPrices = wrap $
+        { common: BigInt.fromInt 5_000_000
+        , rare: BigInt.fromInt 10_000_000
+        , epic: BigInt.fromInt 20_000_000
+
+        }
       nitroState = RacersState
         { nitroPrice: nitroPrice
         , treasuryAddress: treasuryAddr
@@ -345,8 +400,9 @@ initRacersState = do
         , depositScript: depositScriptHash
         , assetPrices
         }
-    void $ initRacersStateContract rp nitroState
-    createRefScripts rp
+    runRacers rp do
+      void $ initRacersStateContract nitroState
+      createRefScripts
     sendToBot rp botAddr
     pure $ show $ encodeAeson rp
   where
@@ -366,26 +422,25 @@ initRacersState = do
 
 mintNitro :: Effect (Promise TransactionHash)
 mintNitro = do
-  pjson <- getParams
+  rp <- getParams
   amo <- promptFor "Enter NITRO amount"
   actor <- getSelectedActor
-  nsp <- liftEither $ lmap (error <<< show) $ decodeJsonString pjson
   a <- liftMaybe (error "couldn't convert amount") $ BigInt.fromString amo
   case actor of
-    "Admin" -> withActor "Admin" $ adminMintsNitroContract nsp a
-    "Bot" -> withActor "Bot" $ botMintsNitroContract nsp a
+    "Admin" -> withActor "Admin" $ runRacers rp $ adminMintsNitroContract a
+    "Bot" -> withActor "Bot" $ runRacers rp $ botMintsNitroContract a
     _ -> throwError $ error $ "Actor is not appropriate admin or bot" <> actor
 
 makeAssetRequest :: Effect (Promise TransactionHash)
 makeAssetRequest = do
-  pjson <- getParams
+  rp <- getParams
   rarityStr <- promptFor "Enter requested rarity class"
   let
-    contract = do
-      rp <- liftContractE $ decodeJsonString pjson
-      rarity <- liftContractM "Unrecognized rarity class" $ rarityFromString
-        rarityStr
-      requestAssetByRarity rp rarity
+    contract = runRacers rp do
+      rarity <- lift $ liftContractM "Unrecognized rarity class" $
+        rarityFromString
+          rarityStr
+      requestAssetByRarity rarity
   actor <- getSelectedActor
   if actor == "User" then
     withActor "User" contract
@@ -394,28 +449,273 @@ makeAssetRequest = do
 redeemRequests
   :: Ref.Ref Int
   -> Ref.Ref (Map Rarity AssetOption)
-  -> Effect (Promise (Array TransactionHash))
-redeemRequests cRef assetRef = do
-  pjson <- getParams
+  -> Ref.Ref (Map TokenName GameAssetObject)
+  -> Effect (Promise (Array GameAssetObject))
+redeemRequests cRef assetRef mintedAssetRef = do
+  rp <- getParams
   availableAssets <- Ref.read assetRef
-  withActor "Bot" do
-    rp <- liftContractE $ decodeJsonString pjson
-    (rs /\ _) <- queryRacersState rp
+  withActor "Bot" $ runRacers rp do
+    (rs /\ _) <- queryRacersState
     logInfo' "Querying racers state"
     -- depRefScriptTxi <- queryOrCreateDepositReferenceScript rp
     -- depRefScriptTxo <- getTxoWithRefScrpt depRefScriptTxi
     logInfo' "Queried deposit reference script"
-    consumeAndRedeemRequests rp availableAssets (counterNonce cRef) rs -- Nothing
+    assetObjs <- consumeAndRedeemRequests 3 availableAssets (counterNonce cRef)
+      rs -- Nothing
+    _ <- liftEffect $ traverse
+      (\ao -> Ref.modify (Map.insert ao.tokenName ao) mintedAssetRef)
+      assetObjs
+    pure $ assetObjs
+
+createRace :: Effect (Promise TransactionHash)
+createRace = do
+  rp <- getParams
+  withActor "Bot" $ runRacers rp do
+    (raceHash /\ nitroFee) <- promptRaceParams
+    raceSlotsStr <- liftEffect $ promptFor "Enter number of participants:"
+    raceSlots <- lift $ liftContractM "couldn't convert to bigint" $
+      BigInt.fromString raceSlotsStr
+    snd <$> initRace raceHash nitroFee raceSlots
+
+registerInRace :: Effect (Promise TransactionHash)
+registerInRace = do
+  rp <- getParams
+  let
+    contract = runRacers rp do
+      (raceHash /\ nitroFee) <- promptRaceParams
+      rgp <- createRaceRegistryParams raceHash nitroFee
+      firstPkh <- lift $ liftedM "Could not get first own public key hash"
+        $ ownPubKeyHashes
+        <#> Array.head
+      fst <$> registerPositionInRace rgp firstPkh
+
+  actor <- getSelectedActor
+  if actor == "User" then
+    withActor "User" contract
+  else fromAff $ runContract testnetEternlConfig contract
+
+raceWithAssets
+  :: Ref.Ref (Map TokenName GameAssetObject) -> Effect (Promise String)
+raceWithAssets mintedAssetsRef = do
+  rp <- getParams
+  let
+    contract = runRacers rp do
+      (raceHash /\ nitroFee) <- promptRaceParams
+      driverStr <- liftEffect $ promptFor "Enter driver tokenname: "
+      carStr <- liftEffect $ promptFor "Enter car tokenname: "
+      driverTk <- lift $ liftContractM "invalid driver name" $ mkTokenName
+        <=< byteArrayFromAscii
+        $ driverStr
+      carTk <- lift $ liftContractM "invalid car name" $ mkTokenName
+        <=< byteArrayFromAscii
+        $ carStr
+      rgp <- createRaceRegistryParams raceHash nitroFee
+
+      firstPkh <- lift $ liftedM "Could not get first own public key hash"
+        $ ownPubKeyHashes
+        <#> Array.head
+      firstAddr <- lift $ liftedM "Could not get first address"
+        $ getWalletAddresses
+        <#> Array.head
+
+      _ <- confirmParticipatingAssets rgp firstPkh $ wrap
+        { driver: driverTk, car: carTk, payoutAddress: firstAddr }
+
+      ma <- liftEffect $ Ref.read mintedAssetsRef
+      res <- lift $ liftContractM "could not get lap time" $ do
+        da <- _.attributes <$> Map.lookup driverTk ma
+        ca <- _.attributes <$> Map.lookup carTk ma
+        daSum <- case da of
+          DriverAttrs das -> pure
+            $
+              ( \daa -> daa.aggression + daa.experience + daa.luck +
+                  daa.reflexes
+              )
+            $ unwrap das
+          _ -> Nothing
+        caSum <- case ca of
+          CarAttrs cas -> pure
+            $
+              ( \caa -> caa.acceleration + caa.cornering + caa.aerodynamics +
+                  caa.topSpeed
+              )
+            $ unwrap cas
+          _ -> Nothing
+        pure $ caSum + daSum
+
+      pure $ "Lap time: " <> show res
+
+  actor <- getSelectedActor
+  if actor == "User" then
+    withActor "User" contract
+  else fromAff $ runContract testnetEternlConfig contract
+
+sumAttrs :: GameAssetObject -> GameAssetObject -> Maybe BigInt
+sumAttrs d c = (+) <$> daSum <*> caSum
+  where
+  daSum = case d.attributes of
+    DriverAttrs das -> pure
+      $
+        ( \daa -> daa.aggression + daa.experience + daa.luck +
+            daa.reflexes
+        )
+      $ unwrap das
+    _ -> Nothing
+  caSum = case c.attributes of
+    CarAttrs cas -> pure
+      $
+        ( \caa -> caa.acceleration + caa.cornering + caa.aerodynamics +
+            caa.topSpeed
+        )
+      $ unwrap cas
+    _ -> Nothing
+
+closeRace
+  :: Ref.Ref (Map TokenName GameAssetObject) -> Effect (Promise TransactionHash)
+closeRace mar = do
+  rp <- getParams
+  ma <- Ref.read mar
+  withActor "Bot" $ runRacers rp do
+    (raceHash /\ nitroFee) <- promptRaceParams
+    rgp <- createRaceRegistryParams raceHash nitroFee
+    rewardAmount <- withContract (liftedM "Could not convert reward to BigInt")
+      $ BigInt.fromString
+      <$> liftEffect (promptFor "Enter race rewards")
+    entries <- Array.concat <<< map (snd <<< snd) <<< Map.toUnfoldable <$>
+      queryRegistryUtxos rgp
+
+    winner <- lift $ liftContractM "could not get winner"
+      $ maximumBy
+          ( comparing
+              ( fromMaybe (BigInt.fromInt 0) <<<
+                  (uncurry sumAttrs <=< getAssetObjects ma)
+              )
+          )
+      $ Array.mapMaybe castParticipant entries
+
+    _ <- collectRegistryScriptLeftovers rgp
+
+    lift (sendPayout rewardAmount (unwrap winner).payoutAddress)
+  where
+  castParticipant (AssetSelection p) = Just p
+  castParticipant _ = Nothing
+
+  getAssetObjects
+    :: Map TokenName GameAssetObject
+    -> RaceParticipant
+    -> Maybe (GameAssetObject /\ GameAssetObject)
+  getAssetObjects ma p = do
+    d <- Map.lookup (unwrap p).driver ma
+    c <- Map.lookup (unwrap p).car ma
+    pure $ d /\ c
+
+sendPayout :: BigInt -> Address -> Contract TransactionHash
+sendPayout rewardAmount addr = do
+  let
+    constraints :: Constraints.TxConstraints Void Void
+    constraints = paysToAddrConstraint addr
+      (lovelaceValueOf rewardAmount)
+
+    lookups :: Lookups.ScriptLookups Void
+    lookups = mempty
+
+  txId <- submitTxFromConstraints lookups constraints
+  awaitTxConfirmed txId
+  pure txId
+
+closeRaceManual :: Effect (Promise TransactionHash)
+closeRaceManual = do
+  rp <- getParams
+  withActor "Bot" $ runRacers rp do
+    rewardAmount <- withContract (liftedM "Could not convert reward to BigInt")
+      $ BigInt.fromString
+      <$> liftEffect (promptFor "Enter race rewards")
+    (raceHash /\ nitroFee) <- promptRaceParams
+    rgp <- createRaceRegistryParams raceHash nitroFee
+
+    winningPairStr <- liftEffect $ promptFor
+      "Select winning driver car pair (e.g. 'CommonDriver:0,RareCar:1')"
+    (d /\ c) <- lift $ (split (Pattern ",") winningPairStr) #
+      ( \a -> case a of
+          [ d, c ] -> (/\)
+            <$>
+              ( liftContractM "could not create driver tk name" $ mkTokenName
+                  <=< byteArrayFromAscii
+                  $ d
+              )
+            <*>
+              ( liftContractM "could not create driver tk name" $ mkTokenName
+                  <=< byteArrayFromAscii
+                  $ c
+              )
+          _ -> throwContractError "Invalid input"
+      )
+    entries <- Array.concat <<< map (snd <<< snd) <<< Map.toUnfoldable <$>
+      queryRegistryUtxos rgp
+
+    winner <- lift
+      $ liftContractM "could not find given driver and car in participants"
+      $ castParticipant
+      =<< find (isWinner d c) entries
+
+    _ <- collectRegistryScriptLeftovers rgp
+
+    lift (sendPayout rewardAmount (unwrap winner).payoutAddress)
+  where
+  castParticipant (AssetSelection p) = Just p
+  castParticipant _ = Nothing
+  isWinner d c = case _ of
+    AssetSelection p -> (unwrap p).driver == d && (unwrap p).car == c
+    _ -> false
+
+refreshRace :: Effect (Promise String)
+refreshRace = do
+  rp <- getParams
+  withActor "Admin" $ runRacers rp do
+    (raceHash /\ nitroFee) <- promptRaceParams
+    rgp <- createRaceRegistryParams raceHash nitroFee
+    entries <- Array.concat <<< map (snd <<< snd) <<< Map.toUnfoldable <$>
+      queryRegistryUtxos rgp
+    let
+      prettifyEntry (PendingSelection pkh) = "Enrolled: " <> show pkh
+      prettifyEntry (AssetSelection ass) = "Raced with: "
+        <> tokenNameToString (unwrap ass).driver
+        <> " driving "
+        <> tokenNameToString (unwrap ass).car
+    pure $ show $ encodeAeson $ map prettifyEntry entries
+
+promptRaceParams :: Racers (String /\ BigInt)
+promptRaceParams = do
+  raceHash <- liftEffect $ promptFor "Enter Race Name:"
+  nitroFeeStr <- liftEffect $ promptFor "Enter NITRO registration fee:"
+  nitroFee <- lift $ liftContractM "couldn't convert to bigint" $
+    BigInt.fromString nitroFeeStr
+  pure (raceHash /\ nitroFee)
+
+createRaceRegistryParams :: String -> BigInt -> Racers RegistryParams
+createRaceRegistryParams raceHash nitroFee = do
+  slotSymbol <- withContract (liftedM "could not get symbol") $ mpsSymbol
+    <<< mintingPolicyHash
+    <$> mkRacePositionPolicy raceHash
+  nitroPolicyHash <- mintingPolicyHash <$> mkNitroPolicy
+  gameAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy
+
+  pure $ wrap
+    { slotAssetClass: (slotSymbol /\ slotTokenName)
+    , nitroPolicyHash: nitroPolicyHash
+    , gameAssetPolicyHash: gameAssetPolicyHash
+    , nitroFee
+    }
 
 userBuyNitro :: Effect (Promise TransactionHash)
 userBuyNitro = do
-  pjson <- getParams
+  rp <- getParams
   amo <- promptFor "Enter NITRO amount"
   let
-    contract = do
-      nsp <- liftContractE $ decodeJsonString pjson
-      a <- liftContractM "couldn't convert amount" $ BigInt.fromString amo
-      buyNitroContract nsp a
+    contract = runRacers rp do
+      a <- lift $ liftContractM "couldn't convert amount" $ BigInt.fromString
+        amo
+      buyNitroContract a
   actor <- getSelectedActor
   if actor == "User" then
     withActor "User" contract
@@ -484,23 +784,21 @@ resetTokens = fromAff $ parTraverse resetWallet $ map snd keys
 
 refreshState :: Effect (Promise String)
 refreshState = do
-  pjson <- getParams
-  withActor "Admin" do
-    nsp <- liftContractE $ decodeJsonString pjson
-    (ns /\ _) <- queryRacersState nsp
-    prettyState <- stateToSimpleJson ns
+  rp <- getParams
+  withActor "Admin" $ runRacers rp do
+    (ns /\ _) <- queryRacersState
+    prettyState <- lift $ stateToSimpleJson ns
     pure prettyState
 
 refreshRequests :: Effect (Promise String)
 refreshRequests = do
-  pjson <- getParams
-  withActor "Admin" do
-    rp <- liftContractE $ decodeJsonString pjson
-    (rs /\ _) <- queryRacersState rp
-    pendingReqs <- queryRequestsWithAirdropAddress rp rs
+  rp <- getParams
+  withActor "Admin" $ runRacers rp do
+    (rs /\ _) <- queryRacersState
+    pendingReqs <- queryRequestsWithAirdropAddress rs
     processedReqs <- for (Map.toUnfoldable pendingReqs :: Array _)
       \(_ /\ pendingReq) -> do
-        reqAddr <- addressToBech32 $ pendingReq.airdropAddress
+        reqAddr <- lift $ addressToBech32 $ pendingReq.airdropAddress
         pure
           { airdropAddress: reqAddr
           , requestedAssets: map (\(r /\ i) -> show r /\ i)
@@ -513,45 +811,42 @@ stateToSimpleJson rs = do
   let uRs = unwrap rs
   treasuryAddr <- addressToBech32 uRs.treasuryAddress
   operatingAddr <- addressToBech32 uRs.operatingAddress
-  let
-    assetPrices =
-      foldrWithIndex
-        (\rarity price obj -> Object.insert (show rarity) price obj)
-        Object.empty
-        uRs.assetPrices
-  -- foldMapWithIndex (\rarity price -> Object.singleton (show rarity) price) uRs.assetPrices
   pure $ show $ encodeAeson
     { nitroPrice: uRs.nitroPrice
     , treasuryAddress: treasuryAddr
     , operatingAddress: operatingAddr
-    , assetPrices: assetPrices
+    , assetPrices: show uRs.assetPrices
     , depositScript: uRs.depositScript
     }
 
 modifyRacersState :: Effect (Promise TransactionHash)
 modifyRacersState = do
-  pjson <- getParams
+  rp <- getParams
   newStateStr <- promptFor "Enter Racers State JSON:"
-  withActor "Admin" do
-    nsp <- liftContractE $ decodeJsonString pjson
-    newState <- stateFromSimpleJson newStateStr
-    (ns /\ _) <- queryRacersState nsp
-    txId <- modifyRacersStateContract nsp newState
+  withActor "Admin" $ runRacers rp do
+    newState <- lift $ stateFromSimpleJson newStateStr
+    (ns /\ _) <- queryRacersState
+    txId <- modifyRacersStateContract newState
     logInfo' $ "Modified nitro state: " <> show (encodeAeson ns)
     pure txId
 
 stateFromSimpleJson :: String -> Contract RacersState
 stateFromSimpleJson json = do
   obj <- liftContractE decodedJson
-  assetPrices <-
-    foldWithIndexM
-      ( \rarityStr priceMap price -> do
-          rarity <- liftContractM "could not parse rarity" $ rarityFromString
-            rarityStr
-          pure $ AssocMap.insert rarity price priceMap
-      )
-      AssocMap.empty
-      (obj.assetPrices :: Object BigInt)
+  -- assetPrices <-
+  --   foldWithIndexM
+  --     ( \rarityStr priceMap price -> do
+  --         rarity <- liftContractM "could not parse rarity" $ rarityFromString
+  --           rarityStr
+  --         pure $ AssocMap.insert rarity price priceMap
+  --     )
+  --     AssocMap.empty
+  --     (obj.assetPrices :: Object BigInt)
+  assetPrices <- liftContractM "Could not decode asset prices" do
+    cmn <- Object.lookup "Common" obj.assetPrices
+    rr <- Object.lookup "Rare" obj.assetPrices
+    epc <- Object.lookup "Epic" obj.assetPrices
+    pure $ wrap { common: cmn, rare: rr, epic: epc }
   -- foldrWithIndex (\rarity price obj -> Object.insert (show rarity) price obj) Object.empty obj.assetPrices
   -- foldMapWithIndex (\rarity price -> Object.singleton (show rarity) price) obj.assetPrices
   treasuryAddress <- addressFromBech32 obj.treasuryAddress
@@ -608,14 +903,21 @@ tokenNameToString tk =
     $ map (\x -> unsafePartial $ fromJust $ fromCharCode x)
     $ byteArrayToIntArray ba
 
+rarityFromString :: String -> Maybe Rarity
+rarityFromString str = case str of
+  "Common" -> Just Common
+  "Rare" -> Just Rare
+  "Epic" -> Just Epic
+  _ -> Nothing
+
 mkWalletSpec :: String -> Maybe WalletSpec
 mkWalletSpec phex = Just $ UseKeys (PrivatePaymentKeyValue $ wrap pkey) Nothing
   where
   pkey = unsafePartial $ fromJust $ mkPrivateKey phex
 
 depositScriptHashHelper :: RacersParams -> Contract ValidatorHash
-depositScriptHashHelper rp = do
-  depositVal <- mkDepositValidator rp
+depositScriptHashHelper rp = runRacers rp do
+  depositVal <- mkDepositValidator
   pure $ validatorHash depositVal
 
 mkPrivateKey :: String -> Maybe PrivateKey

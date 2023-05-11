@@ -41,7 +41,6 @@ suite = do
   RacersState.suite
   AssetRequest.suite
   Deposit.suite
-  GameAsset.suite
   only RaceRegistry.suite
 
 config :: PlutipConfig

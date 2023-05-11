@@ -22,7 +22,12 @@ import CardanoRacers.Nitro.Contract
   , buyNitroContract
   , mkNitroPolicy
   )
-import CardanoRacers.RaceRegistry.Contract (confirmParticipatingAssets, initRace, queryRegistryUtxos, registerPositionInRace)
+import CardanoRacers.RaceRegistry.Contract
+  ( confirmParticipatingAssets
+  , initRace
+  , queryRegistryUtxos
+  , registerPositionInRace
+  )
 import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Log (logInfo')

@@ -18,6 +18,7 @@ import CardanoRacers.RaceRegistry.Types
   , RegistryRedeemer(..)
   )
 import CardanoRacers.ScriptsFFI (raceRegistryScript)
+import Common.ContractHelpers (findAnyAuthUtxo)
 import Contract.Address (PubKeyHash(..), scriptHashAddress)
 import Contract.AssocMap (mapMaybe)
 import Contract.Monad (liftContractM, liftedM, withContractEnv)
@@ -72,6 +73,7 @@ import Data.FoldableWithIndex (findWithIndex)
 import Data.Map (Map)
 import Data.Map
   ( filter
+  , insert
   , keys
   , lookup
   , mapMaybe
@@ -91,17 +93,23 @@ collectRegistryScriptLeftovers rgp = do
   utxosAtRegistry <- lift $ utxosAt
     (scriptHashAddress (validatorHash registryScript) Nothing)
 
+  (authTxi /\ authTxo) <- withContract (liftedM "could not find any auth utxo")
+    findAnyAuthUtxo
+
   let
     collectRedeemer = Redeemer $ toData Collect
 
     constraints :: Constraints.TxConstraints Void Void
-    constraints =
-      foldMap (flip Constraints.mustSpendScriptOutput collectRedeemer)
-        $ Map.keys utxosAtRegistry
+    constraints = Constraints.mustSpendPubKeyOutput authTxi <>
+      ( foldMap (flip Constraints.mustSpendScriptOutput collectRedeemer)
+          $ Map.keys utxosAtRegistry
+      )
 
     lookups :: Lookups.ScriptLookups Void
-    lookups = Lookups.unspentOutputs utxosAtRegistry <> Lookups.validator
-      registryScript
+    lookups =
+      Lookups.unspentOutputs (Map.insert authTxi authTxo utxosAtRegistry) <>
+        Lookups.validator
+          registryScript
 
   lift do
     txId <- submitTxFromConstraints lookups constraints

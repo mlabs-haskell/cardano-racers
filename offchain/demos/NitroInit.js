@@ -57,7 +57,7 @@ exports._getSelectedActor = maybe => () => {
   return maybe.nothing;
 }
 
-exports.getParams = () => document.getElementById("params-input").value;
+exports._getParams = () => document.getElementById("params-input").value;
 
 
 
@@ -101,6 +101,22 @@ exports.setupListeners = handlers => () => {
   document.getElementById("redeem-requests").addEventListener("click", () => {
     wrapLoading(handlers.redeemRequests()).then(console.log);
   });
+  document.getElementById("create-race").addEventListener("click", () => {
+    wrapLoading(handlers.createRace()).then(console.log);
+  });
+  document.getElementById("close-race-manual").addEventListener("click", () => {
+    wrapLoading(handlers.closeRaceManual()).then(console.log);
+  });
+  document.getElementById("close-race").addEventListener("click", () => {
+    wrapLoading(handlers.closeRace()).then(console.log);
+  });
+  document.getElementById("register").addEventListener("click", () => {
+    wrapLoading(handlers.registerInRace()).then(console.log);
+  });
+  document.getElementById("race-with-assets").addEventListener("click", () => {
+    wrapLoading(handlers.raceWithAssets()).then(console.log);
+  });
+
 
   const selectedRarity = document.getElementById("rarity");
 
@@ -118,6 +134,9 @@ exports.setupListeners = handlers => () => {
     const nameInput = document.getElementById('name');
     const name = nameInput.value;
 
+    const nitroAmountInput = document.getElementById('nitroAmount');
+    const nitroAmount = nitroAmountInput.value;
+
     const assetTypeRadio = document.querySelector('input[name="asset-type"]:checked');
     const assetType = assetTypeRadio.value;
 
@@ -127,8 +146,8 @@ exports.setupListeners = handlers => () => {
     const descriptionTextarea = document.getElementById('description');
     const description = descriptionTextarea.value;
      
-    console.log({name, assetType, imageUrl, description})
-    handlers.setAssetOption(rarity, {name, assetType, imageUrl, description})
+    console.log({name, assetType, imageUrl, description, nitroAmount})
+    handlers.setAssetOption(rarity, {name, assetType, imageUrl, description, nitroAmount })
   })
    
   document.getElementById("refresh-requests").addEventListener("click", () => {
@@ -152,6 +171,17 @@ exports.setupListeners = handlers => () => {
       );
     });
   });
+
+  document.getElementById("refresh-registry").addEventListener("click", () => {
+    document.getElementById("state").textContent = "";
+    handlers.refreshRace().then(registryjson => {
+      document.getElementById("state").textContent = JSON.stringify(
+        JSON.parse(registryjson),
+        null,
+        2
+      );
+    });
+  })
 
   const refreshWallets = () => {
     document.getElementById("wallets").innerHTML = "";
