@@ -2,44 +2,29 @@ module Test.CardanoRacers.RaceRegistry (suite) where
 
 import Contract.Prelude
 
-import CardanoRacers.AssetRequest.Contract
-  ( mkAssetRequestPolicy
-  , requestAssetByRarity
-  )
-import CardanoRacers.Deposit.Contract
-  ( consumeAndRedeemRequests
-  , mkDepositValidator
-  )
+import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy, requestAssetByRarity)
+import CardanoRacers.Deposit.Contract (consumeAndRedeemRequests, mkDepositValidator)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types
-  ( AssetOption
-  , GameAssetType(..)
-  , Rarity(Common, Rare, Epic)
-  )
+import CardanoRacers.GameAsset.Types (AssetOption, GameAssetType(CarType, DriverType), Rarity(Common, Rare, Epic))
 import CardanoRacers.Helpers (counterNonce)
-import CardanoRacers.Nitro.Contract
-  ( adminMintsNitroContract
-  , buyNitroContract
-  , mkNitroPolicy
-  )
-import CardanoRacers.RaceRegistry.Contract (confirmParticipatingAssets, initRace, queryRegistryUtxos, registerPositionInRace)
+import CardanoRacers.Nitro.Contract (adminMintsNitroContract, buyNitroContract, mkNitroPolicy)
+import CardanoRacers.RaceRegistry.Contract (collectRegistryScriptLeftovers, confirmParticipatingAssets, initRace, queryRegistryUtxos, registerPositionInRace, supplyRegistrySlots)
 import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Log (logInfo')
 import Contract.Metadata (mkCip25String)
 import Contract.Monad (liftContractM, liftedM, throwContractError)
+import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.Scripts (MintingPolicy(PlutusMintingPolicy))
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip
-  ( InitialUTxOs
-  , PlutipTest
-  , withKeyWallet
-  , withWallets
-  )
+import Contract.Test.Plutip (InitialUTxOs, PlutipTest, withKeyWallet, withWallets)
+import Contract.Value (mkTokenName)
 import Contract.Value as Value
 import Contract.Wallet (getWalletAddresses, getWalletUtxos)
+import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Ctl.Internal.Contract.Wallet (ownPubKeyHashes)
+import Ctl.Internal.Types.ByteArray (hexToByteArray)
 import Data.Array (head) as Array
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (Map, fromFoldable, toUnfoldable) as Map
@@ -47,10 +32,7 @@ import Effect.Ref as Ref
 import Mote (group, test)
 import Partial.Unsafe (unsafePartial)
 import Racers (runRacers, withContract)
-import Test.CardanoRacers.Helpers
-  ( createRacersParamsHelper
-  , initRacersStateWithAdminAndTreasury
-  )
+import Test.CardanoRacers.Helpers (createRacersParamsHelper, initRacersStateWithAdminAndTreasury)
 
 suite :: TestPlanM PlutipTest Unit
 suite = group "Race Registry" do
@@ -121,7 +103,12 @@ suite = group "Race Registry" do
               (counterNonce counterRef)
               st
 
-          (rgp /\ _) <- withContract (withKeyWallet adminKey) $ initRace "abcde"
+          raceHash <- lift
+            $ liftContractM "could not convert hex string to bytearray"
+            $ hexToByteArray "736f6d6520726163652068617368"
+
+          (rgp /\ _) <- withContract (withKeyWallet adminKey) $ initRace
+            raceHash
             (BigInt.fromInt 10)
             (BigInt.fromInt 2)
           -- logInfo' $ show rgp
@@ -137,14 +124,15 @@ suite = group "Race Registry" do
           withContract (withKeyWallet userKey) do
             _ <- buyNitroContract $ BigInt.fromInt 100
 
-            lift getWalletUtxos >>= logInfo' <<< show
-
             firstPkh <- lift $ liftedM "Could not get first own public key hash"
               $ ownPubKeyHashes
               <#> Array.head
             firstAddr <- lift $ liftedM "Could not get first address"
               $ getWalletAddresses
               <#> Array.head
+
+            testTk <- lift $ liftContractM "not token name" $
+              (mkTokenName <=< byteArrayFromAscii) "test"
 
             (carTk /\ driverTk) <- lift $ liftContractM
               "Could not get driver and car"
@@ -156,6 +144,12 @@ suite = group "Race Registry" do
                 pure $ c /\ d
 
             _ <- registerPositionInRace rgp firstPkh
+            _ <- registerPositionInRace rgp firstPkh
+            r <- try $ registerPositionInRace rgp firstPkh
+
+            when (not $ isLeft r) $
+              logInfo' "expected error, registration passed"
+              
 
             logInfo' $ "registering user"
 
@@ -170,7 +164,21 @@ suite = group "Race Registry" do
             us <- queryRegistryUtxos rgp
             logInfo' $ show $ (snd <<< snd) <$> (Map.toUnfoldable us :: Array _)
 
+            withContract (withKeyWallet adminKey) do
+              -- _ <- collectRegistryScriptLeftovers raceHash rgp
+              -- us' <- queryRegistryUtxos rgp
+              -- logInfo' $ show $ (snd <<< snd) <$> (Map.toUnfoldable us' :: Array _)
+
+              _ <- supplyRegistrySlots raceHash rgp $ BigInt.fromInt 10
+              pure unit
+
+            _ <- registerPositionInRace rgp firstPkh
+
+            us <- queryRegistryUtxos rgp
+            logInfo' $ show $ (snd <<< snd) <$> (Map.toUnfoldable us :: Array _)
+
             pure unit
+
   where
   walletUtxoDistr :: InitialUTxOs
   walletUtxoDistr =

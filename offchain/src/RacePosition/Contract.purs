@@ -8,7 +8,7 @@ import Common.ContractHelpers (findAnyAuthUtxo)
 import Contract.Monad (liftContractM)
 import Contract.PlutusData (toData, unitRedeemer)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (MintingPolicy(..), applyArgs)
+import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), applyArgs)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
   ( TransactionHash
@@ -53,6 +53,14 @@ mintRacePositionTokenConstraints rch slotCount = do
       (Map.singleton authTxi authTxo)
 
   pure (constraints /\ lookups)
+
+burnRacePositionTokenConstraints
+  :: RaceHash
+  -> BigInt
+  -> Racers
+       (Constraints.TxConstraints Void Void /\ Lookups.ScriptLookups Void)
+burnRacePositionTokenConstraints rch slotCount =
+  mintRacePositionTokenConstraints rch (negate slotCount)
 
 mintRacePositionToken
   :: RaceHash

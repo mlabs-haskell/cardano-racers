@@ -19,7 +19,6 @@ import CardanoRacers.GameAsset.Contract
   )
 import CardanoRacers.GameAsset.Types
   ( AssetOption
-  , GameAsset
   , GameAssetNftMetadata
   , GameAssetObject
   , Rarity(Epic, Rare, Common)
@@ -53,7 +52,6 @@ import Contract.Scripts
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
   ( BalancedSignedTransaction
-  , TransactionHash
   , TransactionInput
   , TransactionOutputWithRefScript
   , awaitTxConfirmed
