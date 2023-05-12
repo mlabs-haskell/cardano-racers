@@ -15,8 +15,12 @@ module CardanoRacers.GameAsset.Types
 
 import Contract.Prelude
 
-import Aeson (class DecodeAeson, class EncodeAeson, (.:))
-import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
+import Aeson (class DecodeAeson, class EncodeAeson, encodeAeson, (.:))
+import CardanoRacers.Helpers
+  ( decodeAesonString
+  , decodeWrappedAeson
+  , wrapEncodeAeson
+  )
 import Contract.Address (Address)
 import Contract.Metadata
   ( Cip25String
@@ -62,7 +66,6 @@ import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.Function (on)
 import Data.Map (toUnfoldable) as Map
-import Foreign.Object (Object)
 
 type AssetOption =
   { name :: Cip25String
@@ -82,18 +85,15 @@ instance Show Rarity where
   show = genericShow
 
 instance EncodeAeson Rarity where
-  encodeAeson Common = wrapEncodeAeson "Common" {}
-  encodeAeson Rare = wrapEncodeAeson "Rare" {}
-  encodeAeson Epic = wrapEncodeAeson "Epic" {}
+  encodeAeson Common = encodeAeson "Common"
+  encodeAeson Rare = encodeAeson "Rare"
+  encodeAeson Epic = encodeAeson "Epic"
 
 instance DecodeAeson Rarity where
   decodeAeson aes =
-    decodeWrappedAeson "Common" (constMono $ pure Common) aes
-      <|> decodeWrappedAeson "Rare" (constMono $ pure Rare) aes
-      <|> decodeWrappedAeson "Epic" (constMono $ pure Epic) aes
-    where
-    constMono :: forall a. a -> Object {} -> a
-    constMono a _ = a
+    decodeAesonString "Common" (const Common) aes
+      <|> decodeAesonString "Rare" (const Rare) aes
+      <|> decodeAesonString "Epic" (const Epic) aes
 
 instance
   HasPlutusSchema Rarity
@@ -245,16 +245,13 @@ instance FromData GameAssetType where
   fromData = genericFromData
 
 instance EncodeAeson GameAssetType where
-  encodeAeson DriverType = wrapEncodeAeson "DriverType" {}
-  encodeAeson CarType = wrapEncodeAeson "CarType" {}
+  encodeAeson DriverType = encodeAeson "DriverType"
+  encodeAeson CarType = encodeAeson "CarType"
 
 instance DecodeAeson GameAssetType where
   decodeAeson aes =
-    decodeWrappedAeson "DriverType" (constMono $ pure DriverType) aes
-      <|> decodeWrappedAeson "CarType" (constMono $ pure CarType) aes
-    where
-    constMono :: forall a. a -> Object {} -> a
-    constMono a _ = a
+    decodeAesonString "DriverType" (const DriverType) aes
+      <|> decodeAesonString "CarType" (const CarType) aes
 
 data GameAssetAttributes
   = DriverAttrs DriverAttributes

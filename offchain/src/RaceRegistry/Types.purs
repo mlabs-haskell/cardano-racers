@@ -8,8 +8,22 @@ module CardanoRacers.RaceRegistry.Types
 
 import Contract.Prelude
 
-import Aeson (class DecodeAeson, class EncodeAeson, getField, (.:))
-import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
+import Aeson
+  ( class DecodeAeson
+  , class EncodeAeson
+  , Aeson
+  , JsonDecodeError(..)
+  , caseAesonString
+  , decodeAeson
+  , encodeAeson
+  , getField
+  , (.:)
+  )
+import CardanoRacers.Helpers
+  ( decodeAesonString
+  , decodeWrappedAeson
+  , wrapEncodeAeson
+  )
 import Contract.Address (Address, PubKeyHash)
 import Contract.PlutusData
   ( class FromData
@@ -28,6 +42,7 @@ import Contract.PlutusData
 import Contract.Scripts (MintingPolicyHash)
 import Contract.Value (CurrencySymbol, TokenName)
 import Control.Alt ((<|>))
+import Ctl.Internal.QueryM (DispatchError(..))
 import Data.BigInt (BigInt)
 import Foreign.Object (Object)
 
@@ -239,21 +254,13 @@ instance FromData RegistryRedeemer where
 
 instance EncodeAeson RegistryRedeemer where
   encodeAeson (Enroll pubKeyHashes) = wrapEncodeAeson "Enroll" { pubKeyHashes }
-  encodeAeson SelectAssets = wrapEncodeAeson "SelectAssets" {}
-  encodeAeson Collect = wrapEncodeAeson "Collect" {}
+  encodeAeson SelectAssets = encodeAeson "SelectAssets"
+  encodeAeson Collect = encodeAeson "Collect"
 
 instance DecodeAeson RegistryRedeemer where
   decodeAeson aes =
     decodeWrappedAeson "Enroll"
       (map Enroll <<< flip getField "pubKeyHashes")
       aes
-      <|> decodeWrappedAeson "SelectAssets"
-        (constMono $ pure SelectAssets)
-        aes
-      <|> decodeWrappedAeson "Collect"
-        (constMono $ pure Collect)
-        aes
-    where
-    constMono :: forall a. a -> Object {} -> a
-    constMono a _ = a
-
+      <|> decodeAesonString "SelectAssets" (const SelectAssets) aes
+      <|> decodeAesonString "Collect" (const Collect) aes

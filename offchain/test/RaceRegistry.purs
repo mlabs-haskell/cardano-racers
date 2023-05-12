@@ -2,13 +2,34 @@ module Test.CardanoRacers.RaceRegistry (suite) where
 
 import Contract.Prelude
 
-import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy, requestAssetByRarity)
-import CardanoRacers.Deposit.Contract (consumeAndRedeemRequests, mkDepositValidator)
+import CardanoRacers.AssetRequest.Contract
+  ( mkAssetRequestPolicy
+  , requestAssetByRarity
+  )
+import CardanoRacers.Deposit.Contract
+  ( consumeAndRedeemRequests
+  , mkDepositValidator
+  )
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types (AssetOption, GameAssetType(CarType, DriverType), Rarity(Common, Rare, Epic))
+import CardanoRacers.GameAsset.Types
+  ( AssetOption
+  , GameAssetType(CarType, DriverType)
+  , Rarity(Common, Rare, Epic)
+  )
 import CardanoRacers.Helpers (counterNonce)
-import CardanoRacers.Nitro.Contract (adminMintsNitroContract, buyNitroContract, mkNitroPolicy)
-import CardanoRacers.RaceRegistry.Contract (collectRegistryScriptLeftovers, confirmParticipatingAssets, initRace, queryRegistryUtxos, registerPositionInRace, supplyRegistrySlots)
+import CardanoRacers.Nitro.Contract
+  ( adminMintsNitroContract
+  , buyNitroContract
+  , mkNitroPolicy
+  )
+import CardanoRacers.RaceRegistry.Contract
+  ( collectRegistryScriptLeftovers
+  , confirmParticipatingAssets
+  , initRace
+  , queryRegistryUtxos
+  , registerPositionInRace
+  , supplyRegistrySlots
+  )
 import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Log (logInfo')
@@ -17,7 +38,12 @@ import Contract.Monad (liftContractM, liftedM, throwContractError)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.Scripts (MintingPolicy(PlutusMintingPolicy))
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip (InitialUTxOs, PlutipTest, withKeyWallet, withWallets)
+import Contract.Test.Plutip
+  ( InitialUTxOs
+  , PlutipTest
+  , withKeyWallet
+  , withWallets
+  )
 import Contract.Value (mkTokenName)
 import Contract.Value as Value
 import Contract.Wallet (getWalletAddresses, getWalletUtxos)
@@ -32,7 +58,10 @@ import Effect.Ref as Ref
 import Mote (group, test)
 import Partial.Unsafe (unsafePartial)
 import Racers (runRacers, withContract)
-import Test.CardanoRacers.Helpers (createRacersParamsHelper, initRacersStateWithAdminAndTreasury)
+import Test.CardanoRacers.Helpers
+  ( createRacersParamsHelper
+  , initRacersStateWithAdminAndTreasury
+  )
 
 suite :: TestPlanM PlutipTest Unit
 suite = group "Race Registry" do
@@ -149,7 +178,6 @@ suite = group "Race Registry" do
 
             when (not $ isLeft r) $
               logInfo' "expected error, registration passed"
-              
 
             logInfo' $ "registering user"
 
