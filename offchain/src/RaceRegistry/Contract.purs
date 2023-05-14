@@ -11,6 +11,7 @@ module CardanoRacers.RaceRegistry.Contract
 import Contract.Prelude
 
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
+import CardanoRacers.GameAsset.Types (GameAssetType(DriverType, CarType))
 import CardanoRacers.Nitro.Contract (burnNitroConstraints, mkNitroPolicy)
 import CardanoRacers.RacePosition.Contract
   ( burnRacePositionTokenConstraints
@@ -173,7 +174,10 @@ initRace
   :: RaceHash -> BigInt -> BigInt -> Racers (RegistryParams /\ TransactionHash)
 initRace raceHash entryNitroFee totalSlots = do
   nitroPolicyHash <- mintingPolicyHash <$> mkNitroPolicy
-  gameAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy
+
+  driverAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy DriverType
+  carAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy CarType
+
   positionSymbol <-
     withContract (liftedM "Could not get position policy symbol")
       $ (mpsSymbol <<< mintingPolicyHash)
@@ -186,7 +190,8 @@ initRace raceHash entryNitroFee totalSlots = do
     rgp = wrap
       { slotAssetClass: (positionSymbol /\ slotTokenName)
       , nitroFee: entryNitroFee
-      , gameAssetPolicyHash
+      , driverAssetPolicyHash
+      , carAssetPolicyHash
       , nitroPolicyHash
       }
 
@@ -299,10 +304,13 @@ confirmParticipatingAssets rgp pkh participant = do
   let selections = [ participant ]
   utxos <- lift $ liftedM "Could not get wallet utxos" getWalletUtxos
   registryVal <- mkRaceRegistryScript rgp
-  gameAssetSymbol <- withContract (liftedM "Could not get game asset symbol")
+  driverAssetSymbol <-
+    withContract (liftedM "Could not get driver asset symbol")
+      $ scriptCurrencySymbol
+      <$> mkGameAssetPolicy DriverType
+  carAssetSymbol <- withContract (liftedM "Could not get car asset symbol")
     $ scriptCurrencySymbol
-    <$> mkGameAssetPolicy
-
+    <$> mkGameAssetPolicy CarType
   registryUtxos <- queryRegistryUtxos rgp
 
   let
@@ -369,8 +377,10 @@ confirmParticipatingAssets rgp pkh participant = do
         hasAsset _ txo =
           let
             amount = (unwrap (unwrap txo).output).amount
+            driverVal = Value.singleton driverAssetSymbol tk one
+            carVal = Value.singleton carAssetSymbol tk one
           in
-            amount `geq` Value.singleton gameAssetSymbol tk one
+            amount `geq` driverVal || amount `geq` carVal
 
     Map.unions
       <<< Array.concat

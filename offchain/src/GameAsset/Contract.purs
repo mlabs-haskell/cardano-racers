@@ -154,13 +154,12 @@ mintAvailableAssetByRarity
 
   pure $ constraints /\ metadata
 
-mkGameAssetPolicy :: Racers MintingPolicy
-mkGameAssetPolicy = do
-  np <- asks _.params
+mkGameAssetPolicy :: GameAssetType -> Racers MintingPolicy
+mkGameAssetPolicy assetType = do
+  rp <- asks _.params
   v2script <- lift $ liftContractM "Could not decode applied script" do
     envelope <- decodeTextEnvelope gameAssetPolicy
     plutusScriptV2FromEnvelope envelope
   appliedScript <- liftEither $ left (error <<< show) $ applyArgs v2script
-    $ Array.singleton
-    $ toData np
+    $ [ toData rp, toData assetType ]
   pure $ PlutusMintingPolicy $ appliedScript

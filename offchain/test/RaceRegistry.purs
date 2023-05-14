@@ -23,8 +23,7 @@ import CardanoRacers.Nitro.Contract
   , mkNitroPolicy
   )
 import CardanoRacers.RaceRegistry.Contract
-  ( collectRegistryScriptLeftovers
-  , confirmParticipatingAssets
+  ( confirmParticipatingAssets
   , initRace
   , queryRegistryUtxos
   , registerPositionInRace
@@ -45,8 +44,7 @@ import Contract.Test.Plutip
   , withWallets
   )
 import Contract.Value (mkTokenName)
-import Contract.Value as Value
-import Contract.Wallet (getWalletAddresses, getWalletUtxos)
+import Contract.Wallet (getWalletAddresses)
 import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Ctl.Internal.Contract.Wallet (ownPubKeyHashes)
@@ -77,7 +75,8 @@ suite = group "Race Registry" do
           _gameAssetSymbol <- withContract (withKeyWallet adminKey)
             do
               assetRequestPolicy <- mkAssetRequestPolicy
-              gameAssetPolicy <- mkGameAssetPolicy
+              driverAssetPolicy <- mkGameAssetPolicy DriverType
+              carAssetPolicy <- mkGameAssetPolicy CarType
               nitroPolicy <- mkNitroPolicy
 
               nitroScriptRef <- lift $ case nitroPolicy of
@@ -86,18 +85,22 @@ suite = group "Race Registry" do
               assetRequestScriptRef <- lift $ case assetRequestPolicy of
                 PlutusMintingPolicy s -> pure s
                 _ -> throwContractError "Not plutus script"
-              gameAssetScriptRef <- lift $ case gameAssetPolicy of
+              driverPolicyRef <- lift $ case driverAssetPolicy of
                 PlutusMintingPolicy s -> pure s
                 _ -> throwContractError "Not plutus script"
+              carPolicyRef <- lift $ case carAssetPolicy of
+                PlutusMintingPolicy s -> pure s
+                _ -> throwContractError "Not plutus script"
+
               depositAssetScriptRef <- unwrap <$> mkDepositValidator
 
               _ <- createRacersRefScriptOutput nitroScriptRef
               _ <- createRacersRefScriptOutput assetRequestScriptRef
-              _ <- createRacersRefScriptOutput gameAssetScriptRef
+              _ <- createRacersRefScriptOutput driverPolicyRef
+              _ <- createRacersRefScriptOutput carPolicyRef
               _ <- createRacersRefScriptOutput depositAssetScriptRef
 
-              lift $ liftContractM "could not get currency symbol" $
-                Value.scriptCurrencySymbol gameAssetPolicy
+              pure unit
 
           let
             assetPrices :: AssetPrices

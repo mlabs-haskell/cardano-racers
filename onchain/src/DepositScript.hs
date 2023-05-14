@@ -28,7 +28,8 @@ import PlutusTx.Prelude
 import Utils (getInlineDatumFromTxOut, parseToken, valueToAddr, withTraceM)
 
 data DepositValidatorParams = DepositValidatorParams
-  { assetPolicySymbol :: CurrencySymbol
+  { driverPolicySymbol :: CurrencySymbol
+  , carPolicySymbol :: CurrencySymbol
   , assetRequestPolicySymbol :: CurrencySymbol
   }
 
@@ -97,9 +98,8 @@ mkDepositValidator rp dps ctx =
           ( \(addr, assetsDue) -> do
               vToAddr <- valueToAddr info addr
               let
-                actualAssetsPaid = sum $ map (\(_, _, i) -> i) $ filter (\(cs, _, _) -> cs == assetPolicySymbol dps) $ flattenValue vToAddr
+                actualAssetsPaid = sum $ map (\(_, _, i) -> i) $ filter (\(cs, _, _) -> cs == driverPolicySymbol dps || cs == carPolicySymbol dps) $ flattenValue vToAddr
                 expectedAssetsPaid = sum $ map snd assetsDue
-              -- expectedAssetsPaid = foldl (<>) mempty $ map (\(_, _, i) -> assetClassValue (gameAssetClass ga r) i) assetsDue
               pure $ actualAssetsPaid >= expectedAssetsPaid
           )
 

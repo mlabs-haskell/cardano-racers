@@ -32,7 +32,7 @@ import Contract.Test.Plutip
   , withKeyWallet
   , withWallets
   )
-import Contract.Value (CurrencySymbol, mkTokenName)
+import Contract.Value (mkTokenName)
 import Contract.Value as Value
 import Contract.Wallet (getWalletAddresses)
 import Control.Monad.Error.Class (try)
@@ -62,27 +62,38 @@ suite = group "Deposit" do
           pure rp
 
         runRacers rp do
-          (gameAssetSymbol :: CurrencySymbol) <- withContract
+          (driverAssetSymbol /\ carAssetSymbol) <- withContract
             (withKeyWallet adminKey)
             do
               assetRequestPolicy <- mkAssetRequestPolicy
-              gameAssetPolicy <- mkGameAssetPolicy
+              driverAssetPolicy <- mkGameAssetPolicy DriverType
+              carAssetPolicy <- mkGameAssetPolicy CarType
 
               assetRequestScriptRef <- lift $ case assetRequestPolicy of
                 PlutusMintingPolicy s -> pure s
                 _ -> throwContractError "Not plutus script"
-              gameAssetScriptRef <- lift $ case gameAssetPolicy of
+              driverPolicyRef <- lift $ case driverAssetPolicy of
+                PlutusMintingPolicy s -> pure s
+                _ -> throwContractError "Not plutus script"
+              carPolicyRef <- lift $ case carAssetPolicy of
                 PlutusMintingPolicy s -> pure s
                 _ -> throwContractError "Not plutus script"
 
               depositAssetScriptRef <- unwrap <$> mkDepositValidator
 
               _ <- createRacersRefScriptOutput assetRequestScriptRef
-              _ <- createRacersRefScriptOutput gameAssetScriptRef
+              _ <- createRacersRefScriptOutput driverPolicyRef
+              _ <- createRacersRefScriptOutput carPolicyRef
               _ <- createRacersRefScriptOutput depositAssetScriptRef
 
-              lift $ liftContractM "could not get currency symbol" $
-                Value.scriptCurrencySymbol gameAssetPolicy
+              driverSymbol <- lift
+                $ liftContractM "could not get currency symbol"
+                $
+                  Value.scriptCurrencySymbol driverAssetPolicy
+              carSymbol <- lift $ liftContractM "could not get currency symbol"
+                $
+                  Value.scriptCurrencySymbol carAssetPolicy
+              pure $ driverSymbol /\ carSymbol
 
           let
             assetPrices :: AssetPrices
@@ -112,16 +123,21 @@ suite = group "Deposit" do
             <$> getWalletAddresses
 
           _ <- withContract (withKeyWallet adminKey) do
-            tokenNames <- lift
+            assetsAndNames <- lift
               $ liftContractM "could not create string token names"
               $ for requests \r -> do
-                  { name } <- Map.lookup r availableAssets
-                  pure $ unCip25String name <> ":" <> uniquenessNonce
+                  { name, assetType } <- Map.lookup r availableAssets
+                  pure $ assetType /\
+                    (unCip25String name <> ":" <> uniquenessNonce)
 
-            assertions <- lift $ for tokenNames $ \name -> do
+            assertions <- lift $ for assetsAndNames $ \(assetType /\ name) -> do
               tkName <-
                 liftContractM ("could not create token name from " <> name) $
                   (mkTokenName <=< byteArrayFromAscii) name
+              let
+                gameAssetSymbol = case assetType of
+                  DriverType -> driverAssetSymbol
+                  CarType -> carAssetSymbol
               pure $ checkTokenGainAtAddress' (label userAddress "User")
                 (gameAssetSymbol /\ tkName /\ BigInt.fromInt 1)
 
@@ -132,7 +148,6 @@ suite = group "Deposit" do
                     st
                 )
                 3
-
           pure unit
   where
   retryCount :: forall (a :: Type). Racers a -> Int -> Racers a

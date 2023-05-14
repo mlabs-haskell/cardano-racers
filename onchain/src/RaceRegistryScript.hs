@@ -10,9 +10,10 @@ import Data.Function (on)
 import GHC.Generics
 import GHC.Show (Show)
 import Plutonomy qualified (optimizeUPLC)
-import Plutus.V1.Ledger.Value (AssetClass(AssetClass), assetClass, assetClassValue, assetClassValueOf, geq, mpsSymbol)
+import Plutus.V1.Ledger.Value (AssetClass (AssetClass), assetClass, assetClassValue, assetClassValueOf, geq, mpsSymbol)
 import Plutus.V2.Ledger.Api (
   Address,
+  CurrencySymbol,
   MintingPolicyHash,
   PubKeyHash,
   Script,
@@ -25,7 +26,7 @@ import Plutus.V2.Ledger.Api (
   Value,
   fromCompiledCode,
   scriptContextTxInfo,
-  txInfoMint, CurrencySymbol
+  txInfoMint,
  )
 import Plutus.V2.Ledger.Contexts (findOwnInput, getContinuingOutputs, txSignedBy, valueSpent)
 import Plutus.V2.Ledger.Tx (TxOut (txOutValue))
@@ -65,7 +66,8 @@ data RegistryParams = RegistryParams
   { slotAssetClass :: (CurrencySymbol, TokenName)
   -- ^ can't reuse tokens across races, if that's desired an additional raceHash parameters should be included to ensure uniqueness
   , nitroPolicyHash :: MintingPolicyHash
-  , gameAssetPolicyHash :: MintingPolicyHash
+  , driverAssetPolicyHash :: MintingPolicyHash
+  , carAssetPolicyHash :: MintingPolicyHash
   , nitroFee :: Integer
   }
 PlutusTx.unstableMakeIsData ''RegistryParams
@@ -74,7 +76,7 @@ PlutusTx.unstableMakeIsData ''RegistryParams
 mkRegistryScript :: RacersParams -> RegistryParams -> RegistryRedeemer -> ScriptContext -> Bool
 mkRegistryScript
   RacersParams {adminToken, botToken}
-  RegistryParams {slotAssetClass, nitroPolicyHash, gameAssetPolicyHash, nitroFee}
+  RegistryParams {slotAssetClass, nitroPolicyHash, driverAssetPolicyHash, carAssetPolicyHash, nitroFee}
   red
   ctx = case red of
     Collect ->
@@ -86,7 +88,6 @@ mkRegistryScript
 
         inputContainsBotNft :: Bool
         inputContainsBotNft = valueSpent info `geq` assetClassValue botToken 1
-
     Enroll pkhs ->
       traceIfFalse "value at registry not conserved" valueAtRegistryIsConserved
         && traceIfFalse "existing registry entries must not be altered" doesNotAlterExistingEntries
@@ -105,13 +106,11 @@ mkRegistryScript
           where
             aux (PendingSelection pkh) = pkh `elem` pkhs -- this check is possible not needed, Enroll can be modified to take no constructor params
             aux _ = False -- Only pending selections can be added
-
         burnsNitroPerSlotPurchased :: Bool
         burnsNitroPerSlotPurchased = totalNitroBurnt >= requiredNitroBurnt
           where
             requiredNitroBurnt = nitroFee * length addedEntries
             totalNitroBurnt = assetClassValueOf (negate $ txInfoMint info) (assetClass (mpsSymbol nitroPolicyHash) nitroTokenName)
-
     SelectAssets ->
       traceIfFalse "value at registry not conserved" valueAtRegistryIsConserved
         && traceIfFalse "not signed by all removed pending pubkey hashes" signedByRemovedEntries
@@ -130,10 +129,11 @@ mkRegistryScript
         inputContainsAssetSelections = all aux addedEntries
           where
             spentValue = valueSpent info
-            gameAssetSymbol = mpsSymbol gameAssetPolicyHash
+            driverSymbol = mpsSymbol driverAssetPolicyHash
+            carSymbol = mpsSymbol carAssetPolicyHash
             aux (AssetSelection RaceParticipant {car, driver}) =
-              spentValue `geq` assetClassValue (assetClass gameAssetSymbol car) 1
-              -- ((<>) `on` (flip assetClassValue 1 . assetClass gameAssetSymbol)) car driver
+              spentValue `geq` (assetClassValue (assetClass driverSymbol driver) 1 <> assetClassValue (assetClass carSymbol car) 1)
+            -- ((<>) `on` (flip assetClassValue 1 . assetClass gameAssetSymbol)) car driver
             aux _ = False
     where
       info :: TxInfo
@@ -188,7 +188,7 @@ diffDatas as bs =
     sorted = sortBy (compare `on` snd) . map (\x -> (x, serialiseData (toBuiltinData x)))
 
     go [] [] left commons right = (reverse left, reverse commons, reverse right)
-    go xs [] left commons right = (reverse left ++ map fst xs , reverse commons, reverse right)
+    go xs [] left commons right = (reverse left ++ map fst xs, reverse commons, reverse right)
     go [] ys left commons right = (reverse left, reverse commons, reverse right ++ map fst ys)
     go ((x, xSerialized) : xs) ((y, ySerialized) : ys) left commons right
       | xSerialized < ySerialized = go xs ((y, ySerialized) : ys) (x : left) commons right

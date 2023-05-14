@@ -21,6 +21,7 @@ import CardanoRacers.GameAsset.Types
   ( AssetOption
   , GameAssetNftMetadata
   , GameAssetObject
+  , GameAssetType(DriverType, CarType)
   , Rarity(Epic, Rare, Common)
   , unGameAsset
   )
@@ -64,7 +65,7 @@ import Contract.Transaction
 import Contract.TxConstraints (InputWithScriptRef(RefInput))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (UtxoMap, utxosAt)
-import Contract.Value (TokenName)
+import Contract.Value (TokenName, currencyMPSHash)
 import Contract.Value
   ( flattenValue
   , getTokenName
@@ -175,6 +176,7 @@ redeemGameAsset
   -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
   -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
   -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
+  -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
   -> (TransactionInput /\ UtxoMap)
   -> (TransactionInput /\ PendingAssetRequest)
   -> Racers (UnbalancedTx /\ Array GameAssetObject)
@@ -182,7 +184,8 @@ redeemGameAsset
   availableAssets
   generateNonce
   mAssetRequestPolicyRef
-  mGameAssetPolicyRef
+  mDriverPolicyRef
+  mCarPolicyRef
   mDepositRef
   (authTxi /\ additionalUtxos)
   (requestTxi /\ { airdropAddress, requestTxo, requestedAssets }) = do
@@ -191,9 +194,15 @@ redeemGameAsset
     $ liftContractM "could not get currency symbol of asset request policy"
     $ Value.scriptCurrencySymbol assetRequestMP
 
-  gameAssetMP <- mkGameAssetPolicy
-  gameAssetSymbol <- lift $ liftContractM "Could not get currency symbol" $
-    Value.scriptCurrencySymbol gameAssetMP
+  driverAssetMp <- mkGameAssetPolicy DriverType
+  carAssetMp <- mkGameAssetPolicy CarType
+
+  driverSymbol <- lift
+    $ liftContractM "Could not get currency symbol of driver asset policy"
+    $ Value.scriptCurrencySymbol driverAssetMp
+  carSymbol <- lift
+    $ liftContractM "Could not get currency symbol of car asset policy"
+    $ Value.scriptCurrencySymbol carAssetMp
 
   paysNitro <- do
     cs <- for requestedAssets $ \(rarity /\ count) -> do
@@ -215,11 +224,15 @@ redeemGameAsset
             $ Map.lookup rarity availableAssets
           countInt <- liftMaybe (error "could not convert BigInt to Int") $
             BigInt.toInt count
+          let
+            (gameAssetSymbol /\ mAssetPolicyRef) = case assetOption.assetType of
+              DriverType -> driverSymbol /\ mDriverPolicyRef
+              CarType -> carSymbol /\ mCarPolicyRef
           List.toUnfoldable <$> replicateM countInt
             ( do
                 nonce <- generateNonce
                 mintAvailableAssetByRarity
-                  ((mintingPolicyHash gameAssetMP /\ _) <$> mGameAssetPolicyRef)
+                  ((currencyMPSHash gameAssetSymbol /\ _) <$> mAssetPolicyRef)
                   assetOption
                   gameAssetSymbol
                   nonce
@@ -290,13 +303,17 @@ redeemGameAsset
       (const mempty)
       mAssetRequestPolicyRef
 
-    gameAssetLookup = maybe (Lookups.mintingPolicy gameAssetMP) (const mempty)
-      mGameAssetPolicyRef
+    driverPolicyLookup = maybe (Lookups.mintingPolicy driverAssetMp)
+      (const mempty)
+      mDriverPolicyRef
+    carPolicyLookup = maybe (Lookups.mintingPolicy carAssetMp) (const mempty)
+      mCarPolicyRef
 
     lookups :: Lookups.ScriptLookups Void
     lookups = Lookups.unspentOutputs (Map.singleton requestTxi requestTxo)
       <> Lookups.unspentOutputs additionalUtxos
-      <> gameAssetLookup
+      <> driverPolicyLookup
+      <> carPolicyLookup
       <> assetRequestPolicyLookups
       <> depositLookups
 
@@ -317,14 +334,17 @@ consumeAndRedeemRequests
 consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
   do
     assetRequestMP <- mkAssetRequestPolicy
-    gameAssetMP <- mkGameAssetPolicy
+    driverAssetMP <- mkGameAssetPolicy DriverType
+    carAssetMP <- mkGameAssetPolicy CarType
 
     depositValidator <- mkDepositValidator
 
     mAssetRequestPolicyRef <- queryRacersRefScriptOutput
       (unwrap $ mintingPolicyHash assetRequestMP)
-    mAssetPolicyRef <- queryRacersRefScriptOutput
-      (unwrap $ mintingPolicyHash gameAssetMP)
+    mDriverPolicyRef <- queryRacersRefScriptOutput
+      (unwrap $ mintingPolicyHash driverAssetMP)
+    mCarPolicyRef <- queryRacersRefScriptOutput
+      (unwrap $ mintingPolicyHash carAssetMP)
     mDepositScriptRef <- queryRacersRefScriptOutput
       (unwrap $ validatorHash depositValidator)
 
@@ -338,7 +358,8 @@ consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
           txsAndAssets <- consumeAndRedeemChained
             ( redeemGameAsset availableAssets generateNonce
                 mAssetRequestPolicyRef
-                mAssetPolicyRef
+                mDriverPolicyRef
+                mCarPolicyRef
                 mDepositScriptRef
             )
             reqs
@@ -401,7 +422,7 @@ consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
             runReaderT (redeemTx (authTxi /\ Map.singleton authTxi authTxo) req)
               { params: rp }
           withChainedTx unbalancedTx balanceTxConstraints $
-            \balSignedTx nextAdditionalUtxos ->
+            \balSignedTx nextAdditionalUtxos -> do
               loop nextAdditionalUtxos rest
                 (acc `Array.snoc` (balSignedTx /\ assets))
 
@@ -423,15 +444,20 @@ mkDepositValidator = do
     $ liftContractM "Could not get currency symbol of asset request policy"
     $ Value.scriptCurrencySymbol assetRequestMP
 
-  gameAssetMP <- mkGameAssetPolicy
-  gameAssetSymbol <- lift
-    $ liftContractM "Could not get currency symbol of game asset policy"
-    $
-      Value.scriptCurrencySymbol gameAssetMP
+  driverAssetMp <- mkGameAssetPolicy DriverType
+  carAssetMp <- mkGameAssetPolicy CarType
+
+  driverAssetMp <- lift
+    $ liftContractM "Could not get currency symbol of driver asset policy"
+    $ Value.scriptCurrencySymbol driverAssetMp
+  carAssetMp <- lift
+    $ liftContractM "Could not get currency symbol of car asset policy"
+    $ Value.scriptCurrencySymbol carAssetMp
 
   let
     depositParams = DepositScriptParams
-      { assetPolicySymbol: gameAssetSymbol
+      { driverPolicySymbol: driverAssetMp
+      , carPolicySymbol: carAssetMp
       , assetRequestPolicySymbol: assetRequestSymbol
       }
 

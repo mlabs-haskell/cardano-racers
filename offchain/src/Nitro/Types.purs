@@ -5,8 +5,24 @@ module CardanoRacers.Nitro.Types
 import Contract.Prelude
 
 import Aeson (class DecodeAeson, class EncodeAeson, encodeAeson)
-import CardanoRacers.Helpers (decodeAesonString, decodeWrappedAeson, wrapEncodeAeson)
-import Contract.PlutusData (class FromData, class HasPlutusSchema, class ToData, type (:+), type (:=), type (@@), PNil, S, Z, genericFromData, genericToData)
+import CardanoRacers.Helpers
+  ( decodeAesonString
+  , decodeWrappedAeson
+  , wrapEncodeAeson
+  )
+import Contract.PlutusData
+  ( class FromData
+  , class HasPlutusSchema
+  , class ToData
+  , type (:+)
+  , type (:=)
+  , type (@@)
+  , PNil
+  , S
+  , Z
+  , genericFromData
+  , genericToData
+  )
 import Control.Alt ((<|>))
 import Data.BigInt (BigInt)
 
