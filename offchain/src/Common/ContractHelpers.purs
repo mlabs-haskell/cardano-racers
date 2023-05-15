@@ -2,15 +2,24 @@ module Common.ContractHelpers
   ( findAnyAuthUtxo
   , findAuthInUtxosMap
   , findAdminAuthUtxo
+  , collectDust
   ) where
 
 import Contract.Prelude
 
 import CardanoRacers.Common.Types (RacersParams)
-import Contract.Monad (liftedM)
-import Contract.Transaction (TransactionInput, TransactionOutputWithRefScript)
+import Contract.Monad (Contract, liftedM)
+import Contract.ScriptLookups as Lookups
+import Contract.Transaction
+  ( TransactionHash(..)
+  , TransactionInput
+  , TransactionOutputWithRefScript
+  , awaitTxConfirmed
+  , submitTxFromConstraints
+  )
+import Contract.TxConstraints as Constraints
 import Contract.Utxos (UtxoMap)
-import Contract.Value (Value)
+import Contract.Value (Value, getLovelace, valueToCoin)
 import Contract.Value (geq, singleton) as Value
 import Contract.Wallet (getWalletUtxos)
 import Control.Apply (lift2)
@@ -18,7 +27,7 @@ import Control.Monad.Reader.Class (asks)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (find) as Array
 import Data.BigInt (fromInt) as BigInt
-import Data.Map (toUnfoldable) as Map
+import Data.Map (filter, keys, toUnfoldable) as Map
 import Racers (Racers)
 
 findAnyAuthUtxo
@@ -68,3 +77,28 @@ findAuthInUtxosMap rp utxos =
         ) $ Map.toUnfoldable utxos
   in
     mUtxo
+
+collectDust :: Contract TransactionHash
+collectDust = do
+  utxos <- liftedM "could not get wallet utxos" $ getWalletUtxos
+
+  let
+    dustUtxos = Map.filter
+      ( \txo ->
+          let
+            value = (unwrap (unwrap txo).output).amount
+            adaAmount = getLovelace $ valueToCoin value
+          in
+            adaAmount <= (BigInt.fromInt 4_000_000)
+      )
+      utxos
+
+    constraints :: Constraints.TxConstraints Void Void
+    constraints = foldMap Constraints.mustSpendPubKeyOutput $ Map.keys dustUtxos
+
+    lookups :: Lookups.ScriptLookups Void
+    lookups = Lookups.unspentOutputs dustUtxos
+
+  txId <- submitTxFromConstraints lookups constraints
+  awaitTxConfirmed txId
+  pure txId

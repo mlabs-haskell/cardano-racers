@@ -447,17 +447,17 @@ mkDepositValidator = do
   driverAssetMp <- mkGameAssetPolicy DriverType
   carAssetMp <- mkGameAssetPolicy CarType
 
-  driverAssetMp <- lift
+  driverAssetSymbol <- lift
     $ liftContractM "Could not get currency symbol of driver asset policy"
     $ Value.scriptCurrencySymbol driverAssetMp
-  carAssetMp <- lift
+  carAssetSymbol <- lift
     $ liftContractM "Could not get currency symbol of car asset policy"
     $ Value.scriptCurrencySymbol carAssetMp
 
   let
     depositParams = DepositScriptParams
-      { driverPolicySymbol: driverAssetMp
-      , carPolicySymbol: carAssetMp
+      { driverPolicySymbol: driverAssetSymbol
+      , carPolicySymbol: carAssetSymbol
       , assetRequestPolicySymbol: assetRequestSymbol
       }
 

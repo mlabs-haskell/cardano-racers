@@ -51,7 +51,6 @@ import Contract.Transaction
   , submitTxFromConstraints
   )
 import Contract.TxConstraints (DatumPresence(DatumInline))
-import Contract.TxConstraints as Constrainst
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (UtxoMap, utxosAt)
 import Contract.Value (Value, geq, mpsSymbol, scriptCurrencySymbol, valueOf)
@@ -389,7 +388,7 @@ confirmParticipatingAssets rgp pkh participant = do
   let
     constraints :: Constraints.TxConstraints Void Void
     constraints =
-      foldMap Constrainst.mustSpendPubKeyOutput (Map.keys assetUtxoMap)
+      foldMap Constraints.mustSpendPubKeyOutput (Map.keys assetUtxoMap)
         <> foldMap
           ( \(txi /\ txo /\ entries) ->
               Constraints.mustSpendScriptOutput txi

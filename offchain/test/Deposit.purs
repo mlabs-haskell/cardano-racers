@@ -148,6 +148,7 @@ suite = group "Deposit" do
                     st
                 )
                 3
+
           pure unit
   where
   retryCount :: forall (a :: Type). Racers a -> Int -> Racers a
