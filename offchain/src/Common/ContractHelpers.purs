@@ -11,7 +11,7 @@ import CardanoRacers.Common.Types (RacersParams)
 import Contract.Monad (Contract, liftedM)
 import Contract.ScriptLookups as Lookups
 import Contract.Transaction
-  ( TransactionHash(..)
+  ( TransactionHash
   , TransactionInput
   , TransactionOutputWithRefScript
   , awaitTxConfirmed

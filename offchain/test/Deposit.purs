@@ -138,6 +138,7 @@ suite = group "Deposit" do
                 gameAssetSymbol = case assetType of
                   DriverType -> driverAssetSymbol
                   CarType -> carAssetSymbol
+
               pure $ checkTokenGainAtAddress' (label userAddress "User")
                 (gameAssetSymbol /\ tkName /\ BigInt.fromInt 1)
 
