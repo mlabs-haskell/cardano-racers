@@ -324,20 +324,10 @@ instance ToData AirdropAddressDatum where
 instance FromData AirdropAddressDatum where
   fromData = genericFromData
 
-type CommonAssetNftMetadata r =
-  { assetClass :: CurrencySymbol /\ TokenName
-  , name :: Cip25String
-  , image :: String
-  , mediaType :: Maybe Cip25String
-  , description :: Maybe String
-  | r
-  }
-
 type GameAssetObject =
   { assetType :: GameAssetType
   , attributes :: GameAssetAttributes
   , imageUrl :: String
-  , mediaType :: Maybe String
   , name :: Cip25String
   , tokenName :: TokenName
   , description :: String
@@ -352,13 +342,12 @@ mkGameAsset
   :: GameAssetObject
   -> Maybe GameAsset
 mkGameAsset
-  { assetType, attributes, imageUrl, mediaType, name, description, tokenName }
+  { assetType, attributes, imageUrl, name, description, tokenName }
   | assetType == DriverType && isJust (driverAttrsFromAttributes attributes) =
       Just $ GameAsset
         { assetType
         , attributes
         , imageUrl
-        , mediaType
         , name
         , description
         , tokenName
@@ -368,7 +357,6 @@ mkGameAsset
         { assetType
         , attributes
         , imageUrl
-        , mediaType
         , name
         , description
         , tokenName
@@ -388,7 +376,6 @@ instance DecodeAeson GameAsset where
     assetType <- obj .: "assetType"
     attributes <- obj .: "attributes"
     imageUrl <- obj .: "imageUrl"
-    mediaType <- obj .: "mediaType"
     name <- obj .: "name"
     description <- obj .: "description"
     tokenName <- obj .: "tokenName"
@@ -396,7 +383,6 @@ instance DecodeAeson GameAsset where
       { assetType
       , attributes
       , imageUrl
-      , mediaType
       , name
       , description
       , tokenName
@@ -438,9 +424,7 @@ gameAssetMetadataEntryToKeyValue
             DriverType -> "Driver"
             CarType -> "Car"
         )
-    ] <> fromMaybe []
-      (asset.mediaType <#> \mt -> [ "mediaType" /\ toMetadata mt ])
-
+    ]
   attributesEntry = case asset.attributes of
     DriverAttrs (DriverAttributes driver) ->
       [ "aggression" /\ toMetadata (driver.aggression)
@@ -468,7 +452,6 @@ gameAssetMetadataEntryFromMetadata policy tk md = do
     "Car" -> pure CarType
     _ -> Nothing
   description <- lookupMetadata "description" md >>= fromMetadataString
-  mbMediaType <- for (lookupMetadata "mediaType" md) fromMetadata
   cs <- mpsSymbol policy
   attrsMd <- lookupMetadata "attributes" md >>= fromMetadata >>=
     ( \attrs ->
@@ -481,7 +464,6 @@ gameAssetMetadataEntryFromMetadata policy tk md = do
         { assetType
         , attributes: attrsMd
         , imageUrl
-        , mediaType: mbMediaType
         , name
         , description
         , tokenName: (unwrap tk)
