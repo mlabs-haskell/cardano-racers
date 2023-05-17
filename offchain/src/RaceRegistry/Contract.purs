@@ -13,12 +13,12 @@ import Contract.Prelude
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types (GameAssetType(DriverType, CarType))
 import CardanoRacers.Nitro.Contract (burnNitroConstraints, mkNitroPolicy)
-import CardanoRacers.RacePosition.Contract
-  ( burnRacePositionTokenConstraints
-  , mintRacePositionTokenConstraints
-  , mkRacePositionPolicy
+import CardanoRacers.RaceSlot.Contract
+  ( burnRaceSlotTokenConstraints
+  , mintRaceSlotTokenConstraints
+  , mkRaceSlotPolicy
   )
-import CardanoRacers.RacePosition.Types (RaceHash, slotTokenName)
+import CardanoRacers.RaceSlot.Types (RaceHash, slotTokenName)
 import CardanoRacers.RaceRegistry.Types
   ( RaceParticipant
   , RegistryDatum
@@ -92,7 +92,7 @@ collectRegistryScriptLeftovers raceHash rgp = do
     <<< map fst
     <$> queryRegistryUtxos rgp
 
-  (burnConstraint /\ burnLookups) <- burnRacePositionTokenConstraints raceHash $
+  (burnConstraint /\ burnLookups) <- burnRaceSlotTokenConstraints raceHash $
     uncurry (valueOf registryValue) (unwrap rgp).slotAssetClass
 
   let
@@ -177,17 +177,17 @@ initRace raceHash entryNitroFee totalSlots = do
   driverAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy DriverType
   carAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy CarType
 
-  positionSymbol <-
+  slotSymbol <-
     withContract (liftedM "Could not get position policy symbol")
       $ (mpsSymbol <<< mintingPolicyHash)
-      <$> mkRacePositionPolicy raceHash
-  (positionConstraints /\ positionLookups) <- mintRacePositionTokenConstraints
+      <$> mkRaceSlotPolicy raceHash
+  (slotConstraints /\ slotLookups) <- mintRaceSlotTokenConstraints
     raceHash
     totalSlots
 
   let
     rgp = wrap
-      { slotAssetClass: (positionSymbol /\ slotTokenName)
+      { slotAssetClass: (slotSymbol /\ slotTokenName)
       , nitroFee: entryNitroFee
       , driverAssetPolicyHash
       , carAssetPolicyHash
@@ -198,20 +198,20 @@ initRace raceHash entryNitroFee totalSlots = do
 
   let
     totalRaceSlotsValue :: Value
-    totalRaceSlotsValue = Value.singleton positionSymbol slotTokenName
+    totalRaceSlotsValue = Value.singleton slotSymbol slotTokenName
       totalSlots
 
     emptyRegistryDatum = wrap $ toData (wrap [] :: RegistryDatum)
 
     constraints :: Constraints.TxConstraints Void Void
-    constraints = positionConstraints <> Constraints.mustPayToScript
+    constraints = slotConstraints <> Constraints.mustPayToScript
       registryVHash
       emptyRegistryDatum
       DatumInline
       totalRaceSlotsValue
 
     lookups :: Lookups.ScriptLookups Void
-    lookups = positionLookups
+    lookups = slotLookups
 
   lift do
     txId <- submitTxFromConstraints lookups constraints
@@ -224,7 +224,7 @@ supplyRegistrySlots
   -> BigInt
   -> Racers TransactionHash
 supplyRegistrySlots raceHash rgp slotCount = do
-  (slotConstraints /\ slotLookups) <- mintRacePositionTokenConstraints raceHash
+  (slotConstraints /\ slotLookups) <- mintRaceSlotTokenConstraints raceHash
     slotCount
   registryVHash <- validatorHash <$> mkRaceRegistryScript rgp
 

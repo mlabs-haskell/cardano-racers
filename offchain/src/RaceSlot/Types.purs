@@ -1,4 +1,4 @@
-module CardanoRacers.RacePosition.Types where
+module CardanoRacers.RaceSlot.Types where
 
 import Contract.Prelude
 

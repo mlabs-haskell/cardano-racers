@@ -1,9 +1,9 @@
-module CardanoRacers.RacePosition.Contract where
+module CardanoRacers.RaceSlot.Contract where
 
 import Contract.Prelude
 
-import CardanoRacers.RacePosition.Types (RaceHash, slotTokenName)
-import CardanoRacers.ScriptsFFI (racePositionPolicy)
+import CardanoRacers.RaceSlot.Types (RaceHash, slotTokenName)
+import CardanoRacers.ScriptsFFI (raceSlotPolicy)
 import Common.ContractHelpers (findAnyAuthUtxo)
 import Contract.Monad (liftContractM)
 import Contract.PlutusData (toData, unitRedeemer)
@@ -26,15 +26,15 @@ import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
 import Racers (Racers)
 
-mintRacePositionTokenConstraints
+mintRaceSlotTokenConstraints
   :: RaceHash
   -> BigInt
   -> Racers
        (Constraints.TxConstraints Void Void /\ Lookups.ScriptLookups Void)
-mintRacePositionTokenConstraints rch slotCount = do
-  positionPolicy <- mkRacePositionPolicy rch
-  positionSymbol <- lift $ liftContractM "Could not get currency symbol" $
-    Value.scriptCurrencySymbol positionPolicy
+mintRaceSlotTokenConstraints rch slotCount = do
+  slotPolicy <- mkRaceSlotPolicy rch
+  slotSymbol <- lift $ liftContractM "Could not get currency symbol" $
+    Value.scriptCurrencySymbol slotPolicy
 
   (authTxi /\ authTxo) <-
     findAnyAuthUtxo >>=
@@ -42,43 +42,43 @@ mintRacePositionTokenConstraints rch slotCount = do
 
   let
     amountToMint :: Value
-    amountToMint = Value.singleton positionSymbol slotTokenName slotCount
+    amountToMint = Value.singleton slotSymbol slotTokenName slotCount
 
     constraints :: Constraints.TxConstraints Void Void
     constraints = Constraints.mustSpendPubKeyOutput authTxi
       <> Constraints.mustMintValueWithRedeemer unitRedeemer amountToMint
 
     lookups :: Lookups.ScriptLookups Void
-    lookups = Lookups.mintingPolicy positionPolicy <> Lookups.unspentOutputs
+    lookups = Lookups.mintingPolicy slotPolicy <> Lookups.unspentOutputs
       (Map.singleton authTxi authTxo)
 
   pure (constraints /\ lookups)
 
-burnRacePositionTokenConstraints
+burnRaceSlotTokenConstraints
   :: RaceHash
   -> BigInt
   -> Racers
        (Constraints.TxConstraints Void Void /\ Lookups.ScriptLookups Void)
-burnRacePositionTokenConstraints rch slotCount =
-  mintRacePositionTokenConstraints rch (negate slotCount)
+burnRaceSlotTokenConstraints rch slotCount =
+  mintRaceSlotTokenConstraints rch (negate slotCount)
 
-mintRacePositionToken
+mintRaceSlotToken
   :: RaceHash
   -> BigInt
   -> Racers TransactionHash
-mintRacePositionToken rch slotCount = do
-  (constraints /\ lookups) <- mintRacePositionTokenConstraints rch slotCount
+mintRaceSlotToken rch slotCount = do
+  (constraints /\ lookups) <- mintRaceSlotTokenConstraints rch slotCount
   lift do
     txId <- submitTxFromConstraints lookups constraints
     awaitTxConfirmed txId
     pure txId
 
-mkRacePositionPolicy
+mkRaceSlotPolicy
   :: RaceHash -> Racers MintingPolicy
-mkRacePositionPolicy rch = do
+mkRaceSlotPolicy rch = do
   rp <- asks _.params
   v2script <- lift $ liftContractM "Could not decode applied script" do
-    envelope <- decodeTextEnvelope racePositionPolicy
+    envelope <- decodeTextEnvelope raceSlotPolicy
     plutusScriptV2FromEnvelope envelope
   appliedScript <- liftEither $ left (error <<< show) $ applyArgs v2script
     $ [ toData rp, toData rch ]

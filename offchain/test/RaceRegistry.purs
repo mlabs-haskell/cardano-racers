@@ -23,8 +23,8 @@ import CardanoRacers.Nitro.Contract
   , buyNitroContract
   , mkNitroPolicy
   )
-import CardanoRacers.RacePosition.Contract (mkRacePositionPolicy)
-import CardanoRacers.RacePosition.Types (RaceHash, slotTokenName)
+import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
+import CardanoRacers.RaceSlot.Types (RaceHash, slotTokenName)
 import CardanoRacers.RaceRegistry.Contract
   ( confirmParticipatingAssets
   , initRace
@@ -99,7 +99,7 @@ suite = group "Race Registry" do
           slotSymbol <-
             withContract (liftedM "could not get currency symbol from policy")
               $ scriptCurrencySymbol
-              <$> mkRacePositionPolicy raceHash
+              <$> mkRaceSlotPolicy raceHash
           nitroPolicyHash <- mintingPolicyHash <$> mkNitroPolicy
           driverAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy
             DriverType
