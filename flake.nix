@@ -103,7 +103,7 @@
             ];
             modules = plutip.haskellModules;
             shell = {
-              withHoogle = false;
+              withHoogle = true;
               exactDeps = true;
               nativeBuildInputs = with pkgs'; [
                 git
