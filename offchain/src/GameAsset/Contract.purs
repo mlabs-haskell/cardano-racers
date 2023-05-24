@@ -8,7 +8,18 @@ module CardanoRacers.GameAsset.Contract
 import Contract.Prelude
 
 import CardanoRacers.GameAsset.Parameters (generateUniformParameters)
-import CardanoRacers.GameAsset.Types (AssetOption, CarAttributes(CarAttributes), DriverAttributes(DriverAttributes), GameAsset, GameAssetAttributes(DriverAttrs, CarAttrs), GameAssetNftMetadata, GameAssetNftMetadataEntry(GameAssetNftMetadataEntry), GameAssetType(DriverType, CarType), Rarity, mkGameAsset)
+import CardanoRacers.GameAsset.Types
+  ( AssetOption
+  , CarAttributes(CarAttributes)
+  , DriverAttributes(DriverAttributes)
+  , GameAsset
+  , GameAssetAttributes(DriverAttrs, CarAttrs)
+  , GameAssetNftMetadata
+  , GameAssetNftMetadataEntry(GameAssetNftMetadataEntry)
+  , GameAssetType(DriverType, CarType)
+  , Rarity
+  , mkGameAsset
+  )
 import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.ScriptsFFI (gameAssetPolicy)
 import Common.ContractHelpers (findAnyAuthUtxo)
@@ -19,13 +30,30 @@ import Contract.Monad (liftContractM, liftedE, liftedM)
 import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (MintingPolicy(PlutusMintingPolicy), MintingPolicyHash, applyArgs)
+import Contract.Scripts
+  ( MintingPolicy(PlutusMintingPolicy)
+  , MintingPolicyHash
+  , applyArgs
+  )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
-import Contract.Transaction (TransactionHash, TransactionInput, TransactionOutputWithRefScript, balanceTx, mkTxUnspentOut, signTransaction, submit)
+import Contract.Transaction
+  ( TransactionHash
+  , TransactionInput
+  , TransactionOutputWithRefScript
+  , balanceTx
+  , mkTxUnspentOut
+  , signTransaction
+  , submit
+  )
 import Contract.TxConstraints (InputWithScriptRef(RefInput))
 import Contract.TxConstraints as Constraints
 import Contract.UnbalancedTx (mkUnbalancedTx)
-import Contract.Value (CurrencySymbol, TokenName, mkTokenName, scriptCurrencySymbol)
+import Contract.Value
+  ( CurrencySymbol
+  , TokenName
+  , mkTokenName
+  , scriptCurrencySymbol
+  )
 import Contract.Value as Value
 import Control.Monad.Error.Class (liftMaybe, throwError)
 import Control.Monad.Reader.Trans (asks)
@@ -131,7 +159,7 @@ mintGameAsset aoo r nonce = do
 
     constraints :: Constraints.TxConstraints Void Void
     constraints = Constraints.mustMintValue assetVal <>
-                  Constraints.mustSpendPubKeyOutput authTxi
+      Constraints.mustSpendPubKeyOutput authTxi
 
     lookups :: Lookups.ScriptLookups Void
     lookups = Lookups.mintingPolicy gameAssetPolicy <> Lookups.unspentOutputs

@@ -85,6 +85,7 @@ import Data.Array
   , drop
   , elem
   , filter
+  , mapMaybe
   , snoc
   , take
   , uncons
@@ -98,6 +99,7 @@ import Data.Map (Map)
 import Data.Map (fromFoldable, lookup, singleton, toUnfoldable) as Map
 import Data.Profunctor.Choice (left)
 import Data.String.CodeUnits (fromCharArray)
+import Effect.Aff (try)
 import Effect.Exception (error)
 import Racers (Racers)
 
@@ -172,7 +174,7 @@ queryRequestsWithAirdropAddress st = do
 -- | depositor address.
 redeemGameAsset
   :: Map Rarity AssetOption
-  -> Effect String
+  -> (AssetOption -> Aff String)
   -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
   -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
   -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
@@ -216,7 +218,7 @@ redeemGameAsset
   let
     -- Create and collect constraints to to mint game assets with metadata
     payAssetConstraintsAndMetadata
-      :: Effect (Constraints.TxConstraints Void Void /\ GameAssetNftMetadata)
+      :: Aff (Constraints.TxConstraints Void Void /\ GameAssetNftMetadata)
     payAssetConstraintsAndMetadata = do
       constraintsAndMetadata <- map join $ for requestedAssets $
         \(rarity /\ count) -> do
@@ -230,8 +232,8 @@ redeemGameAsset
               CarType -> carSymbol /\ mCarPolicyRef
           List.toUnfoldable <$> replicateM countInt
             ( do
-                nonce <- generateNonce
-                mintAvailableAssetByRarity
+                nonce <- generateNonce assetOption
+                liftEffect $ mintAvailableAssetByRarity
                   ((currencyMPSHash gameAssetSymbol /\ _) <$> mAssetPolicyRef)
                   assetOption
                   gameAssetSymbol
@@ -267,7 +269,7 @@ redeemGameAsset
             )
             mAssetRequestPolicyRef
 
-  mintsAndPaysNft /\ allMetadata <- liftEffect payAssetConstraintsAndMetadata
+  mintsAndPaysNft /\ allMetadata <- liftAff payAssetConstraintsAndMetadata
 
   burnsRequestTokens <- lift $ liftContractM "could not create token name"
     burnsRequestTokensM
@@ -328,7 +330,7 @@ redeemGameAsset
 consumeAndRedeemRequests
   :: Int
   -> Map Rarity AssetOption
-  -> Effect String
+  -> (AssetOption -> Aff String)
   -> RacersState
   -> Racers (Array GameAssetObject)
 consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
@@ -364,9 +366,11 @@ consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
             )
             reqs
           lift do
-            txIds <- traverse submit $ fst <$> txsAndAssets
-            traverse_ awaitTxConfirmed txIds
-            pure $ Array.concat $ snd <$> txsAndAssets
+            successfulSubmissions <- Array.mapMaybe hush <$> traverse
+              (\(tx /\ asset) -> try $ submit tx <#> (_ /\ asset))
+              txsAndAssets
+            traverse_ awaitTxConfirmed $ fst <$> successfulSubmissions
+            pure $ Array.concat $ snd <$> successfulSubmissions
       )
       pendingRequestsChunked
 

@@ -5,7 +5,7 @@ module CardanoRacers.RaceRegistry.Contract
   , initRace
   , supplyRegistrySlots
   , registerPositionInRace
-  , confirmParticipatingAssets
+  , confirmAssetSelection
   , findUtxoWithAvailableSlotToken
   , getRegistryEntriesFromOutput
   ) where
@@ -15,18 +15,43 @@ import Contract.Prelude
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types (GameAssetType(DriverType, CarType))
 import CardanoRacers.Nitro.Contract (burnNitroConstraints, mkNitroPolicy)
-import CardanoRacers.RaceRegistry.Types (RaceParticipant, RegistryDatum, RegistryEntry(PendingSelection, AssetSelection), RegistryParams, RegistryRedeemer(Enroll, SelectAssets, Collect))
-import CardanoRacers.RaceSlot.Contract (burnRaceSlotTokenConstraints, mintRaceSlotTokenConstraints, mkRaceSlotPolicy)
+import CardanoRacers.RaceRegistry.Types
+  ( RaceParticipant
+  , RegistryDatum
+  , RegistryEntry(PendingSelection, AssetSelection)
+  , RegistryParams
+  , RegistryRedeemer(Enroll, SelectAssets, Collect)
+  )
+import CardanoRacers.RaceSlot.Contract
+  ( burnRaceSlotTokenConstraints
+  , mintRaceSlotTokenConstraints
+  , mkRaceSlotPolicy
+  )
 import CardanoRacers.RaceSlot.Types (RaceHash, slotTokenName)
 import CardanoRacers.ScriptsFFI (raceRegistryScript)
 import Common.ContractHelpers (findAnyAuthUtxo)
 import Contract.Address (PubKeyHash, scriptHashAddress)
 import Contract.Monad (liftContractM, liftedM)
-import Contract.PlutusData (OutputDatum(OutputDatum, NoOutputDatum), fromData, toData)
+import Contract.PlutusData
+  ( OutputDatum(OutputDatum, NoOutputDatum)
+  , fromData
+  , toData
+  )
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (Validator(Validator), applyArgs, mintingPolicyHash, validatorHash)
+import Contract.Scripts
+  ( Validator(Validator)
+  , applyArgs
+  , mintingPolicyHash
+  , validatorHash
+  )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
-import Contract.Transaction (TransactionHash, TransactionInput, TransactionOutputWithRefScript, awaitTxConfirmed, submitTxFromConstraints)
+import Contract.Transaction
+  ( TransactionHash
+  , TransactionInput
+  , TransactionOutputWithRefScript
+  , awaitTxConfirmed
+  , submitTxFromConstraints
+  )
 import Contract.TxConstraints (DatumPresence(DatumInline))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (UtxoMap, utxosAt)
@@ -40,7 +65,17 @@ import Data.Array (concat, drop, filter, head, null, take) as Array
 import Data.BigInt (BigInt)
 import Data.FoldableWithIndex (findWithIndex)
 import Data.Map (Map)
-import Data.Map (filter, insert, keys, lookup, mapMaybe, singleton, toUnfoldable, union, unions) as Map
+import Data.Map
+  ( filter
+  , insert
+  , keys
+  , lookup
+  , mapMaybe
+  , singleton
+  , toUnfoldable
+  , union
+  , unions
+  ) as Map
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
 import Racers (Racers, withContract)
@@ -174,14 +209,16 @@ initRace raceHash entryNitroFee totalSlots = do
     emptyRegistryDatum = wrap $ toData (wrap [] :: RegistryDatum)
 
     constraints :: Constraints.TxConstraints Void Void
-    constraints = Constraints.mustSpendPubKeyOutput authTxi <> slotConstraints <> Constraints.mustPayToScript
-      registryVHash
-      emptyRegistryDatum
-      DatumInline
-      totalRaceSlotsValue
+    constraints = Constraints.mustSpendPubKeyOutput authTxi <> slotConstraints
+      <> Constraints.mustPayToScript
+        registryVHash
+        emptyRegistryDatum
+        DatumInline
+        totalRaceSlotsValue
 
     lookups :: Lookups.ScriptLookups Void
-    lookups = slotLookups <> Lookups.unspentOutputs (Map.singleton authTxi authTxo)
+    lookups = slotLookups <> Lookups.unspentOutputs
+      (Map.singleton authTxi authTxo)
 
   lift do
     txId <- submitTxFromConstraints lookups constraints
@@ -267,9 +304,9 @@ registerPositionInRace rgp pkhToEnroll = do
     awaitTxConfirmed txId
     pure txId
 
-confirmParticipatingAssets
+confirmAssetSelection
   :: RegistryParams -> PubKeyHash -> RaceParticipant -> Racers TransactionHash
-confirmParticipatingAssets rgp pkh participant = do
+confirmAssetSelection rgp pkh participant = do
   let selections = [ participant ]
   utxos <- lift $ liftedM "Could not get wallet utxos" getWalletUtxos
   registryVal <- mkRaceRegistryScript rgp
