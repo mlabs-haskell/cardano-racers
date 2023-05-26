@@ -1,6 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -Wno-all -fno-specialise #-}
+{-# OPTIONS_GHC -fno-specialise #-}
 
 module RaceRegistryScript (script) where
 
@@ -109,7 +109,7 @@ mkRegistryScript
         && traceIfFalse "does not burn enough NITRO" burnsNitroPerSlotPurchased
         && traceIfFalse "registry entries don't exceed slot counts per output" outputsWithRegistryDatumDontExceedSlotCounts
       where
-        (removedEntries, commonEntries, addedEntries) = diffedRegistry
+        (removedEntries, _, addedEntries) = diffedRegistry
 
         -- When removedEntries is empty, the input registry is a subset of the output registry and so the registry is unaltered
         doesNotAlterExistingEntries :: Bool

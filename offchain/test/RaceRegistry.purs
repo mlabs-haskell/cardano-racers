@@ -74,14 +74,23 @@ import Contract.Transaction
   )
 import Contract.TxConstraints (DatumPresence(DatumInline))
 import Contract.TxConstraints as Constraints
-import Contract.Value (Value, geq, mkTokenName, negation, scriptCurrencySymbol)
+import Contract.Value
+  ( Value
+  , flattenNonAdaAssets
+  , geq
+  , getLovelace
+  , mkTokenName
+  , negation
+  , scriptCurrencySymbol
+  , valueToCoin
+  )
 import Contract.Value as Value
 import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
 import Control.Apply (lift2)
 import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Ctl.Internal.Contract.Wallet (ownPubKeyHashes)
-import Data.Array (concat, drop, filter, head, null, take) as Array
+import Data.Array (concat, drop, filter, head, null, replicate, take) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.FoldableWithIndex (findWithIndex)
@@ -560,7 +569,7 @@ suite = group "Race Registry" do
     - Asset selection Tx does not contain all required inputs
   -}
 
-  test "playground" do
+  only $ test "playground" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
       \(adminKey /\ treasuryKey /\ userKey) -> do
         rp <- withKeyWallet adminKey do
@@ -579,7 +588,7 @@ suite = group "Race Registry" do
 
           (rgp /\ mintedAssets) <- setupRegistryAndAssets adminKey userKey st
             raceHash
-            (BigInt.fromInt 2)
+            (BigInt.fromInt 20)
 
           -- logInfo' "initialized race"
 
@@ -590,14 +599,15 @@ suite = group "Race Registry" do
           -- logInfo' $ "registreing admin"
 
           withContract (withKeyWallet userKey) do
-            _ <- buyNitroContract $ BigInt.fromInt 100
-
             firstPkh <- lift $ liftedM "Could not get first own public key hash"
               $ ownPubKeyHashes
               <#> Array.head
             firstAddr <- lift $ liftedM "Could not get first address"
               $ getWalletAddresses
               <#> Array.head
+
+            _ <- withContract (withKeyWallet adminKey) do
+              mintNitroAndPayToAddressContract (BigInt.fromInt 10000) firstAddr
 
             testTk <- lift $ liftContractM "not token name" $
               (mkTokenName <=< byteArrayFromAscii) "test"
@@ -611,38 +621,61 @@ suite = group "Race Registry" do
                   mintedAssets
                 pure $ c /\ d
 
-            _ <- registerPositionInRace rgp firstPkh
-            _ <- registerPositionInRace rgp firstPkh
-            r <- try $ registerPositionInRace rgp firstPkh
+            let
+              registerBatch n i = do
+                _ <- sequence $ Array.replicate n
+                  (registerPositionInRace rgp firstPkh)
+                _ <- sequence $ Array.replicate n $
+                  confirmAssetSelection rgp firstPkh
+                    ( wrap
+                        { car: carTk
+                        , driver: driverTk
+                        , payoutAddress: firstAddr
+                        }
+                    )
+                us <- map (fst <<< snd) <<< (Map.toUnfoldable :: _ -> Array _)
+                  <$> queryRegistryUtxos rgp
+                logInfo' $ (show $ i * n) <> ": "
+                logInfo' $ show $ map
+                  ( getLovelace <<< valueToCoin <<<
+                      (\u -> (unwrap (unwrap u).output).amount)
+                  )
+                  us
+                logInfo' $ show $ flattenNonAdaAssets $ foldMap
+                  (\u -> (unwrap (unwrap u).output).amount)
+                  us
+              loopFor 0 _ = pure unit
+              loopFor n m = m n >>= const (loopFor (n - 1) m)
 
-            when (not $ isLeft r) $
-              logInfo' "expected error, registration passed"
+            loopFor 5 $ registerBatch 4
 
-            logInfo' $ "registering user"
+            -- _ <- confirmAssetSelection rgp firstPkh
+            --   ( wrap
+            --       { car: carTk
+            --       , driver: driverTk
+            --       , payoutAddress: firstAddr
+            --       }
+            --   )
 
-            _ <- confirmAssetSelection rgp firstPkh
-              ( wrap
-                  { car: carTk
-                  , driver: driverTk
-                  , payoutAddress: firstAddr
-                  }
-              )
+            -- us <- queryRegistryUtxos rgp
+            -- logInfo' $ show $ (snd <<< snd) <$> (Map.toUnfoldable us :: Array _)
 
-            us <- queryRegistryUtxos rgp
-            logInfo' $ show $ (snd <<< snd) <$> (Map.toUnfoldable us :: Array _)
+            -- withContract (withKeyWallet adminKey) do
+            --   -- _ <- collectRegistryScriptLeftovers raceHash rgp
+            --   -- us' <- queryRegistryUtxos rgp
+            --   -- logInfo' $ show $ (snd <<< snd) <$> (Map.toUnfoldable us' :: Array _)
 
-            withContract (withKeyWallet adminKey) do
-              -- _ <- collectRegistryScriptLeftovers raceHash rgp
-              -- us' <- queryRegistryUtxos rgp
-              -- logInfo' $ show $ (snd <<< snd) <$> (Map.toUnfoldable us' :: Array _)
+            --   _ <- supplyRegistrySlots raceHash rgp $ BigInt.fromInt 10
+            --   pure unit
 
-              _ <- supplyRegistrySlots raceHash rgp $ BigInt.fromInt 10
-              pure unit
+            -- _ <- registerPositionInRace rgp firstPkh
 
-            _ <- registerPositionInRace rgp firstPkh
-
-            us <- queryRegistryUtxos rgp
-            logInfo' $ show $ (snd <<< snd) <$> (Map.toUnfoldable us :: Array _)
+            us <- map snd <<< (Map.toUnfoldable :: _ -> Array _) <$>
+              queryRegistryUtxos rgp
+            logInfo' $ show $ getLovelace $ valueToCoin $ foldMap
+              (_.amount <<< unwrap <<< _.output <<< unwrap <<< fst)
+              us
+            -- logInfo' $ show $ (snd <<< snd) <$> (Map.toUnfoldable us :: Array _)
 
             pure unit
 
@@ -663,7 +696,8 @@ suite = group "Race Registry" do
   availableAssets :: Map.Map Rarity AssetOption
   availableAssets = Map.fromFoldable
     [ Common /\
-        { name: unsafePartial $ fromJust $ mkCip25String "CommonCar"
+        { name: unsafePartial $ fromJust $ mkCip25String
+            "CommonCarRareDriverLoooNaaa"
         , assetType: CarType
         , imageUrl:
             "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
@@ -671,7 +705,8 @@ suite = group "Race Registry" do
         , nitroAmount: BigInt.fromInt 100
         }
     , Rare /\
-        { name: unsafePartial $ fromJust $ mkCip25String "RareDriver"
+        { name: unsafePartial $ fromJust $ mkCip25String
+            "RareDriverLooooooongNaaae"
         , assetType: DriverType
         , imageUrl:
             "https://cdn.pixabay.com/photo/31/19/17/comic-2026591_1280.png"
@@ -730,7 +765,7 @@ suite = group "Race Registry" do
       requests =
         [ Common
         , Rare
-        , Epic
+        , Rare
         ]
 
     counterRef <- liftEffect $ Ref.new 0

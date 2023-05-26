@@ -62,7 +62,9 @@ import Control.Apply (lift2)
 import Control.Monad.Reader.Trans (asks)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (concat, drop, filter, head, null, take) as Array
+import Data.Array (replicate)
 import Data.BigInt (BigInt)
+import Data.BigInt (fromInt, toInt) as BigInt
 import Data.FoldableWithIndex (findWithIndex)
 import Data.Map (Map)
 import Data.Map
@@ -201,20 +203,34 @@ initRace raceHash entryNitroFee totalSlots = do
 
   registryVHash <- validatorHash <$> mkRaceRegistryScript rgp
 
+  let slotPerUtxo = BigInt.fromInt 15
+
+  utxoCount <- lift $ liftContractM "Could not get Int from BigInt"
+    $ BigInt.toInt
+    $ totalSlots `div` slotPerUtxo
+
   let
-    totalRaceSlotsValue :: Value
-    totalRaceSlotsValue = Value.singleton slotSymbol slotTokenName
-      totalSlots
+
+    singleUtxoSlotValue :: Value
+    singleUtxoSlotValue = Value.singleton slotSymbol slotTokenName slotPerUtxo
+
+    remainderSlotValue :: Value
+    remainderSlotValue = Value.singleton slotSymbol slotTokenName
+      (totalSlots `mod` slotPerUtxo)
 
     emptyRegistryDatum = wrap $ toData (wrap [] :: RegistryDatum)
 
+    registryOutput :: Value -> Constraints.TxConstraints Void Void
+    registryOutput v = Constraints.mustPayToScript
+      registryVHash
+      emptyRegistryDatum
+      DatumInline
+      v
+
     constraints :: Constraints.TxConstraints Void Void
     constraints = Constraints.mustSpendPubKeyOutput authTxi <> slotConstraints
-      <> Constraints.mustPayToScript
-        registryVHash
-        emptyRegistryDatum
-        DatumInline
-        totalRaceSlotsValue
+      <> fold (replicate utxoCount $ registryOutput singleUtxoSlotValue)
+      <> (registryOutput remainderSlotValue)
 
     lookups :: Lookups.ScriptLookups Void
     lookups = slotLookups <> Lookups.unspentOutputs

@@ -8,23 +8,10 @@ module CardanoRacers.Deposit.Contract
 import Contract.Prelude
 
 import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy)
-import CardanoRacers.AssetRequest.Types
-  ( AirdropAddressDatum
-  , AssetRequestRedeemer(BurnRequestToken)
-  )
+import CardanoRacers.AssetRequest.Types (AirdropAddressDatum, AssetRequestRedeemer(BurnRequestToken))
 import CardanoRacers.Deposit.Types (DepositScriptParams(DepositScriptParams))
-import CardanoRacers.GameAsset.Contract
-  ( mintAvailableAssetByRarity
-  , mkGameAssetPolicy
-  )
-import CardanoRacers.GameAsset.Types
-  ( AssetOption
-  , GameAssetNftMetadata
-  , GameAssetObject
-  , GameAssetType(DriverType, CarType)
-  , Rarity(Epic, Rare, Common)
-  , unGameAsset
-  )
+import CardanoRacers.GameAsset.Contract (mintAvailableAssetByRarity, mkGameAssetPolicy)
+import CardanoRacers.GameAsset.Types (AssetOption, GameAssetNftMetadata, GameAssetType(DriverType, CarType), Rarity(Epic, Rare, Common), GameAssetObject, unGameAsset)
 import CardanoRacers.Nitro.Contract (paysNitroConstraints)
 import CardanoRacers.RacersState.Contract (queryRacersRefScriptOutput)
 import CardanoRacers.RacersState.Types (RacersState)
@@ -34,62 +21,23 @@ import Contract.Address (Address, scriptHashAddress)
 import Contract.AuxiliaryData (setTxMetadata)
 import Contract.BalanceTxConstraints as BalanceTxConstraints
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
-import Contract.PlutusData
-  ( OutputDatum(OutputDatum)
-  , Redeemer(Redeemer)
-  , fromData
-  , toData
-  , unitRedeemer
-  )
+import Contract.PlutusData (OutputDatum(OutputDatum), Redeemer(Redeemer), fromData, toData, unitRedeemer)
 import Contract.Prim.ByteArray (byteArrayFromAscii, byteArrayToIntArray)
 import Contract.ScriptLookups (UnbalancedTx, mkUnbalancedTx)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts
-  ( Validator(Validator)
-  , applyArgs
-  , mintingPolicyHash
-  , validatorHash
-  )
+import Contract.Scripts (Validator(Validator), applyArgs, mintingPolicyHash, validatorHash)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
-import Contract.Transaction
-  ( BalancedSignedTransaction
-  , TransactionInput
-  , TransactionOutputWithRefScript
-  , awaitTxConfirmed
-  , createAdditionalUtxos
-  , mkTxUnspentOut
-  , signTransaction
-  , submit
-  , withBalancedTxWithConstraints
-  )
+import Contract.Transaction (BalancedSignedTransaction, TransactionInput, TransactionOutputWithRefScript, awaitTxConfirmed, createAdditionalUtxos, mkTxUnspentOut, signTransaction, submit, withBalancedTxWithConstraints)
 import Contract.TxConstraints (InputWithScriptRef(RefInput))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (UtxoMap, utxosAt)
 import Contract.Value (TokenName, currencyMPSHash)
-import Contract.Value
-  ( flattenValue
-  , getTokenName
-  , mkTokenName
-  , negation
-  , scriptCurrencySymbol
-  , singleton
-  ) as Value
+import Contract.Value (flattenValue, getTokenName, mkTokenName, negation, scriptCurrencySymbol, singleton) as Value
 import Contract.Wallet (getWalletUtxos)
 import Control.Monad.Error.Class (liftMaybe)
 import Control.Monad.Reader.Trans (asks, runReaderT)
 import Control.Monad.Trans.Class (lift)
-import Data.Array
-  ( catMaybes
-  , concat
-  , cons
-  , drop
-  , elem
-  , filter
-  , mapMaybe
-  , snoc
-  , take
-  , uncons
-  ) as Array
+import Data.Array (catMaybes, concat, cons, drop, elem, filter, mapMaybe, snoc, take, uncons) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt, toInt) as BigInt
 import Data.Char (fromCharCode)
