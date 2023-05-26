@@ -3,121 +3,40 @@ module CardanoRacers.NitroInit where
 import Contract.Prelude
 
 import Aeson (JsonDecodeError, decodeJsonString, encodeAeson)
-import CardanoRacers.AssetRequest.Contract
-  ( mkAssetRequestPolicy
-  , requestAssetByRarity
-  )
+import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy, requestAssetByRarity)
 import CardanoRacers.Common.Types (RacersParams(..))
-import CardanoRacers.Deposit.Contract
-  ( consumeAndRedeemRequests
-  , mkDepositValidator
-  , queryRequestsWithAirdropAddress
-  )
+import CardanoRacers.Deposit.Contract (consumeAndRedeemRequests, mkDepositValidator, queryRequestsWithAirdropAddress)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types
-  ( AssetOption
-  , GameAssetAttributes(..)
-  , GameAssetObject
-  , GameAssetType(..)
-  , Rarity(Common, Rare, Epic)
-  )
+import CardanoRacers.GameAsset.Types (AssetOption, GameAssetAttributes(..), GameAssetObject, GameAssetType(..), Rarity(Common, Rare, Epic))
 import CardanoRacers.Helpers (counterNonce, getTxoWithRefScrpt)
-import CardanoRacers.Nitro.Contract
-  ( adminMintsNitroContract
-  , botMintsNitroContract
-  , buyNitroContract
-  , mkNitroPolicy
-  )
+import CardanoRacers.Nitro.Contract (adminMintsNitroContract, botMintsNitroContract, buyNitroContract, mkNitroPolicy)
 import CardanoRacers.Nitro.Helpers (createRacersParams)
-import CardanoRacers.RacePosition.Contract (mkRacePositionPolicy)
-import CardanoRacers.RacePosition.Types (slotTokenName)
-import CardanoRacers.RaceRegistry.Contract
-  ( collectRegistryScriptLeftovers
-  , confirmParticipatingAssets
-  , initRace
-  , queryRegistryUtxos
-  , registerPositionInRace
-  )
-import CardanoRacers.RaceRegistry.Types
-  ( RaceParticipant(..)
-  , RegistryEntry(..)
-  , RegistryParams(..)
-  )
-import CardanoRacers.RacersState.Contract
-  ( createRacersRefScriptOutput
-  , initRacersStateContract
-  , modifyRacersStateContract
-  , queryRacersState
-  )
+import CardanoRacers.RaceRegistry.Contract (collectRegistryScriptLeftovers, confirmAssetSelection, initRace, queryRegistryUtxos, registerPositionInRace)
+import CardanoRacers.RaceRegistry.Types (RaceParticipant(..), RegistryEntry(..), RegistryParams(..))
+import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
+import CardanoRacers.RaceSlot.Types (RaceHash, slotTokenName)
+import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput, initRacersStateContract, modifyRacersStateContract, queryRacersState)
 import CardanoRacers.RacersState.Types (RacersState(..))
-import Contract.Address
-  ( Address
-  , addressFromBech32
-  , addressToBech32
-  , scriptHashAddress
-  )
+import Contract.Address (Address, addressFromBech32, addressToBech32, scriptHashAddress)
 import Contract.AssocMap (empty, insert) as AssocMap
-import Contract.Config
-  ( NetworkId(..)
-  , PrivatePaymentKeySource(..)
-  , WalletSpec(..)
-  , testnetConfig
-  , testnetEternlConfig
-  )
+import Contract.Config (NetworkId(..), PrivatePaymentKeySource(..), WalletSpec(..), testnetConfig, testnetEternlConfig)
 import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Hashing (publicKeyHash)
 import Contract.Log (logError', logInfo')
 import Contract.Metadata (mkCip25String, unCip25String)
-import Contract.Monad
-  ( Contract
-  , liftContractE
-  , liftContractM
-  , liftedM
-  , runContract
-  , throwContractError
-  )
+import Contract.Monad (Contract, liftContractE, liftContractM, liftedM, runContract, throwContractError)
 import Contract.PlutusData (unitDatum)
-import Contract.Prim.ByteArray
-  ( ByteArray(..)
-  , byteArrayFromAscii
-  , byteArrayToIntArray
-  , hexToByteArray
-  )
+import Contract.Prim.ByteArray (ByteArray(..), byteArrayFromAscii, byteArrayToIntArray, hexToByteArray)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts
-  ( MintingPolicy(..)
-  , ValidatorHash
-  , mintingPolicyHash
-  , validatorHash
-  )
-import Contract.Transaction
-  ( TransactionHash
-  , awaitTxConfirmed
-  , submitTxFromConstraints
-  )
+import Contract.Scripts (MintingPolicy(..), ValidatorHash, mintingPolicyHash, validatorHash)
+import Contract.Transaction (TransactionHash, awaitTxConfirmed, submitTxFromConstraints)
 import Contract.TxConstraints (DatumPresence(..))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (utxosAt)
-import Contract.Value
-  ( TokenName
-  , Value
-  , adaSymbol
-  , flattenNonAdaAssets
-  , flattenValue
-  , getTokenName
-  , lovelaceValueOf
-  , mkTokenName
-  , mpsSymbol
-  , scriptCurrencySymbol
-  )
+import Contract.Value (TokenName, Value, adaSymbol, flattenNonAdaAssets, flattenValue, getTokenName, lovelaceValueOf, mkTokenName, mpsSymbol, scriptCurrencySymbol)
 import Contract.Value as Value
 import Contract.Wallet (PrivatePaymentKey(..), privateKeyFromBytes)
-import Contract.Wallet
-  ( getWalletAddress
-  , getWalletAddresses
-  , getWalletBalance
-  , getWalletUtxos
-  )
+import Contract.Wallet (getWalletAddress, getWalletAddresses, getWalletBalance, getWalletUtxos)
 import Contract.Wallet.Key (publicKeyFromPrivateKey)
 import Control.Alt ((<|>))
 import Control.Monad.Error.Class (catchError, liftMaybe, throwError)
@@ -127,11 +46,7 @@ import Control.Promise (Promise, fromAff, toAffE)
 import Ctl.Internal.Contract.Wallet (ownPubKeyHashes)
 import Ctl.Internal.FfiHelpers (MaybeFfiHelper, maybeFfiHelper)
 import Ctl.Internal.Plutus.Conversion (toPlutusAddress)
-import Ctl.Internal.Serialization.Address
-  ( enterpriseAddress
-  , enterpriseAddressToAddress
-  , keyHashCredential
-  )
+import Ctl.Internal.Serialization.Address (enterpriseAddress, enterpriseAddressToAddress, keyHashCredential)
 import Ctl.Internal.Serialization.Types (PrivateKey)
 import Ctl.Internal.Types.RawBytes (RawBytes(RawBytes))
 import Data.Array (concat, filter, head, mapMaybe) as Array
@@ -356,7 +271,10 @@ createRefScripts = do
   assetRequestScriptRef <- mkAssetRequestPolicy >>= case _ of
     PlutusMintingPolicy s -> pure s
     _ -> lift $ throwContractError "Not plutus script"
-  gameAssetScriptRef <- mkGameAssetPolicy >>= case _ of
+  driverPolicyRef <- mkGameAssetPolicy DriverType >>= case _ of
+    PlutusMintingPolicy s -> pure s
+    _ -> lift $ throwContractError "Not plutus script"
+  carPolicyRef <- mkGameAssetPolicy CarType >>= case _ of
     PlutusMintingPolicy s -> pure s
     _ -> lift $ throwContractError "Not plutus script"
   nitroPolicyScriptRef <- mkNitroPolicy >>= case _ of
@@ -366,7 +284,8 @@ createRefScripts = do
   depositAssetScriptRef <- unwrap <$> mkDepositValidator
 
   _ <- createRacersRefScriptOutput assetRequestScriptRef
-  _ <- createRacersRefScriptOutput gameAssetScriptRef
+  _ <- createRacersRefScriptOutput driverPolicyRef
+  _ <- createRacersRefScriptOutput carPolicyRef
   _ <- createRacersRefScriptOutput nitroPolicyScriptRef
   _ <- createRacersRefScriptOutput depositAssetScriptRef
   pure unit
@@ -460,7 +379,7 @@ redeemRequests cRef assetRef mintedAssetRef = do
     -- depRefScriptTxi <- queryOrCreateDepositReferenceScript rp
     -- depRefScriptTxo <- getTxoWithRefScrpt depRefScriptTxi
     logInfo' "Queried deposit reference script"
-    assetObjs <- consumeAndRedeemRequests 3 availableAssets (counterNonce cRef)
+    assetObjs <- consumeAndRedeemRequests 5 availableAssets (const $ liftEffect $ counterNonce cRef)
       rs -- Nothing
     _ <- liftEffect $ traverse
       (\ao -> Ref.modify (Map.insert ao.tokenName ao) mintedAssetRef)
@@ -487,7 +406,7 @@ registerInRace = do
       firstPkh <- lift $ liftedM "Could not get first own public key hash"
         $ ownPubKeyHashes
         <#> Array.head
-      fst <$> registerPositionInRace rgp firstPkh
+      registerPositionInRace rgp firstPkh
 
   actor <- getSelectedActor
   if actor == "User" then
@@ -509,6 +428,7 @@ raceWithAssets mintedAssetsRef = do
       carTk <- lift $ liftContractM "invalid car name" $ mkTokenName
         <=< byteArrayFromAscii
         $ carStr
+
       rgp <- createRaceRegistryParams raceHash nitroFee
 
       firstPkh <- lift $ liftedM "Could not get first own public key hash"
@@ -518,7 +438,7 @@ raceWithAssets mintedAssetsRef = do
         $ getWalletAddresses
         <#> Array.head
 
-      _ <- confirmParticipatingAssets rgp firstPkh $ wrap
+      _ <- confirmAssetSelection rgp firstPkh $ wrap
         { driver: driverTk, car: carTk, payoutAddress: firstAddr }
 
       ma <- liftEffect $ Ref.read mintedAssetsRef
@@ -593,7 +513,7 @@ closeRace mar = do
           )
       $ Array.mapMaybe castParticipant entries
 
-    _ <- collectRegistryScriptLeftovers rgp
+    _ <- collectRegistryScriptLeftovers raceHash rgp
 
     lift (sendPayout rewardAmount (unwrap winner).payoutAddress)
   where
@@ -658,7 +578,7 @@ closeRaceManual = do
       $ castParticipant
       =<< find (isWinner d c) entries
 
-    _ <- collectRegistryScriptLeftovers rgp
+    _ <- collectRegistryScriptLeftovers raceHash rgp
 
     lift (sendPayout rewardAmount (unwrap winner).payoutAddress)
   where
@@ -684,26 +604,29 @@ refreshRace = do
         <> tokenNameToString (unwrap ass).car
     pure $ show $ encodeAeson $ map prettifyEntry entries
 
-promptRaceParams :: Racers (String /\ BigInt)
+promptRaceParams :: Racers (RaceHash /\ BigInt)
 promptRaceParams = do
   raceHash <- liftEffect $ promptFor "Enter Race Name:"
   nitroFeeStr <- liftEffect $ promptFor "Enter NITRO registration fee:"
   nitroFee <- lift $ liftContractM "couldn't convert to bigint" $
     BigInt.fromString nitroFeeStr
-  pure (raceHash /\ nitroFee)
+  raceHashByteArray <- lift $ liftContractM "could not get bytearray from ascii" $ byteArrayFromAscii raceHash
+  pure (raceHashByteArray /\ nitroFee)
 
-createRaceRegistryParams :: String -> BigInt -> Racers RegistryParams
+createRaceRegistryParams :: RaceHash -> BigInt -> Racers RegistryParams
 createRaceRegistryParams raceHash nitroFee = do
   slotSymbol <- withContract (liftedM "could not get symbol") $ mpsSymbol
     <<< mintingPolicyHash
-    <$> mkRacePositionPolicy raceHash
+    <$> mkRaceSlotPolicy raceHash
   nitroPolicyHash <- mintingPolicyHash <$> mkNitroPolicy
-  gameAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy
+  driverAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy DriverType
+  carAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy CarType
 
   pure $ wrap
     { slotAssetClass: (slotSymbol /\ slotTokenName)
     , nitroPolicyHash: nitroPolicyHash
-    , gameAssetPolicyHash: gameAssetPolicyHash
+    , driverAssetPolicyHash
+    , carAssetPolicyHash
     , nitroFee
     }
 

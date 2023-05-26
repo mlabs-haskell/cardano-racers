@@ -1,6 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -Wno-all -fno-specialise #-}
+{-# OPTIONS_GHC -fno-specialise #-}
 
 module RaceRegistryScript (script) where
 
@@ -10,9 +10,10 @@ import Data.Function (on)
 import GHC.Generics
 import GHC.Show (Show)
 import Plutonomy qualified (optimizeUPLC)
-import Plutus.V1.Ledger.Value (AssetClass(AssetClass), assetClass, assetClassValue, assetClassValueOf, geq, mpsSymbol)
+import Plutus.V1.Ledger.Value (AssetClass (AssetClass), assetClass, assetClassValue, assetClassValueOf, geq, mpsSymbol)
 import Plutus.V2.Ledger.Api (
   Address,
+  CurrencySymbol,
   MintingPolicyHash,
   PubKeyHash,
   Script,
@@ -25,7 +26,7 @@ import Plutus.V2.Ledger.Api (
   Value,
   fromCompiledCode,
   scriptContextTxInfo,
-  txInfoMint, CurrencySymbol
+  txInfoMint,
  )
 import Plutus.V2.Ledger.Contexts (findOwnInput, getContinuingOutputs, txSignedBy, valueSpent)
 import Plutus.V2.Ledger.Tx (TxOut (txOutValue))
@@ -42,6 +43,14 @@ data RaceParticipant = RaceParticipant
   deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''RaceParticipant
 
+compareParticipant :: RaceParticipant -> RaceParticipant -> Ordering
+compareParticipant
+  (RaceParticipant car1 driver1 payoutAddress1)
+  (RaceParticipant car2 driver2 payoutAddress2) =
+          (compare `on` serialiseData . toBuiltinData) car1 car2 
+      <> (compare `on` serialiseData . toBuiltinData) driver1 driver2 
+      <> (compare `on` serialiseData . toBuiltinData) payoutAddress1 payoutAddress2
+
 instance Eq RaceParticipant where
   RaceParticipant car1 driver1 payoutAddress1 == RaceParticipant car2 driver2 payoutAddress2 =
     car1 == car2 && driver1 == driver2 && payoutAddress1 == payoutAddress2
@@ -49,6 +58,12 @@ instance Eq RaceParticipant where
 data RegistryEntry = PendingSelection PubKeyHash | AssetSelection RaceParticipant
   deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''RegistryEntry
+
+compareEntry :: RegistryEntry -> RegistryEntry -> Ordering
+compareEntry (PendingSelection pkh1) (PendingSelection pkh2) = (compare `on` serialiseData . toBuiltinData) pkh1 pkh2
+compareEntry (AssetSelection rp1) (AssetSelection rp2) = compareParticipant rp1 rp2
+compareEntry (PendingSelection _) (AssetSelection _) = LT
+compareEntry (AssetSelection _) (PendingSelection _) = GT
 
 instance Eq RegistryEntry where
   PendingSelection pkh1 == PendingSelection pkh2 = pkh1 == pkh2
@@ -65,7 +80,8 @@ data RegistryParams = RegistryParams
   { slotAssetClass :: (CurrencySymbol, TokenName)
   -- ^ can't reuse tokens across races, if that's desired an additional raceHash parameters should be included to ensure uniqueness
   , nitroPolicyHash :: MintingPolicyHash
-  , gameAssetPolicyHash :: MintingPolicyHash
+  , driverAssetPolicyHash :: MintingPolicyHash
+  , carAssetPolicyHash :: MintingPolicyHash
   , nitroFee :: Integer
   }
 PlutusTx.unstableMakeIsData ''RegistryParams
@@ -74,7 +90,7 @@ PlutusTx.unstableMakeIsData ''RegistryParams
 mkRegistryScript :: RacersParams -> RegistryParams -> RegistryRedeemer -> ScriptContext -> Bool
 mkRegistryScript
   RacersParams {adminToken, botToken}
-  RegistryParams {slotAssetClass, nitroPolicyHash, gameAssetPolicyHash, nitroFee}
+  RegistryParams {slotAssetClass, nitroPolicyHash, driverAssetPolicyHash, carAssetPolicyHash, nitroFee}
   red
   ctx = case red of
     Collect ->
@@ -86,7 +102,6 @@ mkRegistryScript
 
         inputContainsBotNft :: Bool
         inputContainsBotNft = valueSpent info `geq` assetClassValue botToken 1
-
     Enroll pkhs ->
       traceIfFalse "value at registry not conserved" valueAtRegistryIsConserved
         && traceIfFalse "existing registry entries must not be altered" doesNotAlterExistingEntries
@@ -94,7 +109,7 @@ mkRegistryScript
         && traceIfFalse "does not burn enough NITRO" burnsNitroPerSlotPurchased
         && traceIfFalse "registry entries don't exceed slot counts per output" outputsWithRegistryDatumDontExceedSlotCounts
       where
-        (removedEntries, commonEntries, addedEntries) = diffedRegistry
+        (removedEntries, _, addedEntries) = diffedRegistry
 
         -- When removedEntries is empty, the input registry is a subset of the output registry and so the registry is unaltered
         doesNotAlterExistingEntries :: Bool
@@ -105,17 +120,15 @@ mkRegistryScript
           where
             aux (PendingSelection pkh) = pkh `elem` pkhs -- this check is possible not needed, Enroll can be modified to take no constructor params
             aux _ = False -- Only pending selections can be added
-
         burnsNitroPerSlotPurchased :: Bool
         burnsNitroPerSlotPurchased = totalNitroBurnt >= requiredNitroBurnt
           where
             requiredNitroBurnt = nitroFee * length addedEntries
             totalNitroBurnt = assetClassValueOf (negate $ txInfoMint info) (assetClass (mpsSymbol nitroPolicyHash) nitroTokenName)
-
     SelectAssets ->
       traceIfFalse "value at registry not conserved" valueAtRegistryIsConserved
         && traceIfFalse "not signed by all removed pending pubkey hashes" signedByRemovedEntries
-        -- && traceIfFalse "does not have 1 to 1 mapping of entries removed and added" (length removedEntries == length addedEntries)
+        && traceIfFalse "does not have 1 to 1 mapping of entries removed and added" hasOnetoOneMapping
         && traceIfFalse "input does not contain all selected assets " inputContainsAssetSelections
         && traceIfFalse "registry entries exceed slot counts per output" outputsWithRegistryDatumDontExceedSlotCounts
       where
@@ -126,14 +139,17 @@ mkRegistryScript
           where
             aux (PendingSelection pkh) = txSignedBy info pkh
             aux _ = False -- Only pending selections can be removed
+        hasOnetoOneMapping :: Bool
+        hasOnetoOneMapping = length removedEntries == length addedEntries
+
         inputContainsAssetSelections :: Bool
         inputContainsAssetSelections = all aux addedEntries
           where
-            spentValue = valueSpent info
-            gameAssetSymbol = mpsSymbol gameAssetPolicyHash
+            !spentValue = valueSpent info
+            !driverSymbol = mpsSymbol driverAssetPolicyHash
+            !carSymbol = mpsSymbol carAssetPolicyHash
             aux (AssetSelection RaceParticipant {car, driver}) =
-              spentValue `geq` assetClassValue (assetClass gameAssetSymbol car) 1
-              -- ((<>) `on` (flip assetClassValue 1 . assetClass gameAssetSymbol)) car driver
+              spentValue `geq` (assetClassValue (assetClass driverSymbol driver) 1 <> assetClassValue (assetClass carSymbol car) 1)
             aux _ = False
     where
       info :: TxInfo
@@ -178,21 +194,20 @@ mkRegistryScript
         Nothing -> traceError "could not get registry from txo inline datum"
 
 {-# INLINEABLE diffDatas #-}
-diffDatas :: ToData a => [a] -> [a] -> ([a], [a], [a])
+diffDatas :: [RegistryEntry] -> [RegistryEntry] -> ([RegistryEntry], [RegistryEntry], [RegistryEntry])
 diffDatas as bs =
   go (sorted as) (sorted bs) [] [] []
   where
     -- Hacky sort leveraging Ord on BuiltinByteString on RegistryEntry. This is
     -- done as deriving/implementing Ord seems to be broken
     -- TODO: find out how to derive/implement Ord on the custom data types
-    sorted = sortBy (compare `on` snd) . map (\x -> (x, serialiseData (toBuiltinData x)))
-
+    sorted = sortBy compareEntry -- (compare `on` snd) . map (\x -> (x, serialiseData (toBuiltinData x)))
     go [] [] left commons right = (reverse left, reverse commons, reverse right)
-    go xs [] left commons right = (reverse left ++ map fst xs , reverse commons, reverse right)
-    go [] ys left commons right = (reverse left, reverse commons, reverse right ++ map fst ys)
-    go ((x, xSerialized) : xs) ((y, ySerialized) : ys) left commons right
-      | xSerialized < ySerialized = go xs ((y, ySerialized) : ys) (x : left) commons right
-      | xSerialized > ySerialized = go ((x, xSerialized) : xs) ys left commons (y : right)
+    go xs [] left commons right = (reverse left ++ xs, reverse commons, reverse right)
+    go [] ys left commons right = (reverse left, reverse commons, reverse right ++ ys)
+    go (x : xs) (y : ys) left commons right
+      | compareEntry x y == LT = go xs (y : ys) (x : left) commons right
+      | compareEntry x y == GT = go (x : xs) ys left commons (y : right)
       | otherwise = go xs ys left (x : commons) right
 
 {-# INLINEABLE mkScript #-}

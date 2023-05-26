@@ -1,11 +1,11 @@
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TemplateHaskell #-}
 
-module RacePositionPolicy (script) where
+module RaceSlotPolicy (script) where
 
 import PlutusTx.Prelude
 
-import CommonTypes (RacersParams (adminToken, botToken, RacersParams))
+import CommonTypes (RacersParams (RacersParams, adminToken, botToken))
 import Ledger.Value (assetClassValue, geq)
 import Plutonomy qualified (optimizeUPLC)
 import Plutus.V2.Ledger.Api (
@@ -17,15 +17,15 @@ import Plutus.V2.Ledger.Api (
 import Plutus.V2.Ledger.Contexts (valueSpent)
 import PlutusTx qualified (compile, unsafeFromBuiltinData)
 
-mkPositionPolicy :: RacersParams -> ScriptContext -> Bool
-mkPositionPolicy RacersParams{adminToken, botToken} ctx = inputContainsBotNft || inputContainsAdminNft
+mkSlotPolicy :: RacersParams -> ScriptContext -> Bool
+mkSlotPolicy RacersParams {adminToken, botToken} ctx = inputContainsBotNft || inputContainsAdminNft
   where
     info :: TxInfo
     info = scriptContextTxInfo ctx
 
     inputContainsAdminNft :: Bool
     inputContainsAdminNft = valueSpent info `geq` assetClassValue adminToken 1
-    
+
     inputContainsBotNft :: Bool
     inputContainsBotNft = valueSpent info `geq` assetClassValue botToken 1
 
@@ -34,7 +34,7 @@ mkPolicy :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
 mkPolicy racersParams _raceHash _redeemer context =
   let
     result =
-      mkPositionPolicy
+      mkSlotPolicy
         (PlutusTx.unsafeFromBuiltinData racersParams)
         (PlutusTx.unsafeFromBuiltinData context)
    in

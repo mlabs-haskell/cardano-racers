@@ -22,7 +22,8 @@ import Contract.PlutusData
 import Contract.Value (CurrencySymbol)
 
 newtype DepositScriptParams = DepositScriptParams
-  { assetPolicySymbol :: CurrencySymbol
+  { driverPolicySymbol :: CurrencySymbol
+  , carPolicySymbol :: CurrencySymbol
   , assetRequestPolicySymbol :: CurrencySymbol
   }
 
@@ -34,7 +35,9 @@ instance
   HasPlutusSchema DepositScriptParams
     ( "DepositScriptParams"
         :=
-          ( "assetPolicySymbol"
+          ( "driverPolicySymbol"
+              := I CurrencySymbol
+              :+ "carPolicySymbol"
               := I CurrencySymbol
               :+ "assetRequestPolicySymbol"
               := I CurrencySymbol
@@ -55,7 +58,8 @@ instance EncodeAeson DepositScriptParams where
 
 instance DecodeAeson DepositScriptParams where
   decodeAeson = decodeWrappedAeson "DepositScriptParams" \obj -> do
-    assetPolicySymbol <- obj .: "assetPolicySymbol"
+    driverPolicySymbol <- obj .: "driverPolicySymbol"
+    carPolicySymbol <- obj .: "carPolicySymbol"
     assetRequestPolicySymbol <- obj .: "assetRequestPolicySymbol"
     pure $ DepositScriptParams
-      { assetPolicySymbol, assetRequestPolicySymbol }
+      { driverPolicySymbol, carPolicySymbol, assetRequestPolicySymbol }

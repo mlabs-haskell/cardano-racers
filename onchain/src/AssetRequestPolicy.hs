@@ -42,9 +42,10 @@ mkAssetRequestPolicy rp red ctx =
    in
     case red of
       BurnRequestToken ->
-        (traceIfFalse "admin token not present" inputContainsAdminNft
-        || traceIfFalse "bot token not present" inputContainsBotNft)
-        && traceIfFalse "all request tokens minted are not negative" burnsRequestTokens
+        ( traceIfFalse "admin token not present" inputContainsAdminNft
+            || traceIfFalse "bot token not present" inputContainsBotNft
+        )
+          && traceIfFalse "all request tokens minted are not negative" burnsRequestTokens
         where
           spentValue :: Value
           !spentValue = valueSpent info

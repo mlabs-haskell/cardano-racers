@@ -15,8 +15,12 @@ module CardanoRacers.GameAsset.Types
 
 import Contract.Prelude
 
-import Aeson (class DecodeAeson, class EncodeAeson, (.:))
-import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
+import Aeson (class DecodeAeson, class EncodeAeson, encodeAeson, (.:))
+import CardanoRacers.Helpers
+  ( decodeAesonString
+  , decodeWrappedAeson
+  , wrapEncodeAeson
+  )
 import Contract.Address (Address)
 import Contract.Metadata
   ( Cip25String
@@ -62,7 +66,6 @@ import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.Function (on)
 import Data.Map (toUnfoldable) as Map
-import Foreign.Object (Object)
 
 type AssetOption =
   { name :: Cip25String
@@ -82,18 +85,15 @@ instance Show Rarity where
   show = genericShow
 
 instance EncodeAeson Rarity where
-  encodeAeson Common = wrapEncodeAeson "Common" {}
-  encodeAeson Rare = wrapEncodeAeson "Rare" {}
-  encodeAeson Epic = wrapEncodeAeson "Epic" {}
+  encodeAeson Common = encodeAeson "Common"
+  encodeAeson Rare = encodeAeson "Rare"
+  encodeAeson Epic = encodeAeson "Epic"
 
 instance DecodeAeson Rarity where
   decodeAeson aes =
-    decodeWrappedAeson "Common" (constMono $ pure Common) aes
-      <|> decodeWrappedAeson "Rare" (constMono $ pure Rare) aes
-      <|> decodeWrappedAeson "Epic" (constMono $ pure Epic) aes
-    where
-    constMono :: forall a. a -> Object {} -> a
-    constMono a _ = a
+    decodeAesonString "Common" (const Common) aes
+      <|> decodeAesonString "Rare" (const Rare) aes
+      <|> decodeAesonString "Epic" (const Epic) aes
 
 instance
   HasPlutusSchema Rarity
@@ -245,16 +245,13 @@ instance FromData GameAssetType where
   fromData = genericFromData
 
 instance EncodeAeson GameAssetType where
-  encodeAeson DriverType = wrapEncodeAeson "DriverType" {}
-  encodeAeson CarType = wrapEncodeAeson "CarType" {}
+  encodeAeson DriverType = encodeAeson "DriverType"
+  encodeAeson CarType = encodeAeson "CarType"
 
 instance DecodeAeson GameAssetType where
   decodeAeson aes =
-    decodeWrappedAeson "DriverType" (constMono $ pure DriverType) aes
-      <|> decodeWrappedAeson "CarType" (constMono $ pure CarType) aes
-    where
-    constMono :: forall a. a -> Object {} -> a
-    constMono a _ = a
+    decodeAesonString "DriverType" (const DriverType) aes
+      <|> decodeAesonString "CarType" (const CarType) aes
 
 data GameAssetAttributes
   = DriverAttrs DriverAttributes
@@ -327,20 +324,10 @@ instance ToData AirdropAddressDatum where
 instance FromData AirdropAddressDatum where
   fromData = genericFromData
 
-type CommonAssetNftMetadata r =
-  { assetClass :: CurrencySymbol /\ TokenName
-  , name :: Cip25String
-  , image :: String
-  , mediaType :: Maybe Cip25String
-  , description :: Maybe String
-  | r
-  }
-
 type GameAssetObject =
   { assetType :: GameAssetType
   , attributes :: GameAssetAttributes
   , imageUrl :: String
-  , mediaType :: Maybe String
   , name :: Cip25String
   , tokenName :: TokenName
   , description :: String
@@ -355,13 +342,12 @@ mkGameAsset
   :: GameAssetObject
   -> Maybe GameAsset
 mkGameAsset
-  { assetType, attributes, imageUrl, mediaType, name, description, tokenName }
+  { assetType, attributes, imageUrl, name, description, tokenName }
   | assetType == DriverType && isJust (driverAttrsFromAttributes attributes) =
       pure $ GameAsset
         { assetType
         , attributes
         , imageUrl
-        , mediaType
         , name
         , description
         , tokenName
@@ -371,7 +357,6 @@ mkGameAsset
         { assetType
         , attributes
         , imageUrl
-        , mediaType
         , name
         , description
         , tokenName
@@ -391,7 +376,6 @@ instance DecodeAeson GameAsset where
     assetType <- obj .: "assetType"
     attributes <- obj .: "attributes"
     imageUrl <- obj .: "imageUrl"
-    mediaType <- obj .: "mediaType"
     name <- obj .: "name"
     description <- obj .: "description"
     tokenName <- obj .: "tokenName"
@@ -399,7 +383,6 @@ instance DecodeAeson GameAsset where
       { assetType
       , attributes
       , imageUrl
-      , mediaType
       , name
       , description
       , tokenName
@@ -441,9 +424,7 @@ gameAssetMetadataEntryToKeyValue
             DriverType -> "Driver"
             CarType -> "Car"
         )
-    ] <> fromMaybe []
-      (asset.mediaType <#> \mt -> [ "mediaType" /\ toMetadata mt ])
-
+    ]
   attributesEntry = case asset.attributes of
     DriverAttrs (DriverAttributes driver) ->
       [ "aggression" /\ toMetadata (driver.aggression)
@@ -471,7 +452,6 @@ gameAssetMetadataEntryFromMetadata policy tk md = do
     "Car" -> pure CarType
     _ -> Nothing
   description <- lookupMetadata "description" md >>= fromMetadataString
-  mbMediaType <- for (lookupMetadata "mediaType" md) fromMetadata
   cs <- mpsSymbol policy
   attrsMd <- lookupMetadata "attributes" md >>= fromMetadata >>=
     ( \attrs ->
@@ -484,7 +464,6 @@ gameAssetMetadataEntryFromMetadata policy tk md = do
         { assetType
         , attributes: attrsMd
         , imageUrl
-        , mediaType: mbMediaType
         , name
         , description
         , tokenName: (unwrap tk)

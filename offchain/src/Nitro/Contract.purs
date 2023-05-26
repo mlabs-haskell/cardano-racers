@@ -14,7 +14,9 @@ import Contract.Prelude
 
 import CardanoRacers.Common.Types (nitroToken)
 import CardanoRacers.Helpers (paysToAddrConstraint)
-import CardanoRacers.Nitro.Types (NitroPolicyRedeemer(..))
+import CardanoRacers.Nitro.Types
+  ( NitroPolicyRedeemer(BuyNitroToken, BurnNitroToken, MintNitroToken)
+  )
 import CardanoRacers.RacersState.Contract
   ( queryRacersRefScriptOutput
   , queryRacersState

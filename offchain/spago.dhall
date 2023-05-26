@@ -29,9 +29,10 @@ You can edit this file as you like.
   , "prelude"
   , "profunctor"
   , "quickcheck"
+  , "record"
   , "refs"
-  , "strings"
   , "spec"
+  , "strings"
   , "transformers"
   , "uint"
   ]

@@ -1,37 +1,42 @@
-module CardanoRacers.RaceRegistry.Contract where
+module CardanoRacers.RaceRegistry.Contract
+  ( queryRegistryUtxos
+  , collectRegistryScriptLeftovers
+  , mkRaceRegistryScript
+  , initRace
+  , supplyRegistrySlots
+  , registerPositionInRace
+  , confirmAssetSelection
+  , findUtxoWithAvailableSlotToken
+  , getRegistryEntriesFromOutput
+  ) where
 
 import Contract.Prelude
 
-import CardanoRacers.Common.Types (nitroToken)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
+import CardanoRacers.GameAsset.Types (GameAssetType(DriverType, CarType))
 import CardanoRacers.Nitro.Contract (burnNitroConstraints, mkNitroPolicy)
-import CardanoRacers.RacePosition.Contract
-  ( mintRacePositionTokenConstraints
-  , mkRacePositionPolicy
-  )
-import CardanoRacers.RacePosition.Types (RaceHash, slotTokenName)
 import CardanoRacers.RaceRegistry.Types
-  ( RaceParticipant(..)
-  , RegistryDatum(..)
-  , RegistryEntry(..)
-  , RegistryParams(..)
-  , RegistryRedeemer(..)
+  ( RaceParticipant
+  , RegistryDatum
+  , RegistryEntry(PendingSelection, AssetSelection)
+  , RegistryParams
+  , RegistryRedeemer(Enroll, SelectAssets, Collect)
   )
+import CardanoRacers.RaceSlot.Contract
+  ( burnRaceSlotTokenConstraints
+  , mintRaceSlotTokenConstraints
+  , mkRaceSlotPolicy
+  )
+import CardanoRacers.RaceSlot.Types (RaceHash, slotTokenName)
 import CardanoRacers.ScriptsFFI (raceRegistryScript)
 import Common.ContractHelpers (findAnyAuthUtxo)
-import Contract.Address (PubKeyHash(..), scriptHashAddress)
-import Contract.AssocMap (mapMaybe)
-import Contract.Monad (liftContractM, liftedM, withContractEnv)
+import Contract.Address (PubKeyHash, scriptHashAddress)
+import Contract.Monad (liftContractM, liftedM)
 import Contract.PlutusData
-  ( Datum(..)
-  , OutputDatum(..)
-  , Redeemer(..)
+  ( OutputDatum(OutputDatum, NoOutputDatum)
   , fromData
   , toData
-  , unitDatum
-  , unitRedeemer
   )
-import Contract.Prim.ByteArray (hexToByteArray)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts
   ( Validator(Validator)
@@ -43,32 +48,23 @@ import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
   ( TransactionHash
   , TransactionInput
-  , TransactionOutputWithRefScript(..)
+  , TransactionOutputWithRefScript
   , awaitTxConfirmed
   , submitTxFromConstraints
   )
-import Contract.TxConstraints (DatumPresence(..))
-import Contract.TxConstraints as Constrainst
+import Contract.TxConstraints (DatumPresence(DatumInline))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (UtxoMap, utxosAt)
-import Contract.Value
-  ( Value
-  , geq
-  , mkTokenName
-  , mpsSymbol
-  , scriptCurrencySymbol
-  , valueOf
-  )
+import Contract.Value (Value, geq, mpsSymbol, scriptCurrencySymbol, valueOf)
 import Contract.Value as Value
 import Contract.Wallet (getWalletUtxos)
 import Control.Apply (lift2)
 import Control.Monad.Reader.Trans (asks)
 import Control.Monad.Trans.Class (lift)
-import Ctl.Internal.Contract.Wallet (ownPubKeyHashes)
-import Data.Array (cons, drop, filter, head, null, take, uncons) as Array
-import Data.Array (partition)
+import Data.Array (concat, drop, filter, head, null, take) as Array
+import Data.Array (replicate)
 import Data.BigInt (BigInt)
-import Data.Bitraversable (rtraverse)
+import Data.BigInt (fromInt, toInt) as BigInt
 import Data.FoldableWithIndex (findWithIndex)
 import Data.Map (Map)
 import Data.Map
@@ -81,14 +77,14 @@ import Data.Map
   , toUnfoldable
   , union
   , unions
-  , values
   ) as Map
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
 import Racers (Racers, withContract)
 
-collectRegistryScriptLeftovers :: RegistryParams -> Racers TransactionHash
-collectRegistryScriptLeftovers rgp = do
+collectRegistryScriptLeftovers
+  :: RaceHash -> RegistryParams -> Racers TransactionHash
+collectRegistryScriptLeftovers raceHash rgp = do
   registryScript <- mkRaceRegistryScript rgp
   utxosAtRegistry <- lift $ utxosAt
     (scriptHashAddress (validatorHash registryScript) Nothing)
@@ -96,18 +92,26 @@ collectRegistryScriptLeftovers rgp = do
   (authTxi /\ authTxo) <- withContract (liftedM "could not find any auth utxo")
     findAnyAuthUtxo
 
+  registryValue <- foldMap (\txo -> (unwrap (unwrap txo).output).amount)
+    <<< map fst
+    <$> queryRegistryUtxos rgp
+
+  (burnConstraint /\ burnLookups) <- burnRaceSlotTokenConstraints raceHash $
+    uncurry (valueOf registryValue) (unwrap rgp).slotAssetClass
+
   let
-    collectRedeemer = Redeemer $ toData Collect
+    collectRedeemer = wrap $ toData Collect
 
     constraints :: Constraints.TxConstraints Void Void
-    constraints = Constraints.mustSpendPubKeyOutput authTxi <>
+    constraints = burnConstraint <> Constraints.mustSpendPubKeyOutput authTxi <>
       ( foldMap (flip Constraints.mustSpendScriptOutput collectRedeemer)
           $ Map.keys utxosAtRegistry
       )
 
     lookups :: Lookups.ScriptLookups Void
-    lookups =
-      Lookups.unspentOutputs (Map.insert authTxi authTxo utxosAtRegistry) <>
+    lookups = burnLookups
+      <> Lookups.unspentOutputs (Map.insert authTxi authTxo utxosAtRegistry)
+      <>
         Lookups.validator
           registryScript
 
@@ -173,51 +177,106 @@ initRace
   :: RaceHash -> BigInt -> BigInt -> Racers (RegistryParams /\ TransactionHash)
 initRace raceHash entryNitroFee totalSlots = do
   nitroPolicyHash <- mintingPolicyHash <$> mkNitroPolicy
-  gameAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy
-  positionSymbol <-
+
+  driverAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy DriverType
+  carAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy CarType
+
+  slotSymbol <-
     withContract (liftedM "Could not get position policy symbol")
       $ (mpsSymbol <<< mintingPolicyHash)
-      <$> mkRacePositionPolicy raceHash
-  (positionConstraints /\ positionLookups) <- mintRacePositionTokenConstraints
+      <$> mkRaceSlotPolicy raceHash
+  (slotConstraints /\ slotLookups) <- mintRaceSlotTokenConstraints
     raceHash
     totalSlots
 
+  (authTxi /\ authTxo) <- withContract (liftedM "could not find any auth utxo")
+    findAnyAuthUtxo
+
   let
-    rgp = RegistryParams
-      { slotAssetClass: (positionSymbol /\ slotTokenName)
+    rgp = wrap
+      { slotAssetClass: (slotSymbol /\ slotTokenName)
       , nitroFee: entryNitroFee
-      , gameAssetPolicyHash
+      , driverAssetPolicyHash
+      , carAssetPolicyHash
       , nitroPolicyHash
       }
 
   registryVHash <- validatorHash <$> mkRaceRegistryScript rgp
 
+  let slotPerUtxo = BigInt.fromInt 15
+
+  utxoCount <- lift $ liftContractM "Could not get Int from BigInt"
+    $ BigInt.toInt
+    $ totalSlots `div` slotPerUtxo
+
   let
-    totalRaceSlotsValue :: Value
-    totalRaceSlotsValue = Value.singleton positionSymbol slotTokenName
-      totalSlots
 
-    emptyRegistryDatum = Datum $ toData (wrap [] :: RegistryDatum)
+    singleUtxoSlotValue :: Value
+    singleUtxoSlotValue = Value.singleton slotSymbol slotTokenName slotPerUtxo
 
-    constraints :: Constraints.TxConstraints Void Void
-    constraints = positionConstraints <> Constraints.mustPayToScript
+    remainderSlotValue :: Value
+    remainderSlotValue = Value.singleton slotSymbol slotTokenName
+      (totalSlots `mod` slotPerUtxo)
+
+    emptyRegistryDatum = wrap $ toData (wrap [] :: RegistryDatum)
+
+    registryOutput :: Value -> Constraints.TxConstraints Void Void
+    registryOutput v = Constraints.mustPayToScript
       registryVHash
       emptyRegistryDatum
       DatumInline
-      totalRaceSlotsValue
+      v
+
+    constraints :: Constraints.TxConstraints Void Void
+    constraints = Constraints.mustSpendPubKeyOutput authTxi <> slotConstraints
+      <> fold (replicate utxoCount $ registryOutput singleUtxoSlotValue)
+      <> (registryOutput remainderSlotValue)
 
     lookups :: Lookups.ScriptLookups Void
-    lookups = positionLookups
+    lookups = slotLookups <> Lookups.unspentOutputs
+      (Map.singleton authTxi authTxo)
 
   lift do
     txId <- submitTxFromConstraints lookups constraints
     awaitTxConfirmed txId
     pure (rgp /\ txId)
 
+supplyRegistrySlots
+  :: RaceHash
+  -> RegistryParams
+  -> BigInt
+  -> Racers TransactionHash
+supplyRegistrySlots raceHash rgp slotCount = do
+  (slotConstraints /\ slotLookups) <- mintRaceSlotTokenConstraints raceHash
+    slotCount
+  registryVHash <- validatorHash <$> mkRaceRegistryScript rgp
+
+  let
+    totalRaceSlotsValue :: Value
+    totalRaceSlotsValue = uncurry Value.singleton (unwrap rgp).slotAssetClass
+      slotCount
+
+    emptyRegistryDatum = wrap $ toData (wrap [] :: RegistryDatum)
+
+    constraints :: Constraints.TxConstraints Void Void
+    constraints = slotConstraints <> Constraints.mustPayToScript
+      registryVHash
+      emptyRegistryDatum
+      DatumInline
+      totalRaceSlotsValue
+
+    lookups :: Lookups.ScriptLookups Void
+    lookups = slotLookups
+
+  lift do
+    txId <- submitTxFromConstraints lookups constraints
+    awaitTxConfirmed txId
+    pure txId
+
 registerPositionInRace
   :: RegistryParams
   -> PubKeyHash
-  -> Racers (TransactionHash /\ TransactionInput)
+  -> Racers TransactionHash
 registerPositionInRace rgp pkhToEnroll = do
   registryScript <- mkRaceRegistryScript rgp
   (slotTxi /\ slotTxo) <-
@@ -237,8 +296,8 @@ registerPositionInRace rgp pkhToEnroll = do
     previousValueAtRegistry :: Value
     previousValueAtRegistry = (unwrap (unwrap slotTxo).output).amount
 
-    registryDatum = Datum $ toData (wrap newRegistry :: RegistryDatum)
-    enrollRedeemer = Redeemer $ toData $ Enroll pkhsToEnroll
+    registryDatum = wrap $ toData (wrap newRegistry :: RegistryDatum)
+    enrollRedeemer = wrap $ toData $ Enroll pkhsToEnroll
 
     constraints :: Constraints.TxConstraints Void Void
     constraints = Constraints.mustSpendScriptOutput slotTxi enrollRedeemer
@@ -259,18 +318,21 @@ registerPositionInRace rgp pkhToEnroll = do
     txId <- submitTxFromConstraints (nitroLookups <> lookups)
       (constraints <> nitroConstraints)
     awaitTxConfirmed txId
-    pure (txId /\ slotTxi)
+    pure txId
 
-confirmParticipatingAssets
+confirmAssetSelection
   :: RegistryParams -> PubKeyHash -> RaceParticipant -> Racers TransactionHash
-confirmParticipatingAssets rgp pkh participant = do
+confirmAssetSelection rgp pkh participant = do
   let selections = [ participant ]
   utxos <- lift $ liftedM "Could not get wallet utxos" getWalletUtxos
   registryVal <- mkRaceRegistryScript rgp
-  gameAssetSymbol <- withContract (liftedM "Could not get game asset symbol")
+  driverAssetSymbol <-
+    withContract (liftedM "Could not get driver asset symbol")
+      $ scriptCurrencySymbol
+      <$> mkGameAssetPolicy DriverType
+  carAssetSymbol <- withContract (liftedM "Could not get car asset symbol")
     $ scriptCurrencySymbol
-    <$> mkGameAssetPolicy
-
+    <$> mkGameAssetPolicy CarType
   registryUtxos <- queryRegistryUtxos rgp
 
   let
@@ -322,34 +384,41 @@ confirmParticipatingAssets rgp pkh participant = do
     )
     allocatedTxiWithEntries
 
-  let
-    assetUtxos = Map.unions $ map
-      ( \selection ->
-          Map.filter
-            ( \txo -> lift2 (||)
-                ( _ `geq` Value.singleton gameAssetSymbol
-                    (unwrap selection).driver
-                    one
-                )
-                ( _ `geq` Value.singleton gameAssetSymbol (unwrap selection).car
-                    one
-                )
-                (unwrap (unwrap txo).output).amount
-            )
-            utxos
-      )
-      selections
+  assetUtxoMap <- do
+    let
+      findAssetForSelection sel =
+        traverse findUtxoWithAsset [ (unwrap sel).driver, (unwrap sel).car ]
 
+      findUtxoWithAsset tk =
+        lift
+          $ liftContractM
+              ("Could not find asset: " <> (show tk) <> " in wallet utxos")
+          $ map (lift2 Map.singleton _.index _.value)
+          $ findWithIndex hasAsset utxos
+        where
+        hasAsset _ txo =
+          let
+            amount = (unwrap (unwrap txo).output).amount
+            driverVal = Value.singleton driverAssetSymbol tk one
+            carVal = Value.singleton carAssetSymbol tk one
+          in
+            amount `geq` driverVal || amount `geq` carVal
+
+    Map.unions
+      <<< Array.concat
+      <$> traverse findAssetForSelection selections
+
+  let
     constraints :: Constraints.TxConstraints Void Void
     constraints =
-      foldMap Constrainst.mustSpendPubKeyOutput (Map.keys assetUtxos)
+      foldMap Constraints.mustSpendPubKeyOutput (Map.keys assetUtxoMap)
         <> foldMap
           ( \(txi /\ txo /\ entries) ->
               Constraints.mustSpendScriptOutput txi
-                (Redeemer $ toData $ SelectAssets)
+                (wrap $ toData $ SelectAssets)
                 <> Constraints.mustPayToScript
                   (validatorHash registryVal)
-                  (Datum $ toData (wrap entries :: RegistryDatum))
+                  (wrap $ toData (wrap entries :: RegistryDatum))
                   DatumInline
                   (unwrap (unwrap txo).output).amount
           )
@@ -359,12 +428,11 @@ confirmParticipatingAssets rgp pkh participant = do
     lookups :: Lookups.ScriptLookups Void
     lookups =
       Lookups.unspentOutputs
-        ( assetUtxos `Map.union` Map.unions
+        ( assetUtxoMap `Map.union` Map.unions
             ( map (\(txi /\ txo /\ _) -> Map.singleton txi txo)
                 allocationsWithOutputs
             )
-        ) -- probably not necessary to include full registryUtxos, not sure it affects Tx size
-
+        )
         <> Lookups.validator registryVal
 
   lift do
