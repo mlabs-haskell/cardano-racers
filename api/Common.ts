@@ -19,7 +19,7 @@ export type AssetsSelected = {
   address: Address,
 }
 
-export type RegistryEntry = Registered | AssetsSelected
+export type RegistryEntry = Registered | AssetsSelected [car , driver, address]
 
 export type Race = {
   raceId: UUID;
@@ -40,7 +40,7 @@ export type GameAsset =
   }
 
 export type AssetOption = { 
-  name: String,
+  name: String, // "Mustang"
   assetType: GameAssetType,
   imageUrl: String,
   description: String,

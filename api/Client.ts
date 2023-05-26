@@ -12,8 +12,8 @@ class Client implements RacersQueries {
   async buyNitro(amount: Nitro): Promise<TransactionHash>;
   async requestAsset(rarity: Rarity): Promise<TransactionHash>;
 
-  async registerInRace(race: Race): Promise<TransactionId>;
-  async joinRace(race: Race, car: string, driver: string): Promise<TransactionHash>;
+  async registerInRace(race: Race): Promise<TransactionHash>;
+  async joinRace(race: Race, car: TokenName, driver: TokenName): Promise<TransactionHash>;
 }
 
 type AssetMetadata = {
