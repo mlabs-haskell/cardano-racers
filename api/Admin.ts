@@ -6,16 +6,16 @@ import "./Common.ts"
 
 class Admin extends Bot implements RaceQueries {
 
-  async initClient(racersParams: RacersParams, walletId: WalletId): Promise<Client>;
+  static async initClient(cfg: ContractConfig, racersParams: RacersParams, walletId: WalletId): Promise<Admin>;
 
   /*
-  * - Mints AdminNFT, BotNFT, RacersNFT.
+  * - Mints AdminNFT, BotNFT, StateNFT.
   * - Pays AdminNFT to admin address
   * - Creates reference scripts for NitroPolicy, AssetRequestPolicy, 
   *   DepositScript, DriverAssetPolicy, CarAssetPolicy
   * - Sets initial racers state
   */
-  static async initRacers(cfg: ContractConfig, initialState: InitialState, credentialProvider: CredentialProvider): Promise<RacersParams>;
+  static async initRacers(cfg: ContractConfig, initialState: InitialState, credentialProvider: Wallet): Promise<RacersParams>;
 
   // writes (Admin only)
   async setNitroPrice(p: Lovelace): Promise<TransactionHash>;
@@ -26,4 +26,5 @@ class Admin extends Bot implements RaceQueries {
   // Admin only
   async createRace(race: Race, slots: number): Promise<void>
 
+  // close race
 }

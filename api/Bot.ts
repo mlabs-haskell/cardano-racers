@@ -24,7 +24,6 @@ class Bot implements RacersQueries {
     generateUniquenessNonce: (requestedAsset: AssetOption) => Promise<number>
   ): Promise<[RequestTxOutputReference, GameAsset][]>;
 
-
   async resupplySlots(race: Race, slots: number): Promise<void>
 
   async closeRace(race: Race, rewardDistribution: Map<Address, Lovelace>): Promise<void>

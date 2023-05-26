@@ -4,16 +4,16 @@ import './Common.ts'
 // specific functionality
 
 class Client implements RacersQueries {
-  constructor() {}
+  // constructor() {}
 
-  async initClient(racersParams: RacersParams, walletId: WalletId): Promise<Client>;
+  static async initClient(cfg: ContractConfig, racersParams: RacersParams, walletId: WalletId): Promise<Client>;
 
   // writes
-  async buyNitro(amount: Nitro): Promise<TransactionId>;
-  async requestAsset(rarity: Rarity): Promise<TransactionId>;
+  async buyNitro(amount: Nitro): Promise<TransactionHash>;
+  async requestAsset(rarity: Rarity): Promise<TransactionHash>;
 
   async registerInRace(race: Race): Promise<TransactionId>;
-  async joinRace(race: Race, car: string, driver: string): Promise<TransactionId>;
+  async joinRace(race: Race, car: string, driver: string): Promise<TransactionHash>;
 }
 
 type AssetMetadata = {
