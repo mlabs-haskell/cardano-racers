@@ -35,5 +35,5 @@ You can edit this file as you like.
   , "uint"
   ]
 , packages = ./packages.dhall
-, sources = [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs" ]
+, sources = [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs", "lib/**/*.purs"]
 }
