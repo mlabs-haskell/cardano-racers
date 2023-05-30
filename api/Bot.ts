@@ -7,9 +7,10 @@ class Bot implements RacersQueries {
   constructor(cfg: ContractConfig, racersParams: RacersParams, credentialProvider: CredentialProvider) {}
 
   // Bot specific reads
-  async queryAssetRequests(): Promise<Map<TxOref, AssetRequest[]>>
+  async queryAssetRequests(): Promise<Map<RequestTxOutputReference, AssetRequest[]>>
 
-  async getWalletBalance(): Promise<Nitro>;
+  async getWalletLovelaceBalance(): Promise<Lovelace>;
+  async getWalletNitroBalance(): Promise<Nitro>;
 
   // To top up Nitro, needed for redeeming requests
   async mintNitro(amount: Nitro): Promise<TransactionHash>;
@@ -26,7 +27,9 @@ class Bot implements RacersQueries {
 
   async resupplySlots(race: Race, slots: number): Promise<void>
 
-  async closeRace(race: Race, rewardDistribution: Map<Address, Lovelace>): Promise<void>
+  // make reward payment >> burns all slots
+  // must make sure rewards payment succeeded before burning slots
+  async closeRace(race: Race, rewardDistribution: Map<Address, Lovelace>): Promise<TransactionHash[]>
 }
 
 type ContractConfig = {
