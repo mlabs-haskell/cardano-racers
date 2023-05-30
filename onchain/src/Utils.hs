@@ -36,13 +36,16 @@ findCurrentGameStateFromRefInputs :: TxInfo -> AssetClass -> Maybe RacersState
 findCurrentGameStateFromRefInputs info stateToken = do
   let stateNftValue = assetClassValue stateToken 1
   txo <- withTraceM "could not find state ref input" $ find ((`geq` stateNftValue) . txOutValue) . map txInInfoResolved $ txInfoReferenceInputs info
-  getInlineDatum txo
+  getInlineDatumFromTxOut txo
+
+{-# INLINEABLE getInlineDatumFromTxOut #-}
+getInlineDatumFromTxOut :: FromData a => TxOut -> Maybe a
+getInlineDatumFromTxOut txo = getInlineDatum $ txOutDatum txo
 
 {-# INLINEABLE getInlineDatum #-}
-getInlineDatum :: FromData a => TxOut -> Maybe a
-getInlineDatum txo = case txOutDatum txo of
-  OutputDatum d -> withTraceM "unexpected inline datum type" $ PlutusTx.fromBuiltinData $ getDatum d
-  _ -> Nothing
+getInlineDatum :: FromData a => OutputDatum -> Maybe a
+getInlineDatum (OutputDatum d) = withTraceM "unexpected inline datum type" $ PlutusTx.fromBuiltinData $ getDatum d
+getInlineDatum _ = Nothing
 
 -- common helper that checks correct disitrbution of lovelace
 -- 3/4 to treasury

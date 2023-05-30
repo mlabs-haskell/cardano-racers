@@ -1,11 +1,15 @@
 module CardanoRacers.Nitro.Types
-  ( NitroPolicyRedeemer(MintNitroToken, BuyNitroToken)
+  ( NitroPolicyRedeemer(MintNitroToken, BuyNitroToken, BurnNitroToken)
   ) where
 
 import Contract.Prelude
 
-import Aeson (class DecodeAeson, class EncodeAeson)
-import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
+import Aeson (class DecodeAeson, class EncodeAeson, encodeAeson)
+import CardanoRacers.Helpers
+  ( decodeAesonString
+  , decodeWrappedAeson
+  , wrapEncodeAeson
+  )
 import Contract.PlutusData
   ( class FromData
   , class HasPlutusSchema
@@ -25,6 +29,7 @@ import Data.BigInt (BigInt)
 data NitroPolicyRedeemer
   = MintNitroToken BigInt
   | BuyNitroToken BigInt
+  | BurnNitroToken
 
 derive instance Generic NitroPolicyRedeemer _
 derive instance Eq NitroPolicyRedeemer
@@ -36,6 +41,9 @@ instance
         :+ "BuyNitroToken"
         := PNil
         @@ (S Z)
+        :+ "BurnNitroToken"
+        := PNil
+        @@ (S (S Z))
         :+ PNil
     )
 
@@ -51,8 +59,10 @@ instance Show NitroPolicyRedeemer where
 instance EncodeAeson NitroPolicyRedeemer where
   encodeAeson (MintNitroToken amt) = wrapEncodeAeson "MintNitroToken" amt
   encodeAeson (BuyNitroToken amt) = wrapEncodeAeson "BuyNitroToken" amt
+  encodeAeson BurnNitroToken = encodeAeson "BurnNitroToken"
 
 instance DecodeAeson NitroPolicyRedeemer where
   decodeAeson aes =
-    decodeWrappedAeson "MintNitroToken" (pure <<< MintNitroToken) aes <|>
-      decodeWrappedAeson "BuyNitroToken" (pure <<< BuyNitroToken) aes
+    decodeWrappedAeson "MintNitroToken" (pure <<< MintNitroToken) aes
+      <|> decodeWrappedAeson "BuyNitroToken" (pure <<< BuyNitroToken) aes
+      <|> decodeAesonString "BurnRequestToken" (const BurnNitroToken) aes

@@ -3,7 +3,7 @@ module Test.CardanoRacers.RacersState.Contract (suite) where
 import Contract.Prelude
 
 import CardanoRacers.Common.Types (RacersParams(RacersParams))
-import CardanoRacers.Deposit.Contract (mkDepositValidator)
+import CardanoRacers.Deposit.Validator (mkDepositValidator)
 import CardanoRacers.Nitro.Helpers (mintBotNft) as NitroHelpers
 import CardanoRacers.RacersState.Contract
   ( mkRacersStateValidator
@@ -65,15 +65,14 @@ suite = group "RacersState script:" do
               nitroPrice
               defaultAssetPrices
 
-            depositScriptHash <- validatorHash <$> mkDepositValidator
             let
               expectedRacersState = RacersState
                 { nitroPrice: nitroPrice
                 , treasuryAddress: treasuryAddr
                 , operatingAddress: adminAddr
                 , assetPrices: defaultAssetPrices
-                , depositScript: depositScriptHash
                 }
+
             onchainRacersState /\ _ <- RacersState.queryRacersState
             onchainRacersState `shouldEqual` expectedRacersState
     test "Admin modifies RacersState" do

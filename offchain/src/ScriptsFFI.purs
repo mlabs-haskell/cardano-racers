@@ -5,6 +5,8 @@ module CardanoRacers.ScriptsFFI
   , depositScript
   , assetRequestPolicy
   , gameAssetPolicy
+  , raceSlotPolicy
+  , raceRegistryScript
   ) where
 
 foreign import nitroMintingPolicyScript :: String
@@ -13,3 +15,5 @@ foreign import adminNftMintingPolicy :: String
 foreign import depositScript :: String
 foreign import assetRequestPolicy :: String
 foreign import gameAssetPolicy :: String
+foreign import raceSlotPolicy :: String
+foreign import raceRegistryScript :: String

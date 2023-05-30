@@ -1,11 +1,12 @@
 {-# LANGUAGE TemplateHaskell #-}
+
 -- | A minting policy for game NFTs - only bot can mint them (to airdrop later).
 -- Requires a bot token or an admin token.
 module GameAssetPolicy (script) where
 
 import PlutusTx.Prelude
 
-import CommonTypes (RacersParams, adminToken, botToken)
+import CommonTypes (GameAsset, RacersParams, adminToken, botToken)
 import Ledger.Value (assetClassValue, geq)
 import Plutonomy qualified (optimizeUPLC)
 import Plutus.V2.Ledger.Api (
@@ -18,8 +19,8 @@ import Plutus.V2.Ledger.Contexts (valueSpent)
 import PlutusTx qualified (compile, unsafeFromBuiltinData)
 
 {-# INLINEABLE mkGameAssetPolicy #-}
-mkGameAssetPolicy :: RacersParams -> ScriptContext -> Bool
-mkGameAssetPolicy gapp ctx =
+mkGameAssetPolicy :: RacersParams -> GameAsset -> ScriptContext -> Bool
+mkGameAssetPolicy gapp _assetType ctx =
   traceIfFalse "admin token not present" inputContainsAdminNft
     || traceIfFalse "bot token not present" inputContainsBotNft
   where
@@ -33,12 +34,13 @@ mkGameAssetPolicy gapp ctx =
     inputContainsBotNft = valueSpent info `geq` assetClassValue (botToken gapp) 1
 
 {-# INLINEABLE mkPolicy #-}
-mkPolicy :: BuiltinData -> BuiltinData -> BuiltinData -> ()
-mkPolicy gapp _redeemer context =
+mkPolicy :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
+mkPolicy gapp assetType _redeemer context =
   let
     result =
       mkGameAssetPolicy
         (PlutusTx.unsafeFromBuiltinData gapp)
+        (PlutusTx.unsafeFromBuiltinData assetType)
         (PlutusTx.unsafeFromBuiltinData context)
    in
     if result then () else traceError "Failed verification"
