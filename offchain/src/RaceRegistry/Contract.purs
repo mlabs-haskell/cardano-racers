@@ -286,9 +286,17 @@ registerPositionInRace rgp pkhToEnroll = do
   registryEntries <- lift
     $ liftContractM "Couldn't decode utxo datum registry entries"
     $ getRegistryEntriesFromOutput slotTxo
+
   let
     pkhsToEnroll :: Array PubKeyHash
     pkhsToEnroll = [ pkhToEnroll ]
+
+  (nitroConstraints /\ nitroLookups) <-
+    if (unwrap rgp).nitroFee > BigInt.fromInt 0 then burnNitroConstraints
+      $ (unwrap rgp).nitroFee
+      * length pkhsToEnroll
+    else pure $ mempty /\ mempty
+  let
 
     newRegistry :: Array RegistryEntry
     newRegistry = map PendingSelection pkhsToEnroll <> registryEntries
@@ -305,18 +313,15 @@ registerPositionInRace rgp pkhToEnroll = do
         registryDatum
         DatumInline
         previousValueAtRegistry
+      <> nitroConstraints
 
     lookups :: Lookups.ScriptLookups Void
     lookups = Lookups.unspentOutputs (Map.singleton slotTxi slotTxo)
       <> Lookups.validator registryScript
-
-  (nitroConstraints /\ nitroLookups) <- burnNitroConstraints
-    $ (unwrap rgp).nitroFee
-    * length pkhsToEnroll
+      <> nitroLookups
 
   lift do
-    txId <- submitTxFromConstraints (nitroLookups <> lookups)
-      (constraints <> nitroConstraints)
+    txId <- submitTxFromConstraints lookups constraints
     awaitTxConfirmed txId
     pure txId
 
