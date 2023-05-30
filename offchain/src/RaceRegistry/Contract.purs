@@ -291,6 +291,8 @@ registerPositionInRace rgp pkhToEnroll = do
     pkhsToEnroll :: Array PubKeyHash
     pkhsToEnroll = [ pkhToEnroll ]
 
+  -- If nitro fee is set to 0 (for freerolls) then we don't need to burn any
+  -- nitro
   (nitroConstraints /\ nitroLookups) <-
     if (unwrap rgp).nitroFee > BigInt.fromInt 0 then burnNitroConstraints
       $ (unwrap rgp).nitroFee
@@ -345,6 +347,9 @@ confirmAssetSelection rgp pkh participant = do
       Map.toUnfoldable registryUtxos
 
     -- | Allocate slots for the given race participants.
+    -- | Takes an Array of RaceParticipants and an Array of RegistryEntries.
+    -- | Then it tries to modify entries where the PKH matches and outputs the
+    -- | new updated Array of RegistryEntries.
     -- Returns Nothing if there aren't enough slots for all participants.
     allocateSlots
       :: Array RaceParticipant
@@ -352,8 +357,10 @@ confirmAssetSelection rgp pkh participant = do
       -> Maybe (Array (TransactionInput /\ Array RegistryEntry))
     allocateSlots sels txisWithSlots =
       foldl folder (sels /\ []) txisWithSlots #
-        ( \(selsLeft /\ finalTxis) ->
-            if Array.null selsLeft then Just finalTxis else Nothing
+        ( \(remainingSels /\ finalTxis) ->
+            if Array.null remainingSels 
+              then Just finalTxis 
+              else Nothing -- could not allocate all selections, insufficient slots purchased
         )
       where
       folder
@@ -368,16 +375,18 @@ confirmAssetSelection rgp pkh participant = do
         let
           slotsWithPkh = Array.filter (_ == (PendingSelection pkh)) entries
           otherSlots = Array.filter (_ /= (PendingSelection pkh)) entries
-          allocatedSlots = map AssetSelection $ Array.take (length slotsWithPkh)
+          newAllocatedSlots = map AssetSelection $ Array.take (length slotsWithPkh)
             remainingSels
           newRemainingSels = Array.drop (length slotsWithPkh) remainingSels
-          remainingSlots = Array.drop (length allocatedSlots) slotsWithPkh
+          remainingSlots = Array.drop (length newAllocatedSlots) slotsWithPkh
         in
-          if Array.null allocatedSlots then newRemainingSels /\ updatedTxis -- No slots allocated; accumulator remains unchanged.
-          else newRemainingSels /\
-            ( updatedTxis <>
-                [ (txi /\ (allocatedSlots <> otherSlots <> remainingSlots)) ]
-            ) -- Update the accumulator with the allocated slots and the remaining slots.
+          if Array.null newAllocatedSlots 
+            -- No slots allocated; accumulator remains unchanged. Continue with rest of entries
+            then newRemainingSels /\ updatedTxis
+            else newRemainingSels /\
+              ( updatedTxis <>
+                  [ (txi /\ (newAllocatedSlots <> otherSlots <> remainingSlots)) ]
+              ) -- Update the accumulator with the allocated and remaining slots.
 
   allocatedTxiWithEntries <- lift
     $ liftContractM

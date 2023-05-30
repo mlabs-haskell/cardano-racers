@@ -210,18 +210,6 @@ redeemGameAsset
       paysNitroConstraints airdropAddress (count * assetOption.nitroAmount)
     pure $ fold cs
 
-  -- rp <- asks _.params
-  -- (authTxi' /\ authTxo) <- lift $ liftContractM "could not find output with auth tokens" $ findAuthInUtxosMap rp additionalUtxos
-  --   
-  -- (nitroConstraints /\ nitroLookups) <- do
-  --   cs <- for requestedAssets $ \(rarity /\ count) -> do
-  --     assetOption <- lift $ liftContractM "could not find asset option" $
-  --       Map.lookup
-  --         rarity
-  --         availableAssets
-  --     mintNitroAndPayToAddressConstraints (authTxi' /\ authTxo) (count * assetOption.nitroAmount) airdropAddress
-  --   pure $ foldMap fst cs /\ foldMap snd cs
-
   let
     -- Create and collect constraints to to mint game assets with metadata
     payAssetConstraintsAndMetadata
