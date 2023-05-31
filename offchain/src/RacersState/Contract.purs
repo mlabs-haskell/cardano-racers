@@ -91,17 +91,20 @@ initRacersStateContract ns = do
 -- | throws if admin token is not present in wallet balance or if state token is
 -- | not already locked at script
 modifyRacersStateContract
-  :: RacersState -> Racers TransactionHash
-modifyRacersStateContract rs = do
+  :: (RacersState -> RacersState) -> Racers TransactionHash
+modifyRacersStateContract modifyState = do
   racersVal <- mkRacersStateValidator
   rp <- asks _.params
+
+  (oldState /\ stateTxi /\ stateTxo) <- queryRacersState
+
   let
+    newState = modifyState oldState
     vhash = validatorHash racersVal
-    datum = Datum $ toData $ rs
-    red = Redeemer $ toData $ SetRacersState $ rs
+    datum = Datum $ toData $ newState
+    red = Redeemer $ toData $ SetRacersState newState
     stateVal = uncurry Value.singleton (unwrap rp).stateToken one
 
-  (_ /\ stateTxi /\ stateTxo) <- queryRacersState
   (adminTxi /\ adminTxo) <- findAdminAuthUtxo >>=
     (lift <<< liftContractM "Could not find admin token in wallet")
 

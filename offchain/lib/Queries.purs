@@ -13,43 +13,23 @@ import CardanoRacers.RaceSlot.Types (slotTokenName)
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.RacersState.Types (AssetPrices(..))
 import Contract.Address (addressToBech32)
-import Contract.Config
-  ( PrivatePaymentKeySource
-  , PrivateStakeKeySource
-  , WalletSpec(..)
-  , testnetConfig
-  )
+import Contract.Config (WalletSpec(..), testnetConfig)
 import Contract.Monad (liftedM, runContract)
 import Contract.Scripts (mintingPolicyHash)
 import Contract.Value (scriptCurrencySymbol)
 import Contract.Wallet (WalletExtension(..))
 import Control.Monad.Trans.Class (lift)
 import Data.Array (concat) as Array
-import Data.ArrayBuffer.Types (Uint8Array)
-import Data.BigInt (BigInt)
 import Data.Map (toUnfoldable) as Map
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable) as Object
+import Lib.CardanoRacers.Common
+  ( CredentialProvider(..)
+  , Lovelace
+  , Race
+  , toWalletSpec
+  )
 import Racers (Racers, runRacers, withContract)
-
-type Lovelace = BigInt
-type Nitro = BigInt
-
-data CredentialProvider
-  = Wallet WalletExtension
-  | Keys PrivatePaymentKeySource (Maybe PrivateStakeKeySource)
-
-toWalletSpec :: CredentialProvider -> WalletSpec
-toWalletSpec (Wallet NamiWallet) = ConnectToNami
-toWalletSpec (Wallet GeroWallet) = ConnectToGero
-toWalletSpec (Wallet FlintWallet) = ConnectToFlint
-toWalletSpec (Wallet EternlWallet) = ConnectToEternl
-toWalletSpec (Wallet LodeWallet) = ConnectToLode
-toWalletSpec (Wallet LaceWallet) = ConnectToLace
-toWalletSpec (Wallet NuFiWallet) = ConnectToNuFi
-toWalletSpec (Keys pk msk) = UseKeys pk msk
-
-type Race = { raceId :: Uint8Array, nitroFee :: Nitro }
 
 type Queries :: forall k. k -> Row Type
 type Queries r =

@@ -6,6 +6,7 @@ You can edit this file as you like.
 , dependencies =
   [ "aeson"
   , "aff"
+  , "arraybuffer-types"
   , "arrays"
   , "bifunctors"
   , "bigints"
@@ -32,8 +33,10 @@ You can edit this file as you like.
   , "spec"
   , "strings"
   , "transformers"
+  , "typelevel-prelude"
   , "uint"
   ]
 , packages = ./packages.dhall
-, sources = [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs", "lib/**/*.purs"]
+, sources =
+  [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs", "lib/**/*.purs" ]
 }
