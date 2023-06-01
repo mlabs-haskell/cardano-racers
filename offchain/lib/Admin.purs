@@ -6,18 +6,31 @@ import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.RaceRegistry.Contract (initRace)
 import CardanoRacers.RacersState.Contract (modifyRacersStateContract)
 import Contract.Address (addressFromBech32)
-import Contract.Config (testnetConfig)
+import Contract.Config
+  ( PrivatePaymentKeySource(..)
+  , PrivateStakeKeySource(..)
+  , testnetConfig
+  )
 import Contract.Monad (liftContractM, runContract)
 import Contract.Transaction (TransactionHash)
+import Contract.Wallet (WalletExtension)
+import Control.Monad.Error.Class (liftMaybe, throwError)
 import Control.Monad.Trans.Class (lift)
+import Control.Promise (Promise)
+import Ctl.Internal.Deserialization.Keys (privateKeyFromBech32)
+import Ctl.Internal.FfiHelpers (MaybeFfiHelper, maybeFfiHelper)
 import Data.BigInt (BigInt)
+import Data.Function.Uncurried (Fn1)
+import Effect.Aff.Compat (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2)
+import Effect.Exception (error)
 import Foreign.Object (Object)
 import Foreign.Object (lookup) as Object
 import Lib.CardanoRacers.Common
-  ( CredentialProvider
+  ( CredentialProvider(..)
   , Lovelace
   , Race
   , toWalletSpec
+  , walletExtensionFromString
   )
 import Lib.CardanoRacers.Queries (Queries, mkQueries)
 import Racers (Racers, runRacers)
@@ -34,9 +47,9 @@ type Admin r =
   )
 
 mkAdmin
-  :: CredentialProvider -> RacersParams -> Aff (Record (Admin + Queries + ()))
+  :: CredentialProvider -> RacersParams -> Aff (Record (Admin + ()))
 mkAdmin cp rp = do
-  queries <- mkQueries cp rp
+  -- queries <- mkQueries cp rp
   let
     walletSpec = toWalletSpec cp
     cfg = testnetConfig { walletSpec = Just walletSpec }
@@ -49,7 +62,7 @@ mkAdmin cp rp = do
     , setTreasuryAddress: \ta -> runA (setTreasuryAddress ta)
     , setOperatingAddress: \oa -> runA (setOperatingAddress oa)
     , createRace: \race slots -> runA (createRace race slots)
-    } `merge` queries
+    } -- `merge` queries
 
 setNitroPrice :: Lovelace -> Racers TransactionHash
 setNitroPrice nitroPrice = modifyRacersStateContract

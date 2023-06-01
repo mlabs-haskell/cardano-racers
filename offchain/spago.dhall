@@ -6,6 +6,7 @@ You can edit this file as you like.
 , dependencies =
   [ "aeson"
   , "aff"
+  , "aff-promise"
   , "arraybuffer-types"
   , "arrays"
   , "bifunctors"
@@ -17,6 +18,7 @@ You can edit this file as you like.
   , "exceptions"
   , "foldable-traversable"
   , "foreign-object"
+  , "functions"
   , "integers"
   , "lcg"
   , "lists"

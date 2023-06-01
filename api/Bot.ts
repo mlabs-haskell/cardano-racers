@@ -42,3 +42,5 @@ type Credential = {
   credential: PrivateKey
   stakingCredential?: PrivateKey
 } | SeedPhrase
+
+

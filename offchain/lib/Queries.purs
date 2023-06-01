@@ -19,8 +19,10 @@ import Contract.Scripts (mintingPolicyHash)
 import Contract.Value (scriptCurrencySymbol)
 import Contract.Wallet (WalletExtension(..))
 import Control.Monad.Trans.Class (lift)
+import Control.Promise (Promise, fromAff)
 import Data.Array (concat) as Array
 import Data.Map (toUnfoldable) as Map
+import Effect.Aff.Compat (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2)
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable) as Object
 import Lib.CardanoRacers.Common
@@ -28,17 +30,24 @@ import Lib.CardanoRacers.Common
   , Lovelace
   , Race
   , toWalletSpec
+  , mkCredentialProviderFFI
+  , mkRacersParamsFFI
   )
 import Racers (Racers, runRacers, withContract)
 
-type Queries :: forall k. k -> Row Type
 type Queries r =
-  ( getNitroPrice :: Aff Lovelace
-  , getAssetPrices :: Aff (Object Lovelace) -- Asset prices as object
-  , getTreasuryAddress :: Aff String -- Address as bech32
-  , getOperatingAddress :: Aff String -- Address as bech32
-  , queryRaceRegistry :: Race -> Aff (Array Aeson)
+  ( getNitroPrice :: EffectFn1 Unit (Promise Lovelace)
+  , getAssetPrices ::
+      EffectFn1 Unit (Promise (Object Lovelace)) -- Asset prices as object
+  , getTreasuryAddress :: EffectFn1 Unit (Promise String) -- Address as bech32
+  , getOperatingAddress :: EffectFn1 Unit (Promise String) -- Address as bech32
+  , queryRaceRegistry :: EffectFn1 Race (Promise (Array Aeson))
+  | r
   )
+
+mkQueriesFFI
+  :: EffectFn2 CredentialProvider RacersParams (Promise (Record (Queries ())))
+mkQueriesFFI = mkEffectFn2 $ \cp rp -> fromAff $ mkQueries cp rp
 
 mkQueries :: CredentialProvider -> RacersParams -> Aff (Record (Queries ()))
 mkQueries cp rp = do
@@ -49,11 +58,13 @@ mkQueries cp rp = do
     runQ :: Racers ~> Aff
     runQ = runContract cfg <<< runRacers rp
   pure
-    { getNitroPrice: runQ getNitroPrice
-    , getAssetPrices: runQ getAssetPrices
-    , getTreasuryAddress: runQ getTreasuryAddress
-    , getOperatingAddress: runQ getOperatingAddress
-    , queryRaceRegistry: \race -> runQ (queryRaceRegistry race)
+    { getNitroPrice: mkEffectFn1 $ const $ fromAff $ runQ getNitroPrice
+    , getAssetPrices: mkEffectFn1 $ const $ fromAff $ runQ getAssetPrices
+    , getTreasuryAddress: mkEffectFn1 $ const $ fromAff $ runQ
+        getTreasuryAddress
+    , getOperatingAddress: mkEffectFn1 $ const $ fromAff $ runQ
+        getOperatingAddress
+    , queryRaceRegistry: mkEffectFn1 $ fromAff <<< runQ <<< queryRaceRegistry
     }
 
 getNitroPrice :: Racers Lovelace

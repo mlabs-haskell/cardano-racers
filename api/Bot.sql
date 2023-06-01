@@ -2,12 +2,19 @@ CREATE TYPE RARITY AS ENUM ('common', 'rare', 'epic');
 CREATE TYPE ASSET_TYPE AS ENUM ('car', 'driver');
 
 CREATE TABLE RACE (
-  race_hash varchar not null,
-  nitro_fee bigint not null,
-  -- race_type varchar not null; free-roll, h2h, etc.
+  race_id serial primary key,
+  race_type varchar not null; -- free-roll, h2h, etc.
   -- conditions ...
-  PRIMARY KEY (race_hash, nitro_fee)
 );
+
+CREATE TABLE RACE_ONCHAIN (
+  race_id varchar not null,
+  race_hash varchar primary key,
+  nitro_fee bigint primary key,
+  FOREIGN KEY race_id REFERENCES(race_id),
+  CONSTRAINT (race_hash, nitro_fee) UNIQUE
+);
+
 
 CREATE TABLE ASSET_OPTION (
   name varchar not null,
@@ -39,6 +46,12 @@ CREATE TABLE DRIVER (
   PRIMARY KEY (token_name)
 );
 
+CREATE TABLE RACE_RESULTS (
+  race_id int,
+  ada_rewards bigint not null,
+  FOREIGN KEY race_id REFERENCES(race_id),
+);
+
 CREATE TABLE RACE_PARTICIPANTS (
   race_hash varchar not null,
   nitro_fee bigint not null,
@@ -47,12 +60,12 @@ CREATE TABLE RACE_PARTICIPANTS (
   payout_address varchar not null,
   CONSTRAINT car_token_name_constr FOREIGN KEY (car_token_name) REFERENCES CAR(token_name),
   CONSTRAINT driver_token_name_constr FOREIGN KEY (driver_token_name) REFERENCES DRIVER(token_name),
-  CONSTRAINT race_constr FOREIGN KEY (race_hash, nitro_fee) REFERENCES RACE(race_hash, nitro_fee)
+  CONSTRAINT race_constr FOREIGN KEY (race_id) REFERENCES RACE(race_id),
 );
 
 CREATE TABLE RACE_REGISTRATIONS (
   race_hash varchar not null,
   nitro_fee bigint not null,
   pubkey_hash varchar not null,
-  FOREIGN KEY (race_hash, nitro_fee) REFERENCES RACE(race_hash, nitro_fee)
+  CONSTRAINT race_constr FOREIGN KEY (race_id) REFERENCES RACE(race_id),
 );

@@ -107,3 +107,8 @@ async closeRace(race: Race, rewardDistribution: Map<Address, Lovelace>): Promise
 ```
 Closes a race and distributes rewards. Returns a `Promise` that resolves to an array of `TransactionHash` objects representing the closing and reward transactions.
 
+* mention that offchain should handle time between race close and user
+    registrations
+* check the upper bound limit of number of addresses
+
+
