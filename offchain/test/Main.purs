@@ -17,7 +17,6 @@ import Effect.Aff
   , effectCanceler
   , launchAff
   )
-import Mote (only)
 import Test.CardanoRacers.AssetRequest (suite) as AssetRequest
 import Test.CardanoRacers.Deposit (suite) as Deposit
 import Test.CardanoRacers.Nft (suite) as Nft
@@ -41,7 +40,7 @@ suite = do
   RacersState.suite
   AssetRequest.suite
   Deposit.suite
-  only RaceRegistry.suite
+  RaceRegistry.suite
 
 config :: PlutipConfig
 config =

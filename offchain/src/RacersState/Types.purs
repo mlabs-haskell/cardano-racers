@@ -83,7 +83,6 @@ newtype RacersState = RacersState
   , treasuryAddress :: Address
   , operatingAddress :: Address
   , assetPrices :: AssetPrices
-  , depositScript :: ValidatorHash
   }
 
 derive instance Generic RacersState _
@@ -101,8 +100,6 @@ instance
               := I Address
               :+ "assetPrices"
               := I AssetPrices
-              :+ "depositScript"
-              := I ValidatorHash
               :+ PNil
           )
         @@ Z
@@ -127,13 +124,11 @@ instance DecodeAeson RacersState where
     treasuryAddress <- obj .: "treasuryAddress"
     operatingAddress <- obj .: "operatingAddress"
     assetPrices <- obj .: "assetPrices"
-    depositScript <- obj .: "depositScript"
     pure $ RacersState
       { nitroPrice
       , treasuryAddress
       , operatingAddress
       , assetPrices
-      , depositScript
       }
 
 newtype RacersStateRedeemer = SetRacersState RacersState

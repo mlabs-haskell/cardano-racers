@@ -7,7 +7,6 @@ module DepositScript (script) where
 import CommonTypes (RacersParams, adminToken, botToken)
 import Plutonomy qualified (optimizeUPLC)
 import Plutus.V2.Ledger.Api (
-  CurrencySymbol,
   Script,
   ScriptContext (scriptContextTxInfo),
   TxInfo,
@@ -15,17 +14,9 @@ import Plutus.V2.Ledger.Api (
   fromCompiledCode,
  )
 import Plutus.V2.Ledger.Contexts (valueSpent)
-import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
+import PlutusTx qualified (compile, unsafeFromBuiltinData)
 import PlutusTx.Prelude
 import Ledger.Value (assetClassValue, geq)
-
-data DepositValidatorParams = DepositValidatorParams
-  { driverPolicySymbol :: CurrencySymbol
-  , carPolicySymbol :: CurrencySymbol
-  , assetRequestPolicySymbol :: CurrencySymbol
-  }
-
-PlutusTx.unstableMakeIsData ''DepositValidatorParams
 
 {-# INLINEABLE mkDepositValidator #-}
 mkDepositValidator :: RacersParams -> ScriptContext -> Bool
@@ -46,8 +37,8 @@ mkDepositValidator rp ctx =
     inputContainsBotNft = spentValue `geq` assetClassValue (botToken rp) 1
 
 {-# INLINEABLE mkValidator #-}
-mkValidator :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
-mkValidator rp _dps _datum _redeemer context =
+mkValidator :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
+mkValidator rp _datum _redeemer context =
   let
     result =
       mkDepositValidator

@@ -2,10 +2,9 @@
 
 module CommonTypes where
 
--- import Data.Function (on)
 import GHC.Generics
 import GHC.Show (Show)
-import Ledger (Address, AssetClass, ValidatorHash)
+import Ledger (Address, AssetClass)
 import PlutusTx qualified (unstableMakeIsData)
 import PlutusTx.Prelude
 
@@ -18,14 +17,6 @@ instance Eq Rarity where
   Rare == Rare = True
   Epic == Epic = True
   _ == _ = False
-
--- instance Ord Rarity where
---   compare = compare `on` toInt
---     where
---       toInt :: Rarity -> Integer
---       toInt Common = 0
---       toInt Rare = 1
---       toInt Epic = 2
 
 rarityToBuiltinByteString :: Rarity -> BuiltinByteString
 rarityToBuiltinByteString Common = "Common"
@@ -62,7 +53,6 @@ data RacersState = RacersState
   , treasuryAddress :: Address
   , operatingAddress :: Address
   , assetPrices :: AssetPrices
-  , depositScript :: ValidatorHash
   }
   deriving (Show, Generic)
 PlutusTx.unstableMakeIsData ''RacersState

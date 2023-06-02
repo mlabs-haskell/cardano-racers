@@ -8,7 +8,9 @@ import CardanoRacers.AssetRequest.Contract
   )
 import CardanoRacers.Deposit.Contract
   ( consumeAndRedeemRequests
-  , mkDepositValidator
+  )
+import CardanoRacers.Deposit.Validator
+  ( mkDepositValidator
   )
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types
@@ -129,6 +131,7 @@ suite = group "Deposit" do
                   { name, assetType } <- Map.lookup r availableAssets
                   pure $ assetType /\
                     (unCip25String name <> ":" <> uniquenessNonce)
+            logInfo' $ show assetsAndNames
 
             assertions <- lift $ for assetsAndNames $ \(assetType /\ name) -> do
               tkName <-
@@ -144,11 +147,11 @@ suite = group "Deposit" do
 
             withContract (runChecks assertions <<< lift) $
               retryCount
-                ( consumeAndRedeemRequests 20 availableAssets
+                ( consumeAndRedeemRequests 2 availableAssets
                     (const $ pure uniquenessNonce)
                     st
                 )
-                3
+                2
 
           pure unit
   where
@@ -167,6 +170,8 @@ suite = group "Deposit" do
   walletUtxoDistr :: InitialUTxOs
   walletUtxoDistr =
     [ BigInt.fromInt 5_000_000
+    , BigInt.fromInt 5_000_000
+    , BigInt.fromInt 5_000_000
     , BigInt.fromInt 2_000_000_000
     ]
 

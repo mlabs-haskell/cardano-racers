@@ -6,10 +6,8 @@ import CardanoRacers.AssetRequest.Contract
   ( mkAssetRequestPolicy
   , requestAssetByRarity
   )
-import CardanoRacers.Deposit.Contract
-  ( consumeAndRedeemRequests
-  , mkDepositValidator
-  )
+import CardanoRacers.Deposit.Contract (consumeAndRedeemRequests)
+import CardanoRacers.Deposit.Validator (mkDepositValidator)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types
   ( AssetOption
@@ -91,6 +89,7 @@ import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Ctl.Internal.Contract.Wallet (ownPubKeyHashes)
 import Data.Array (concat, drop, filter, head, null, replicate, take) as Array
+import Data.Array (concatMap)
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.FoldableWithIndex (findWithIndex)
@@ -117,15 +116,15 @@ import Test.Spec.Assertions (shouldSatisfy)
 suite :: TestPlanM PlutipTest Unit
 suite = group "Race Registry" do
   test "Initializes Race" do
-    withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
-      \(adminKey /\ treasuryKey /\ userKey) -> do
+    withWallets (walletUtxoDistr /\ walletUtxoDistr)
+      \(adminKey /\ treasuryKey) -> do
         rp <- withKeyWallet adminKey do
           rp <- createRacersParamsHelper
           _ <- runRacers rp $ adminMintsNitroContract (BigInt.fromInt 1_000_000)
           pure rp
 
         runRacers rp do
-          st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
+          _ <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
             (BigInt.fromInt 1_000_000)
             assetPrices
 
@@ -187,6 +186,7 @@ suite = group "Race Registry" do
             $ byteArrayFromAscii "TestRaceHash"
 
           (rgp /\ _) <- setupRegistryAndAssets adminKey userKey st raceHash
+            (BigInt.fromInt 20)
             (BigInt.fromInt 2)
 
           withContract (withKeyWallet userKey) do
@@ -226,6 +226,7 @@ suite = group "Race Registry" do
               $ byteArrayFromAscii "TestRaceHash"
 
             (rgp /\ _) <- setupRegistryAndAssets adminKey userKey st raceHash
+              (BigInt.fromInt 20)
               (BigInt.fromInt 1) -- only 1 slot
 
             withContract (withKeyWallet userKey) do
@@ -260,6 +261,7 @@ suite = group "Race Registry" do
 
           (rgp /\ mintedAssets) <- setupRegistryAndAssets adminKey userKey st
             raceHash
+            (BigInt.fromInt 20)
             (BigInt.fromInt 2)
 
           withContract (withKeyWallet userKey) do
@@ -317,6 +319,7 @@ suite = group "Race Registry" do
             $ byteArrayFromAscii "TestRaceHash"
 
           (rgp /\ _) <- setupRegistryAndAssets adminKey userKey st raceHash
+            (BigInt.fromInt 20)
             (BigInt.fromInt 2)
 
           withContract (withKeyWallet userKey) do
@@ -382,6 +385,7 @@ suite = group "Race Registry" do
 
           (rgp /\ _) <- setupRegistryAndAssets adminKey userKey st
             raceHash
+            (BigInt.fromInt 20)
             (BigInt.fromInt 2)
 
           withContract (withKeyWallet userKey) do
@@ -432,6 +436,7 @@ suite = group "Race Registry" do
 
           (rgp /\ _) <- setupRegistryAndAssets adminKey userKey st
             raceHash
+            (BigInt.fromInt 20)
             (BigInt.fromInt 3)
 
           withContract (withKeyWallet userKey) do
@@ -485,6 +490,7 @@ suite = group "Race Registry" do
 
           (rgp /\ _) <- setupRegistryAndAssets adminKey userKey st
             raceHash
+            (BigInt.fromInt 20)
             (BigInt.fromInt 2)
 
           res <- try $ withContract (withKeyWallet attackerKey) $
@@ -528,6 +534,7 @@ suite = group "Race Registry" do
           (rgp /\ mintedAssets) <- setupRegistryAndAssets adminKey attackerKey
             st
             raceHash
+            (BigInt.fromInt 20)
             (BigInt.fromInt 2)
 
           _ <- withContract (withKeyWallet attackerKey) do
@@ -588,9 +595,10 @@ suite = group "Race Registry" do
 
           (rgp /\ mintedAssets) <- setupRegistryAndAssets adminKey userKey st
             raceHash
-            (BigInt.fromInt 20)
+            (BigInt.fromInt 0)
+            (BigInt.fromInt 80)
 
-          -- logInfo' "initialized race"
+          logInfo' $ show mintedAssets
 
           -- _ <- withContract (withKeyWallet adminKey)
           --   $ lift (liftedM "asdf" $ ownPubKeyHashes <#> Array.head)
@@ -606,8 +614,8 @@ suite = group "Race Registry" do
               $ getWalletAddresses
               <#> Array.head
 
-            _ <- withContract (withKeyWallet adminKey) do
-              mintNitroAndPayToAddressContract (BigInt.fromInt 10000) firstAddr
+            -- _ <- withContract (withKeyWallet adminKey) do
+            --   mintNitroAndPayToAddressContract (BigInt.fromInt 10000) firstAddr
 
             testTk <- lift $ liftContractM "not token name" $
               (mkTokenName <=< byteArrayFromAscii) "test"
@@ -623,6 +631,29 @@ suite = group "Race Registry" do
 
             let
               registerBatch n i = do
+                regstate <- queryRegistryUtxos rgp
+                let
+                  entries = (length :: Array _ -> Int) $ concatMap (snd <<< snd)
+                    <<< Map.toUnfoldable
+                    $ regstate
+                  registryVal =
+                    foldMap
+                      ( _.amount <<< unwrap <<< _.output <<< unwrap <<< fst <<<
+                          snd
+                      ) <<< (Map.toUnfoldable :: _ -> Array _) $ regstate
+                  slots = sum $ map (\(_ /\ _ /\ i) -> i)
+                    $ Array.filter (\(_ /\ tk /\ _) -> tk == slotTokenName)
+                    $ flattenNonAdaAssets registryVal
+                logInfo' $ show $ "entries: " <> show entries
+                logInfo' $ show $ "slots: " <> show slots
+
+                when (BigInt.fromInt entries >= (slots - BigInt.fromInt 10))
+                  $ void
+                  $ withContract (withKeyWallet adminKey)
+                  $ supplyRegistrySlots raceHash rgp (BigInt.fromInt 80)
+
+                logInfo' $ "registering"
+
                 _ <- sequence $ Array.replicate n
                   (registerPositionInRace rgp firstPkh)
                 _ <- sequence $ Array.replicate n $
@@ -647,7 +678,7 @@ suite = group "Race Registry" do
               loopFor 0 _ = pure unit
               loopFor n m = m n >>= const (loopFor (n - 1) m)
 
-            loopFor 5 $ registerBatch 4
+            loopFor 20 $ registerBatch 5
 
             -- _ <- confirmAssetSelection rgp firstPkh
             --   ( wrap
@@ -729,8 +760,9 @@ suite = group "Race Registry" do
     -> RacersState
     -> RaceHash
     -> BigInt
+    -> BigInt
     -> Racers (RegistryParams /\ Array GameAssetObject)
-  setupRegistryAndAssets adminKey userKey st raceHash slots = do
+  setupRegistryAndAssets adminKey userKey st raceHash nitroFee slots = do
     withContract (withKeyWallet adminKey)
       do
         assetRequestPolicy <- mkAssetRequestPolicy
@@ -765,7 +797,7 @@ suite = group "Race Registry" do
       requests =
         [ Common
         , Rare
-        , Rare
+        , Epic
         ]
 
     counterRef <- liftEffect $ Ref.new 0
@@ -782,7 +814,7 @@ suite = group "Race Registry" do
 
     (rgp /\ _) <- withContract (withKeyWallet adminKey) $ initRace
       raceHash
-      (BigInt.fromInt 10)
+      nitroFee
       slots
 
     pure (rgp /\ assets)

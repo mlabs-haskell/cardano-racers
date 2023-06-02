@@ -10,6 +10,7 @@ import CardanoRacers.AssetRequest.Types
   ( AirdropAddressDatum(AirdropAddressDatum)
   , AssetRequestRedeemer(MintRequestToken)
   )
+import CardanoRacers.Deposit.Validator (mkDepositValidator)
 import CardanoRacers.GameAsset.Types (Rarity(Rare, Common))
 import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.RacersState.Contract (queryRacersState)
@@ -19,6 +20,7 @@ import Contract.Monad (liftContractM, liftedM)
 import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
+import Contract.Scripts (validatorHash)
 import Contract.Test.Assert
   ( checkGainAtAddress'
   , checkTokenGainAtAddress'
@@ -76,6 +78,8 @@ suite = group "AssetRequest" do
 
           let rarities = [ Common ] -- , Rare, Epic ]
 
+          depositScript <- validatorHash <$> mkDepositValidator
+
           for_ rarities $ \rarity -> do
             withContract (withKeyWallet user) do
               assetRequestTokenName <- lift
@@ -85,7 +89,7 @@ suite = group "AssetRequest" do
 
               let
                 assetPrice = getAssetPrice rarity (unwrap rs).assetPrices
-                depositAddress = scriptHashAddress (unwrap rs).depositScript
+                depositAddress = scriptHashAddress depositScript
                   Nothing
                 amountToTreasury = BigInt.fromInt <<< ceil
                   $ BigInt.toNumber assetPrice
@@ -130,6 +134,7 @@ suite = group "AssetRequest" do
                 $ liftContractM "Could not make required token names"
                 $
                   (Value.mkTokenName <=< byteArrayFromAscii) (show rarity)
+              depositScript <- validatorHash <$> mkDepositValidator
 
               let
                 assetPrice = getAssetPrice rarity (unwrap rs).assetPrices
@@ -169,7 +174,7 @@ suite = group "AssetRequest" do
                         ( Value.singleton assetRequestCs assetRequestTokenName
                             one
                         )
-                      <> Constraints.mustPayToScript (unwrap rs).depositScript
+                      <> Constraints.mustPayToScript depositScript
                         dat
                         DatumInline
                         lockedVal

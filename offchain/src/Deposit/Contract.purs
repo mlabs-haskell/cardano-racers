@@ -2,42 +2,89 @@ module CardanoRacers.Deposit.Contract
   ( queryRequestsWithAirdropAddress
   , consumeAndRedeemRequests
   , redeemGameAsset
-  , mkDepositValidator
   ) where
 
 import Contract.Prelude
 
 import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy)
-import CardanoRacers.AssetRequest.Types (AirdropAddressDatum, AssetRequestRedeemer(BurnRequestToken))
-import CardanoRacers.Deposit.Types (DepositScriptParams(DepositScriptParams))
-import CardanoRacers.GameAsset.Contract (mintAvailableAssetByRarity, mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types (AssetOption, GameAssetNftMetadata, GameAssetType(DriverType, CarType), Rarity(Epic, Rare, Common), GameAssetObject, unGameAsset)
+import CardanoRacers.AssetRequest.Types
+  ( AirdropAddressDatum
+  , AssetRequestRedeemer(BurnRequestToken)
+  )
 import CardanoRacers.Nitro.Contract (paysNitroConstraints)
+import CardanoRacers.GameAsset.Contract
+  ( mintAvailableAssetByRarity
+  , mkGameAssetPolicy
+  )
+import CardanoRacers.GameAsset.Types
+  ( AssetOption
+  , GameAssetNftMetadata
+  , GameAssetObject
+  , GameAssetType(DriverType, CarType)
+  , Rarity(Epic, Rare, Common)
+  , unGameAsset
+  )
+import CardanoRacers.Nitro.Contract
+  ( mintNitroAndPayToAddressConstraints
+  , paysNitroConstraints
+  )
 import CardanoRacers.RacersState.Contract (queryRacersRefScriptOutput)
 import CardanoRacers.RacersState.Types (RacersState)
-import CardanoRacers.ScriptsFFI (depositScript)
 import Common.ContractHelpers (findAuthInUtxosMap)
 import Contract.Address (Address, scriptHashAddress)
 import Contract.AuxiliaryData (setTxMetadata)
 import Contract.BalanceTxConstraints as BalanceTxConstraints
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
-import Contract.PlutusData (OutputDatum(OutputDatum), Redeemer(Redeemer), fromData, toData, unitRedeemer)
+import Contract.PlutusData
+  ( OutputDatum(OutputDatum)
+  , Redeemer(Redeemer)
+  , fromData
+  , toData
+  , unitRedeemer
+  )
 import Contract.Prim.ByteArray (byteArrayFromAscii, byteArrayToIntArray)
 import Contract.ScriptLookups (UnbalancedTx, mkUnbalancedTx)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (Validator(Validator), applyArgs, mintingPolicyHash, validatorHash)
-import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
-import Contract.Transaction (BalancedSignedTransaction, TransactionInput, TransactionOutputWithRefScript, awaitTxConfirmed, createAdditionalUtxos, mkTxUnspentOut, signTransaction, submit, withBalancedTxWithConstraints)
+import Racers (Racers)cyHash, validatorHash)
+import Contract.Transaction
+  ( BalancedSignedTransaction
+  , TransactionInput
+  , TransactionOutputWithRefScript
+  , awaitTxConfirmed
+  , createAdditionalUtxos
+  , mkTxUnspentOut
+  , signTransaction
+  , submit
+  , withBalancedTxWithConstraints
+  )
 import Contract.TxConstraints (InputWithScriptRef(RefInput))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (UtxoMap, utxosAt)
 import Contract.Value (TokenName, currencyMPSHash)
-import Contract.Value (flattenValue, getTokenName, mkTokenName, negation, scriptCurrencySymbol, singleton) as Value
+import Contract.Value
+  ( flattenValue
+  , getTokenName
+  , mkTokenName
+  , negation
+  , scriptCurrencySymbol
+  , singleton
+  ) as Value
 import Contract.Wallet (getWalletUtxos)
 import Control.Monad.Error.Class (liftMaybe)
 import Control.Monad.Reader.Trans (asks, runReaderT)
 import Control.Monad.Trans.Class (lift)
-import Data.Array (catMaybes, concat, cons, drop, elem, filter, mapMaybe, snoc, take, uncons) as Array
+import Data.Array
+  ( catMaybes
+  , concat
+  , cons
+  , drop
+  , elem
+  , filter
+  , mapMaybe
+  , snoc
+  , take
+  , uncons
+  ) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt, toInt) as BigInt
 import Data.Char (fromCharCode)
@@ -45,11 +92,10 @@ import Data.List.Lazy (replicateM)
 import Data.List.Lazy as List
 import Data.Map (Map)
 import Data.Map (fromFoldable, lookup, singleton, toUnfoldable) as Map
-import Data.Profunctor.Choice (left)
 import Data.String.CodeUnits (fromCharArray)
 import Effect.Aff (try)
 import Effect.Exception (error)
-import Racers (Racers)
+import Racers (Racers, withContract)
 
 -- | Represents a request for a game NFT
 type PendingAssetRequest =
@@ -59,15 +105,16 @@ type PendingAssetRequest =
   }
 
 queryRequestsWithAirdropAddress
-  :: RacersState
-  -> Racers (Map TransactionInput PendingAssetRequest)
-queryRequestsWithAirdropAddress st = do
+  :: Racers (Map TransactionInput PendingAssetRequest)
+queryRequestsWithAirdropAddress = do
   assetRequestPolicy <- mkAssetRequestPolicy
   assetRequestSymbol <- lift $ liftContractM "Could not get currency symbol"
     $ Value.scriptCurrencySymbol
     $ assetRequestPolicy
 
-  utxosAtDeposit <- lift $ utxosAt $ scriptHashAddress (unwrap st).depositScript
+  depositScript <- validatorHash <$> mkDepositValidator
+
+  utxosAtDeposit <- lift $ utxosAt $ scriptHashAddress depositScript
     Nothing
 
   let
@@ -301,7 +348,7 @@ consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
     pendingRequestsChunked <- chunkBy chunkSize
       <<< (Map.toUnfoldable :: _ -> Array _)
       <$>
-        queryRequestsWithAirdropAddress st
+        queryRequestsWithAirdropAddress
 
     mintedAssets <- traverse
       ( \reqs -> do
@@ -385,37 +432,3 @@ consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
   chunkBy :: forall a. Int -> Array a -> Array (Array a)
   chunkBy _ [] = []
   chunkBy n xs = Array.take n xs `Array.cons` chunkBy n (Array.drop n xs)
-
-mkDepositValidator
-  :: Racers Validator
-mkDepositValidator = do
-  rp <- asks _.params
-
-  assetRequestMP <- mkAssetRequestPolicy
-  assetRequestSymbol <- lift
-    $ liftContractM "Could not get currency symbol of asset request policy"
-    $ Value.scriptCurrencySymbol assetRequestMP
-
-  driverAssetMp <- mkGameAssetPolicy DriverType
-  carAssetMp <- mkGameAssetPolicy CarType
-
-  driverAssetSymbol <- lift
-    $ liftContractM "Could not get currency symbol of driver asset policy"
-    $ Value.scriptCurrencySymbol driverAssetMp
-  carAssetSymbol <- lift
-    $ liftContractM "Could not get currency symbol of car asset policy"
-    $ Value.scriptCurrencySymbol carAssetMp
-
-  let
-    depositParams = DepositScriptParams
-      { driverPolicySymbol: driverAssetSymbol
-      , carPolicySymbol: carAssetSymbol
-      , assetRequestPolicySymbol: assetRequestSymbol
-      }
-
-  v2script <- lift $ liftContractM "Could not decode applied script" do
-    envelope <- decodeTextEnvelope depositScript
-    plutusScriptV2FromEnvelope envelope
-  appliedScript <- liftEither $ left (error <<< show) $ applyArgs v2script
-    $ [ toData rp, toData depositParams ]
-  pure $ Validator $ appliedScript
