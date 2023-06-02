@@ -4,6 +4,7 @@ module CardanoRacers.Helpers
   , decodeWrappedAeson
   , paysToAddrConstraint
   , getTxoWithRefScrpt
+  , decodeAesonString
   ) where
 
 import Contract.Prelude
@@ -14,6 +15,7 @@ import Aeson
   , Aeson
   , JsonDecodeError(TypeMismatch)
   , caseAesonObject
+  , decodeAeson
   , encodeAeson
   , getField
   )
@@ -67,6 +69,19 @@ decodeWrappedAeson constr k aes = caseAesonObject
   (Left $ TypeMismatch $ "expected object got " <> show aes)
   (k <=< flip getField constr)
   aes
+
+decodeAesonString
+  :: forall (r :: Type)
+   . String
+  -> (String -> r)
+  -> Aeson
+  -> Either JsonDecodeError r
+decodeAesonString str f aes = decodeAeson aes >>=
+  ( \str' ->
+      if str == str' then
+        Right $ f str'
+      else Left $ TypeMismatch ("expected string: " <> str <> " got " <> str')
+  )
 
 paysToAddrConstraint
   :: Address -> Value -> Constraints.TxConstraints Void Void

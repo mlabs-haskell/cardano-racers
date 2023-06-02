@@ -5,8 +5,12 @@ module CardanoRacers.AssetRequest.Types
 
 import Contract.Prelude
 
-import Aeson (class DecodeAeson, class EncodeAeson, (.:))
-import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
+import Aeson (class DecodeAeson, class EncodeAeson, encodeAeson, (.:))
+import CardanoRacers.Helpers
+  ( decodeAesonString
+  , decodeWrappedAeson
+  , wrapEncodeAeson
+  )
 import Contract.Address (Address)
 import Contract.PlutusData
   ( class FromData
@@ -87,16 +91,10 @@ instance FromData AssetRequestRedeemer where
   fromData = genericFromData
 
 instance EncodeAeson AssetRequestRedeemer where
-  encodeAeson MintRequestToken = wrapEncodeAeson "MintRequestToken" {}
-  encodeAeson BurnRequestToken = wrapEncodeAeson "BurnRequestToken" {}
+  encodeAeson MintRequestToken = encodeAeson "MintRequestToken"
+  encodeAeson BurnRequestToken = encodeAeson "BurnRequestToken"
 
 instance DecodeAeson AssetRequestRedeemer where
   decodeAeson aes =
-    decodeWrappedAeson "MintRequestToken" (constMono $ pure MintRequestToken)
-      aes
-      <|> decodeWrappedAeson "BurnRequestToken"
-        (constMono $ pure BurnRequestToken)
-        aes
-    where
-    constMono :: forall a. a -> Object {} -> a
-    constMono a _ = a
+    decodeAesonString "MintRequestToken" (const MintRequestToken) aes
+      <|> decodeAesonString "BurnRequestToken" (const BurnRequestToken) aes

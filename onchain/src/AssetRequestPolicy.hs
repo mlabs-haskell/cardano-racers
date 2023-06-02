@@ -1,8 +1,9 @@
 {-# LANGUAGE TemplateHaskell #-}
+
 -- | A minting policy for asset requests.
 module AssetRequestPolicy where
 
-import CommonTypes (RacersParams (adminToken, botToken, stateToken), RacersState (depositScript), Rarity, airdropAddress, assetPrices, depositScript, getPrice)
+import CommonTypes (RacersParams (adminToken, botToken, stateToken), RacersState, Rarity, airdropAddress, assetPrices, getPrice)
 import Ledger.Value (Value, assetClass, assetClassValue, flattenValue, geq)
 import Plutonomy qualified (optimizeUPLC)
 import Plutus.V2.Ledger.Api (
@@ -12,7 +13,7 @@ import Plutus.V2.Ledger.Api (
   Script,
   ScriptContext (scriptContextTxInfo),
   TxInfo (txInfoMint),
-  fromCompiledCode,
+  fromCompiledCode, ValidatorHash
  )
 import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, scriptOutputsAt, valueLockedBy, valueSpent)
 import PlutusTx qualified (FromData (fromBuiltinData), compile, unsafeFromBuiltinData, unstableMakeIsData)
@@ -23,8 +24,8 @@ data AssetRequestRedeemer = MintRequestToken | BurnRequestToken
 PlutusTx.unstableMakeIsData ''AssetRequestRedeemer
 
 {-# INLINEABLE mkAssetRequestPolicy #-}
-mkAssetRequestPolicy :: RacersParams -> AssetRequestRedeemer -> ScriptContext -> Bool
-mkAssetRequestPolicy rp red ctx =
+mkAssetRequestPolicy :: RacersParams -> ValidatorHash -> AssetRequestRedeemer -> ScriptContext -> Bool
+mkAssetRequestPolicy rp depositScript red ctx =
   let
     info :: TxInfo
     !info = scriptContextTxInfo ctx
@@ -41,9 +42,10 @@ mkAssetRequestPolicy rp red ctx =
    in
     case red of
       BurnRequestToken ->
-        (traceIfFalse "admin token not present" inputContainsAdminNft
-        || traceIfFalse "bot token not present" inputContainsBotNft)
-        && traceIfFalse "all request tokens minted are not negative" burnsRequestTokens
+        ( traceIfFalse "admin token not present" inputContainsAdminNft
+            || traceIfFalse "bot token not present" inputContainsBotNft
+        )
+          && traceIfFalse "all request tokens minted are not negative" burnsRequestTokens
         where
           spentValue :: Value
           !spentValue = valueSpent info
@@ -71,7 +73,6 @@ mkAssetRequestPolicy rp red ctx =
           -- Ensures that any outputs containing request tokens have a corresponding airdrop address datum
           attachesAirdropAddrToDepositOutputs :: Bool
           attachesAirdropAddrToDepositOutputs = isJust $ do
-            st <- currentStateFromRefInput
             let depositOutputsWithRequest =
                   -- filter outputs with request tokens
                   filter
@@ -82,7 +83,7 @@ mkAssetRequestPolicy rp red ctx =
                           $ flattenValue v
                     )
                     -- outputs at deposit script
-                    $ scriptOutputsAt (depositScript st) info
+                    $ scriptOutputsAt depositScript info
 
             traverse
               ( \case
@@ -101,9 +102,7 @@ mkAssetRequestPolicy rp red ctx =
 
           -- check to ensure all minted request tokens are locked at deposit script
           locksRequestTokensAtDeposit :: Bool
-          locksRequestTokensAtDeposit = fromMaybe False $ do
-            st <- currentStateFromRefInput
-            pure $ valueLockedBy info (depositScript st) `geq` mintedRequestTokensValue
+          locksRequestTokensAtDeposit = valueLockedBy info depositScript `geq` mintedRequestTokensValue
 
           paysAdaDueToCorrectAddrs :: Bool
           paysAdaDueToCorrectAddrs = fromMaybe False $ do
@@ -120,12 +119,13 @@ mkAssetRequestPolicy rp red ctx =
             pure $ sum $ map lovelaceOfEntry requestEntries
 
 {-# INLINEABLE mkPolicy #-}
-mkPolicy :: BuiltinData -> BuiltinData -> BuiltinData -> ()
-mkPolicy gapp red context =
+mkPolicy :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
+mkPolicy rp depositValHash red context =
   let
     result =
       mkAssetRequestPolicy
-        (PlutusTx.unsafeFromBuiltinData gapp)
+        (PlutusTx.unsafeFromBuiltinData rp)
+        (PlutusTx.unsafeFromBuiltinData depositValHash)
         (PlutusTx.unsafeFromBuiltinData red)
         (PlutusTx.unsafeFromBuiltinData context)
    in

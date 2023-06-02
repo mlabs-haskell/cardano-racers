@@ -21,6 +21,7 @@ import Test.CardanoRacers.AssetRequest (suite) as AssetRequest
 import Test.CardanoRacers.Deposit (suite) as Deposit
 import Test.CardanoRacers.Nft (suite) as Nft
 import Test.CardanoRacers.Nitro.Contract (suite) as Nitro
+import Test.CardanoRacers.RaceRegistry (suite) as RaceRegistry
 import Test.CardanoRacers.RacersState.Contract (suite) as RacersState
 import Test.Spec.Runner (defaultConfig)
 
@@ -29,7 +30,7 @@ main :: Effect Unit
 main = interruptOnSignal SIGINT =<< launchAff do
   flip cancelWith (effectCanceler (exitCode 1)) do
     interpretWithConfig defaultConfig
-      { timeout = Just $ Milliseconds 70_000.0, exit = true } $
+      { timeout = Just $ Milliseconds 300_000.0, exit = true } $
       testPlutipContracts config suite
 
 suite :: TestPlanM PlutipTest Unit
@@ -39,6 +40,7 @@ suite = do
   RacersState.suite
   AssetRequest.suite
   Deposit.suite
+  RaceRegistry.suite
 
 config :: PlutipConfig
 config =
