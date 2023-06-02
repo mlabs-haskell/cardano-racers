@@ -36,7 +36,7 @@ main = interruptOnSignal SIGINT =<< launchAff do
 suite :: TestPlanM PlutipTest Unit
 suite = do
   Nft.suite
-  only Nitro.suite
+  Nitro.suite
   RacersState.suite
   AssetRequest.suite
   Deposit.suite

@@ -3,40 +3,114 @@ module CardanoRacers.NitroInit where
 import Contract.Prelude
 
 import Aeson (JsonDecodeError, decodeJsonString, encodeAeson)
-import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy, requestAssetByRarity)
-import CardanoRacers.Common.Types (RacersParams(..))
-import CardanoRacers.Deposit.Contract (consumeAndRedeemRequests, mkDepositValidator, queryRequestsWithAirdropAddress)
+import CardanoRacers.AssetRequest.Contract
+  ( mkAssetRequestPolicy
+  , requestAssetByRarity
+  )
+import CardanoRacers.Common.Types (RacersParams)
+import CardanoRacers.Deposit.Contract
+  ( consumeAndRedeemRequests
+  , queryRequestsWithAirdropAddress
+  )
+import CardanoRacers.Deposit.Validator (mkDepositValidator)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types (AssetOption, GameAssetAttributes(..), GameAssetObject, GameAssetType(..), Rarity(Common, Rare, Epic))
-import CardanoRacers.Helpers (counterNonce, getTxoWithRefScrpt)
-import CardanoRacers.Nitro.Contract (adminMintsNitroContract, botMintsNitroContract, buyNitroContract, mkNitroPolicy)
+import CardanoRacers.GameAsset.Types
+  ( AssetOption
+  , GameAssetAttributes(..)
+  , GameAssetObject
+  , GameAssetType(..)
+  , Rarity(Common, Rare, Epic)
+  )
+import CardanoRacers.Helpers (counterNonce)
+import CardanoRacers.Nitro.Contract
+  ( adminMintsNitroContract
+  , botMintsNitroContract
+  , buyNitroContract
+  , mkNitroPolicy
+  )
 import CardanoRacers.Nitro.Helpers (createRacersParams)
-import CardanoRacers.RaceRegistry.Contract (collectRegistryScriptLeftovers, confirmAssetSelection, initRace, queryRegistryUtxos, registerPositionInRace)
-import CardanoRacers.RaceRegistry.Types (RaceParticipant(..), RegistryEntry(..), RegistryParams(..))
+import CardanoRacers.RaceRegistry.Contract
+  ( collectRegistryScriptLeftovers
+  , confirmAssetSelection
+  , initRace
+  , queryRegistryUtxos
+  , registerPositionInRace
+  )
+import CardanoRacers.RaceRegistry.Types
+  ( RaceParticipant
+  , RegistryEntry(..)
+  , RegistryParams
+  )
 import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
 import CardanoRacers.RaceSlot.Types (RaceHash, slotTokenName)
-import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput, initRacersStateContract, modifyRacersStateContract, queryRacersState)
+import CardanoRacers.RacersState.Contract
+  ( createRacersRefScriptOutput
+  , initRacersStateContract
+  , modifyRacersStateContract
+  , queryRacersState
+  )
 import CardanoRacers.RacersState.Types (RacersState(..))
-import Contract.Address (Address, addressFromBech32, addressToBech32, scriptHashAddress)
-import Contract.AssocMap (empty, insert) as AssocMap
-import Contract.Config (NetworkId(..), PrivatePaymentKeySource(..), WalletSpec(..), testnetConfig, testnetEternlConfig)
+import Contract.Address
+  ( Address
+  , addressFromBech32
+  , addressToBech32
+  , scriptHashAddress
+  )
+import Contract.Config
+  ( NetworkId(..)
+  , PrivatePaymentKeySource(..)
+  , WalletSpec(..)
+  , testnetConfig
+  , testnetEternlConfig
+  )
 import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
 import Contract.Hashing (publicKeyHash)
 import Contract.Log (logError', logInfo')
 import Contract.Metadata (mkCip25String, unCip25String)
-import Contract.Monad (Contract, liftContractE, liftContractM, liftedM, runContract, throwContractError)
+import Contract.Monad
+  ( Contract
+  , liftContractE
+  , liftContractM
+  , liftedM
+  , runContract
+  , throwContractError
+  )
 import Contract.PlutusData (unitDatum)
-import Contract.Prim.ByteArray (ByteArray(..), byteArrayFromAscii, byteArrayToIntArray, hexToByteArray)
+import Contract.Prim.ByteArray
+  ( ByteArray
+  , byteArrayFromAscii
+  , byteArrayToIntArray
+  , hexToByteArray
+  )
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (MintingPolicy(..), ValidatorHash, mintingPolicyHash, validatorHash)
-import Contract.Transaction (TransactionHash, awaitTxConfirmed, submitTxFromConstraints)
+import Contract.Scripts (MintingPolicy(..), mintingPolicyHash, validatorHash)
+import Contract.Transaction
+  ( TransactionHash
+  , awaitTxConfirmed
+  , submitTxFromConstraints
+  )
 import Contract.TxConstraints (DatumPresence(..))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (utxosAt)
-import Contract.Value (TokenName, Value, adaSymbol, flattenNonAdaAssets, flattenValue, getTokenName, lovelaceValueOf, mkTokenName, mpsSymbol, scriptCurrencySymbol)
+import Contract.Value
+  ( TokenName
+  , Value
+  , adaSymbol
+  , flattenNonAdaAssets
+  , flattenValue
+  , getTokenName
+  , lovelaceValueOf
+  , mkTokenName
+  , mpsSymbol
+  )
 import Contract.Value as Value
 import Contract.Wallet (PrivatePaymentKey(..), privateKeyFromBytes)
-import Contract.Wallet (getWalletAddress, getWalletAddresses, getWalletBalance, getWalletUtxos)
+import Contract.Wallet
+  ( getWalletAddress
+  , getWalletAddresses
+  , getWalletBalance
+  , getWalletUtxos
+  )
 import Contract.Wallet.Key (publicKeyFromPrivateKey)
 import Control.Alt ((<|>))
 import Control.Monad.Error.Class (catchError, liftMaybe, throwError)
@@ -46,23 +120,26 @@ import Control.Promise (Promise, fromAff, toAffE)
 import Ctl.Internal.Contract.Wallet (ownPubKeyHashes)
 import Ctl.Internal.FfiHelpers (MaybeFfiHelper, maybeFfiHelper)
 import Ctl.Internal.Plutus.Conversion (toPlutusAddress)
-import Ctl.Internal.Serialization.Address (enterpriseAddress, enterpriseAddressToAddress, keyHashCredential)
+import Ctl.Internal.Serialization.Address
+  ( enterpriseAddress
+  , enterpriseAddressToAddress
+  , keyHashCredential
+  )
 import Ctl.Internal.Serialization.Types (PrivateKey)
 import Ctl.Internal.Types.RawBytes (RawBytes(RawBytes))
-import Data.Array (concat, filter, head, mapMaybe) as Array
-import Data.Bifunctor (lmap)
+import Data.Array (concat, head, mapMaybe) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt as BigInt
 import Data.Char (fromCharCode)
-import Data.FoldableWithIndex (foldWithIndexM, foldrWithIndex)
+import Data.FoldableWithIndex (foldrWithIndex)
 import Data.Int (round, toNumber)
 import Data.Map (Map)
 import Data.Map (empty, fromFoldable, insert, lookup, toUnfoldable) as Map
-import Data.String (Pattern(..), split, stripPrefix)
+import Data.String (split, stripPrefix)
 import Data.String.CodeUnits (fromCharArray)
 import Data.String.Pattern (Pattern(Pattern))
 import Effect.Aff (error)
-import Effect.Aff.Compat (EffectFn1, EffectFn2, mkEffectFn2)
+import Effect.Aff.Compat (EffectFn2, mkEffectFn2)
 import Effect.Ref as Ref
 import Foreign.Object (Object)
 import Foreign.Object (empty, insert, lookup) as Object
@@ -247,8 +324,9 @@ refreshWallets = fromAff do
     ( flip catchError (\e -> logError' ("Deposit script: " <> show e) $> []) do
         rp <- liftEffect getParams
         runRacers rp do
-          (rs /\ _) <- queryRacersState
-          let depAddr = scriptHashAddress (unwrap rs).depositScript Nothing
+          _ <- queryRacersState
+          depositVHash <- validatorHash <$> mkDepositValidator
+          let depAddr = scriptHashAddress depositVHash Nothing
           depAddrString <- lift $ addressToBech32 depAddr
           utxos <- lift $ utxosAt depAddr
           let
@@ -304,7 +382,6 @@ initRacersState = do
     treasuryAddr <- liftContractM "could not get address" $ actorAddress
       "Treasury"
     botAddr <- liftContractM "could not get address" $ actorAddress "Bot"
-    depositScriptHash <- depositScriptHashHelper rp
     let
       assetPrices = wrap $
         { common: BigInt.fromInt 5_000_000
@@ -316,7 +393,6 @@ initRacersState = do
         { nitroPrice: nitroPrice
         , treasuryAddress: treasuryAddr
         , operatingAddress: ownAddr
-        , depositScript: depositScriptHash
         , assetPrices
         }
     runRacers rp do
@@ -374,13 +450,13 @@ redeemRequests cRef assetRef mintedAssetRef = do
   rp <- getParams
   availableAssets <- Ref.read assetRef
   withActor "Bot" $ runRacers rp do
-    (rs /\ _) <- queryRacersState
+    _ <- queryRacersState
     logInfo' "Querying racers state"
     -- depRefScriptTxi <- queryOrCreateDepositReferenceScript rp
     -- depRefScriptTxo <- getTxoWithRefScrpt depRefScriptTxi
     logInfo' "Queried deposit reference script"
-    assetObjs <- consumeAndRedeemRequests 5 availableAssets (const $ liftEffect $ counterNonce cRef)
-      rs -- Nothing
+    assetObjs <- consumeAndRedeemRequests 5 availableAssets
+      (const $ liftEffect $ counterNonce cRef)
     _ <- liftEffect $ traverse
       (\ao -> Ref.modify (Map.insert ao.tokenName ao) mintedAssetRef)
       assetObjs
@@ -610,7 +686,8 @@ promptRaceParams = do
   nitroFeeStr <- liftEffect $ promptFor "Enter NITRO registration fee:"
   nitroFee <- lift $ liftContractM "couldn't convert to bigint" $
     BigInt.fromString nitroFeeStr
-  raceHashByteArray <- lift $ liftContractM "could not get bytearray from ascii" $ byteArrayFromAscii raceHash
+  raceHashByteArray <- lift $ liftContractM "could not get bytearray from ascii"
+    $ byteArrayFromAscii raceHash
   pure (raceHashByteArray /\ nitroFee)
 
 createRaceRegistryParams :: RaceHash -> BigInt -> Racers RegistryParams
@@ -717,8 +794,8 @@ refreshRequests :: Effect (Promise String)
 refreshRequests = do
   rp <- getParams
   withActor "Admin" $ runRacers rp do
-    (rs /\ _) <- queryRacersState
-    pendingReqs <- queryRequestsWithAirdropAddress rs
+    _ <- queryRacersState
+    pendingReqs <- queryRequestsWithAirdropAddress
     processedReqs <- for (Map.toUnfoldable pendingReqs :: Array _)
       \(_ /\ pendingReq) -> do
         reqAddr <- lift $ addressToBech32 $ pendingReq.airdropAddress
@@ -739,7 +816,6 @@ stateToSimpleJson rs = do
     , treasuryAddress: treasuryAddr
     , operatingAddress: operatingAddr
     , assetPrices: show uRs.assetPrices
-    , depositScript: uRs.depositScript
     }
 
 modifyRacersState :: Effect (Promise TransactionHash)
@@ -756,22 +832,11 @@ modifyRacersState = do
 stateFromSimpleJson :: String -> Contract RacersState
 stateFromSimpleJson json = do
   obj <- liftContractE decodedJson
-  -- assetPrices <-
-  --   foldWithIndexM
-  --     ( \rarityStr priceMap price -> do
-  --         rarity <- liftContractM "could not parse rarity" $ rarityFromString
-  --           rarityStr
-  --         pure $ AssocMap.insert rarity price priceMap
-  --     )
-  --     AssocMap.empty
-  --     (obj.assetPrices :: Object BigInt)
   assetPrices <- liftContractM "Could not decode asset prices" do
     cmn <- Object.lookup "Common" obj.assetPrices
     rr <- Object.lookup "Rare" obj.assetPrices
     epc <- Object.lookup "Epic" obj.assetPrices
     pure $ wrap { common: cmn, rare: rr, epic: epc }
-  -- foldrWithIndex (\rarity price obj -> Object.insert (show rarity) price obj) Object.empty obj.assetPrices
-  -- foldMapWithIndex (\rarity price -> Object.singleton (show rarity) price) obj.assetPrices
   treasuryAddress <- addressFromBech32 obj.treasuryAddress
   operatingAddress <- addressFromBech32 obj.operatingAddress
   pure $ wrap
@@ -779,7 +844,6 @@ stateFromSimpleJson json = do
     , treasuryAddress
     , operatingAddress
     , assetPrices
-    , depositScript: (obj.depositScript :: ValidatorHash)
     }
   where
   decodedJson
@@ -788,7 +852,6 @@ stateFromSimpleJson json = do
          , treasuryAddress :: _
          , operatingAddress :: _
          , assetPrices :: _
-         , depositScript :: _
          }
   decodedJson = decodeJsonString json
 
@@ -838,17 +901,12 @@ mkWalletSpec phex = Just $ UseKeys (PrivatePaymentKeyValue $ wrap pkey) Nothing
   where
   pkey = unsafePartial $ fromJust $ mkPrivateKey phex
 
-depositScriptHashHelper :: RacersParams -> Contract ValidatorHash
-depositScriptHashHelper rp = runRacers rp do
-  depositVal <- mkDepositValidator
-  pure $ validatorHash depositVal
-
 mkPrivateKey :: String -> Maybe PrivateKey
 mkPrivateKey str =
   mkPrivateKey' str <|> (stripPrefix (Pattern "5820") str >>= mkPrivateKey)
   where
   mkPrivateKey' :: String -> Maybe PrivateKey
-  mkPrivateKey' str = hexToByteArray str >>= RawBytes >>> privateKeyFromBytes
+  mkPrivateKey' str' = hexToByteArray str' >>= RawBytes >>> privateKeyFromBytes
 
 paysToAddrConstraint
   :: Address -> Value -> Constraints.TxConstraints Void Void
