@@ -14,7 +14,9 @@ import Contract.Prelude
 
 import CardanoRacers.Common.Types (nitroToken)
 import CardanoRacers.Helpers (paysToAddrConstraint)
-import CardanoRacers.Nitro.Types (NitroPolicyRedeemer(..))
+import CardanoRacers.Nitro.Types
+  ( NitroPolicyRedeemer(BuyNitroToken, BurnNitroToken, MintNitroToken)
+  )
 import CardanoRacers.RacersState.Contract
   ( queryRacersRefScriptOutput
   , queryRacersState
@@ -22,7 +24,7 @@ import CardanoRacers.RacersState.Contract
 import CardanoRacers.ScriptsFFI (nitroMintingPolicyScript)
 import Common.ContractHelpers (findAnyAuthUtxo)
 import Contract.Address (Address)
-import Contract.Monad (liftContractM)
+import Contract.Monad (liftContractM, liftedM)
 import Contract.PlutusData (Redeemer(Redeemer), toData)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts
@@ -33,6 +35,8 @@ import Contract.Scripts
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
   ( TransactionHash
+  , TransactionInput(..)
+  , TransactionOutputWithRefScript(..)
   , awaitTxConfirmed
   , mkTxUnspentOut
   , submitTxFromConstraints
@@ -50,17 +54,15 @@ import Data.Int (ceil)
 import Data.Map (singleton) as Map
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
-import Racers (Racers)
+import Racers (Racers, withContract)
 
 mintNitroConstraints
-  :: BigInt
+  :: (TransactionInput /\ TransactionOutputWithRefScript)
+  -> BigInt
   -> Racers
        (Constraints.TxConstraints Void Void /\ Lookups.ScriptLookups Void)
-mintNitroConstraints nitroAmount = do
+mintNitroConstraints (authTxi /\ authTxo) nitroAmount = do
   nitroPolicy <- mkNitroPolicy
-  (authTxi /\ authTxo) <-
-    findAnyAuthUtxo >>=
-      (lift <<< liftContractM "could not find admin or bot utxo in wallet")
   mNitroPolicyRef <- queryRacersRefScriptOutput
     (unwrap $ mintingPolicyHash nitroPolicy)
 
@@ -134,19 +136,27 @@ paysNitroConstraints targetAddress nitroAmount = do
     (Value.singleton nitroSymbol nitroToken nitroAmount)
 
 mintNitroAndPayToAddressConstraints
-  :: BigInt
+  :: (TransactionInput /\ TransactionOutputWithRefScript)
+  -> BigInt
   -> Address
   -> Racers
        (Constraints.TxConstraints Void Void /\ Lookups.ScriptLookups Void)
-mintNitroAndPayToAddressConstraints nitroAmount targetAddress = do
-  (mintConstraints /\ mintLookups) <- mintNitroConstraints nitroAmount
+mintNitroAndPayToAddressConstraints
+  (authTxi /\ authTxo)
+  nitroAmount
+  targetAddress = do
+  (mintConstraints /\ mintLookups) <- mintNitroConstraints (authTxi /\ authTxo)
+    nitroAmount
   payConstraints <- paysNitroConstraints targetAddress nitroAmount
   pure $ (payConstraints <> mintConstraints) /\ mintLookups
 
 mintNitroAndPayToAddressContract
   :: BigInt -> Address -> Racers TransactionHash
 mintNitroAndPayToAddressContract nitroAmount targetAddress = do
-  (constraints /\ lookups) <- mintNitroAndPayToAddressConstraints nitroAmount
+  authInput <- withContract (liftedM "Could not find auth tokens in wallet")
+    findAnyAuthUtxo
+  (constraints /\ lookups) <- mintNitroAndPayToAddressConstraints authInput
+    nitroAmount
     targetAddress
   lift do
     txId <- submitTxFromConstraints lookups constraints
@@ -159,7 +169,9 @@ mintNitroContract
   :: BigInt
   -> Racers TransactionHash
 mintNitroContract nitroAmount = do
-  (constraints /\ lookups) <- mintNitroConstraints nitroAmount
+  authInput <- withContract (liftedM "Could not find auth tokens in wallet")
+    findAnyAuthUtxo
+  (constraints /\ lookups) <- mintNitroConstraints authInput nitroAmount
   lift do
     txId <- submitTxFromConstraints lookups constraints
     awaitTxConfirmed txId

@@ -9,6 +9,7 @@ import CardanoRacers.AssetRequest.Types
   ( AirdropAddressDatum(AirdropAddressDatum)
   , AssetRequestRedeemer(MintRequestToken)
   )
+import CardanoRacers.Deposit.Validator (mkDepositValidator)
 import CardanoRacers.GameAsset.Types (Rarity)
 import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.RacersState.Contract
@@ -25,6 +26,7 @@ import Contract.Scripts
   ( MintingPolicy(PlutusMintingPolicy)
   , applyArgs
   , mintingPolicyHash
+  , validatorHash
   )
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
@@ -60,6 +62,7 @@ requestAssetByRarity
   -> Racers TransactionHash
 requestAssetByRarity rarity = do
   assetRequestPolicy <- mkAssetRequestPolicy
+  depositScript <- validatorHash <$> mkDepositValidator
   ownAddr <- lift $ liftedM "could not get first address"
     (Array.head <$> getWalletAddresses)
   rs /\ stateTxi /\ stateTxo <- queryRacersState
@@ -109,7 +112,7 @@ requestAssetByRarity rarity = do
         <> paysToAddrConstraint (unwrap rs).treasuryAddress treasuryVal
         <> paysToAddrConstraint (unwrap rs).operatingAddress operatingVal
         <> mintRequestTokenConstraints
-        <> Constraints.mustPayToScript (unwrap rs).depositScript dat DatumInline
+        <> Constraints.mustPayToScript depositScript dat DatumInline
           lockedVal
 
     lookups :: Lookups.ScriptLookups Void
@@ -124,10 +127,10 @@ requestAssetByRarity rarity = do
 mkAssetRequestPolicy :: Racers MintingPolicy
 mkAssetRequestPolicy = do
   params <- asks _.params
+  depositVHahs <- validatorHash <$> mkDepositValidator
   v2script <- lift $ liftContractM "Could not decode applied script" do
     envelope <- decodeTextEnvelope assetRequestPolicy
     plutusScriptV2FromEnvelope envelope
   appliedScript <- liftEither $ left (error <<< show) $ applyArgs v2script
-    $ Array.singleton
-    $ toData params
+    $ [ toData params, toData depositVHahs ]
   pure $ PlutusMintingPolicy $ appliedScript

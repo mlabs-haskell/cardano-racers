@@ -8,8 +8,12 @@ module CardanoRacers.RaceRegistry.Types
 
 import Contract.Prelude
 
-import Aeson (class DecodeAeson, class EncodeAeson, getField, (.:))
-import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
+import Aeson (class DecodeAeson, class EncodeAeson, encodeAeson, getField, (.:))
+import CardanoRacers.Helpers
+  ( decodeAesonString
+  , decodeWrappedAeson
+  , wrapEncodeAeson
+  )
 import Contract.Address (Address, PubKeyHash)
 import Contract.PlutusData
   ( class FromData
@@ -29,13 +33,13 @@ import Contract.Scripts (MintingPolicyHash)
 import Contract.Value (CurrencySymbol, TokenName)
 import Control.Alt ((<|>))
 import Data.BigInt (BigInt)
-import Foreign.Object (Object)
 
 newtype RegistryParams = RegistryParams
   { slotAssetClass :: (CurrencySymbol /\ TokenName)
   -- ^ can't reuse tokens across races, if that's desired an additional raceHash parameters should be included to ensure uniqueness
   , nitroPolicyHash :: MintingPolicyHash
-  , gameAssetPolicyHash :: MintingPolicyHash
+  , driverAssetPolicyHash :: MintingPolicyHash
+  , carAssetPolicyHash :: MintingPolicyHash
   , nitroFee :: BigInt
   }
 
@@ -54,7 +58,9 @@ instance
               := I (CurrencySymbol /\ TokenName)
               :+ "nitroPolicyHash"
               := I MintingPolicyHash
-              :+ "gameAssetPolicyHash"
+              :+ "driverAssetPolicyHash"
+              := I MintingPolicyHash
+              :+ "carAssetPolicyHash"
               := I MintingPolicyHash
               :+ "nitroFee"
               := I BigInt
@@ -77,10 +83,16 @@ instance DecodeAeson RegistryParams where
   decodeAeson = decodeWrappedAeson "RegistryParams" \obj -> do
     slotAssetClass <- obj .: "slotAssetClass"
     nitroPolicyHash <- obj .: "nitroPolicyHash"
-    gameAssetPolicyHash <- obj .: "gameAssetPolicyHash"
+    driverAssetPolicyHash <- obj .: "driverAssetPolicyHash"
+    carAssetPolicyHash <- obj .: "carAssetPolicyHash"
     nitroFee <- obj .: "nitroFee"
     pure $ RegistryParams
-      { slotAssetClass, nitroPolicyHash, gameAssetPolicyHash, nitroFee }
+      { slotAssetClass
+      , nitroPolicyHash
+      , driverAssetPolicyHash
+      , carAssetPolicyHash
+      , nitroFee
+      }
 
 newtype RaceParticipant = RaceParticipant
   { car :: TokenName
@@ -239,21 +251,13 @@ instance FromData RegistryRedeemer where
 
 instance EncodeAeson RegistryRedeemer where
   encodeAeson (Enroll pubKeyHashes) = wrapEncodeAeson "Enroll" { pubKeyHashes }
-  encodeAeson SelectAssets = wrapEncodeAeson "SelectAssets" {}
-  encodeAeson Collect = wrapEncodeAeson "Collect" {}
+  encodeAeson SelectAssets = encodeAeson "SelectAssets"
+  encodeAeson Collect = encodeAeson "Collect"
 
 instance DecodeAeson RegistryRedeemer where
   decodeAeson aes =
     decodeWrappedAeson "Enroll"
       (map Enroll <<< flip getField "pubKeyHashes")
       aes
-      <|> decodeWrappedAeson "SelectAssets"
-        (constMono $ pure SelectAssets)
-        aes
-      <|> decodeWrappedAeson "Collect"
-        (constMono $ pure Collect)
-        aes
-    where
-    constMono :: forall a. a -> Object {} -> a
-    constMono a _ = a
-
+      <|> decodeAesonString "SelectAssets" (const SelectAssets) aes
+      <|> decodeAesonString "Collect" (const Collect) aes

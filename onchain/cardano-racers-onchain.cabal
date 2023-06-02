@@ -60,7 +60,7 @@ library
   import:          common
   exposed-modules: 
     , NitroPolicy
-    , RacePositionPolicy
+    , RaceSlotPolicy
     , RaceRegistryScript
     , NftPolicy
     , GameAssetPolicy

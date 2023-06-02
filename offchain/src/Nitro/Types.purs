@@ -4,8 +4,12 @@ module CardanoRacers.Nitro.Types
 
 import Contract.Prelude
 
-import Aeson (class DecodeAeson, class EncodeAeson)
-import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
+import Aeson (class DecodeAeson, class EncodeAeson, encodeAeson)
+import CardanoRacers.Helpers
+  ( decodeAesonString
+  , decodeWrappedAeson
+  , wrapEncodeAeson
+  )
 import Contract.PlutusData
   ( class FromData
   , class HasPlutusSchema
@@ -21,7 +25,6 @@ import Contract.PlutusData
   )
 import Control.Alt ((<|>))
 import Data.BigInt (BigInt)
-import Foreign.Object (Object)
 
 data NitroPolicyRedeemer
   = MintNitroToken BigInt
@@ -56,15 +59,10 @@ instance Show NitroPolicyRedeemer where
 instance EncodeAeson NitroPolicyRedeemer where
   encodeAeson (MintNitroToken amt) = wrapEncodeAeson "MintNitroToken" amt
   encodeAeson (BuyNitroToken amt) = wrapEncodeAeson "BuyNitroToken" amt
-  encodeAeson BurnNitroToken = wrapEncodeAeson "BurnNitroToken" {}
+  encodeAeson BurnNitroToken = encodeAeson "BurnNitroToken"
 
 instance DecodeAeson NitroPolicyRedeemer where
   decodeAeson aes =
     decodeWrappedAeson "MintNitroToken" (pure <<< MintNitroToken) aes
       <|> decodeWrappedAeson "BuyNitroToken" (pure <<< BuyNitroToken) aes
-      <|>
-        decodeWrappedAeson "BurnRequestToken" (constMono $ pure BurnNitroToken)
-          aes
-    where
-    constMono :: forall a. a -> Object {} -> a
-    constMono a _ = a
+      <|> decodeAesonString "BurnRequestToken" (const BurnNitroToken) aes
