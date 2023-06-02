@@ -2,7 +2,6 @@
 
 module CommonTypes where
 
--- import Data.Function (on)
 import GHC.Generics
 import GHC.Show (Show)
 import Ledger (Address, AssetClass, ValidatorHash)
