@@ -3,7 +3,6 @@ module Test.CardanoRacers.RacersState.Contract (suite) where
 import Contract.Prelude
 
 import CardanoRacers.Common.Types (RacersParams(RacersParams))
-import CardanoRacers.Deposit.Validator (mkDepositValidator)
 import CardanoRacers.Nitro.Helpers (mintBotNft) as NitroHelpers
 import CardanoRacers.RacersState.Contract
   ( mkRacersStateValidator

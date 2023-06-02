@@ -35,8 +35,8 @@ import Contract.Scripts
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Contract.Transaction
   ( TransactionHash
-  , TransactionInput(..)
-  , TransactionOutputWithRefScript(..)
+  , TransactionInput
+  , TransactionOutputWithRefScript
   , awaitTxConfirmed
   , mkTxUnspentOut
   , submitTxFromConstraints

@@ -5,7 +5,7 @@ import Contract.Prelude
 import CardanoRacers.ScriptsFFI (depositScript)
 import Contract.Monad (liftContractM)
 import Contract.PlutusData (toData)
-import Contract.Scripts (Validator(..), applyArgs)
+import Contract.Scripts (Validator(Validator), applyArgs)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
 import Control.Monad.Reader.Trans (asks)
 import Control.Monad.Trans.Class (lift)

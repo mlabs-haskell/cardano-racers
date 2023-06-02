@@ -24,13 +24,8 @@ import CardanoRacers.GameAsset.Types
   , Rarity(Epic, Rare, Common)
   , unGameAsset
   )
-import CardanoRacers.Nitro.Contract
-  ( mintNitroAndPayToAddressConstraints
-  , paysNitroConstraints
-  )
 import CardanoRacers.Nitro.Contract (paysNitroConstraints)
 import CardanoRacers.RacersState.Contract (queryRacersRefScriptOutput)
-import CardanoRacers.RacersState.Types (RacersState)
 import Common.ContractHelpers (findAuthInUtxosMap)
 import Contract.Address (Address, scriptHashAddress)
 import Contract.AuxiliaryData (setTxMetadata)
@@ -97,7 +92,6 @@ import Data.String.CodeUnits (fromCharArray)
 import Effect.Aff (try)
 import Effect.Exception (error)
 import Racers (Racers)
-import Racers (Racers, withContract)
 
 -- | Represents a request for a game NFT
 type PendingAssetRequest =
@@ -328,9 +322,8 @@ consumeAndRedeemRequests
   :: Int
   -> Map Rarity AssetOption
   -> (AssetOption -> Aff String)
-  -> RacersState
   -> Racers (Array GameAssetObject)
-consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
+consumeAndRedeemRequests chunkSize availableAssets generateNonce =
   do
     assetRequestMP <- mkAssetRequestPolicy
     driverAssetMP <- mkGameAssetPolicy DriverType
