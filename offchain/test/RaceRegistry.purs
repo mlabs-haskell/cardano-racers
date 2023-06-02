@@ -31,7 +31,6 @@ import CardanoRacers.RaceRegistry.Contract
   , mkRaceRegistryScript
   , queryRegistryUtxos
   , registerPositionInRace
-  , supplyRegistrySlots
   )
 import CardanoRacers.RaceRegistry.Types
   ( RaceParticipant
@@ -43,9 +42,8 @@ import CardanoRacers.RaceRegistry.Types
 import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
 import CardanoRacers.RaceSlot.Types (RaceHash, slotTokenName)
 import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput)
-import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices), RacersState)
+import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Address (scriptHashAddress)
-import Contract.Log (logInfo')
 import Contract.Metadata (mkCip25String)
 import Contract.Monad (liftContractM, liftedM, throwContractError)
 import Contract.PlutusData (toData)
@@ -72,24 +70,14 @@ import Contract.Transaction
   )
 import Contract.TxConstraints (DatumPresence(DatumInline))
 import Contract.TxConstraints as Constraints
-import Contract.Value
-  ( Value
-  , flattenNonAdaAssets
-  , geq
-  , getLovelace
-  , mkTokenName
-  , negation
-  , scriptCurrencySymbol
-  , valueToCoin
-  )
+import Contract.Value (Value, geq, mkTokenName, negation, scriptCurrencySymbol)
 import Contract.Value as Value
 import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
 import Control.Apply (lift2)
 import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Ctl.Internal.Contract.Wallet (ownPubKeyHashes)
-import Data.Array (concat, drop, filter, head, null, replicate, take) as Array
-import Data.Array (concatMap)
+import Data.Array (concat, drop, filter, head, null, take) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.FoldableWithIndex (findWithIndex)
@@ -104,7 +92,7 @@ import Data.Map
   , unions
   ) as Map
 import Effect.Ref as Ref
-import Mote (group, only, test)
+import Mote (group, test)
 import Partial.Unsafe (unsafePartial)
 import Racers (Racers, runRacers, withContract)
 import Test.CardanoRacers.Helpers
@@ -177,7 +165,7 @@ suite = group "Race Registry" do
           pure rp
 
         runRacers rp do
-          st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
+          _ <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
             (BigInt.fromInt 1_000_000)
             assetPrices
 
@@ -185,7 +173,7 @@ suite = group "Race Registry" do
             $ liftContractM "could not convert hex string to bytearray"
             $ byteArrayFromAscii "TestRaceHash"
 
-          (rgp /\ _) <- setupRegistryAndAssets adminKey userKey st raceHash
+          (rgp /\ _) <- setupRegistryAndAssets adminKey userKey raceHash
             (BigInt.fromInt 20)
             (BigInt.fromInt 2)
 
@@ -217,7 +205,7 @@ suite = group "Race Registry" do
             pure rp
 
           runRacers rp do
-            st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
+            _ <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
               (BigInt.fromInt 1_000_000)
               assetPrices
 
@@ -225,7 +213,7 @@ suite = group "Race Registry" do
               $ liftContractM "could not convert hex string to bytearray"
               $ byteArrayFromAscii "TestRaceHash"
 
-            (rgp /\ _) <- setupRegistryAndAssets adminKey userKey st raceHash
+            (rgp /\ _) <- setupRegistryAndAssets adminKey userKey raceHash
               (BigInt.fromInt 20)
               (BigInt.fromInt 1) -- only 1 slot
 
@@ -251,7 +239,7 @@ suite = group "Race Registry" do
           pure rp
 
         runRacers rp do
-          st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
+          _ <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
             (BigInt.fromInt 1_000_000)
             assetPrices
 
@@ -259,7 +247,7 @@ suite = group "Race Registry" do
             $ liftContractM "could not convert hex string to bytearray"
             $ byteArrayFromAscii "TestRaceHash"
 
-          (rgp /\ mintedAssets) <- setupRegistryAndAssets adminKey userKey st
+          (rgp /\ mintedAssets) <- setupRegistryAndAssets adminKey userKey
             raceHash
             (BigInt.fromInt 20)
             (BigInt.fromInt 2)
@@ -310,7 +298,7 @@ suite = group "Race Registry" do
           pure rp
 
         runRacers rp do
-          st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
+          _ <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
             (BigInt.fromInt 1_000_000)
             assetPrices
 
@@ -318,7 +306,7 @@ suite = group "Race Registry" do
             $ liftContractM "could not convert hex string to bytearray"
             $ byteArrayFromAscii "TestRaceHash"
 
-          (rgp /\ _) <- setupRegistryAndAssets adminKey userKey st raceHash
+          (rgp /\ _) <- setupRegistryAndAssets adminKey userKey raceHash
             (BigInt.fromInt 20)
             (BigInt.fromInt 2)
 
@@ -375,7 +363,7 @@ suite = group "Race Registry" do
           pure unit
 
         runRacers rp do
-          st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
+          _ <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
             (BigInt.fromInt 1_000_000)
             assetPrices
 
@@ -383,7 +371,7 @@ suite = group "Race Registry" do
             $ liftContractM "could not convert hex string to bytearray"
             $ byteArrayFromAscii "TestRaceHash"
 
-          (rgp /\ _) <- setupRegistryAndAssets adminKey userKey st
+          (rgp /\ _) <- setupRegistryAndAssets adminKey userKey
             raceHash
             (BigInt.fromInt 20)
             (BigInt.fromInt 2)
@@ -426,7 +414,7 @@ suite = group "Race Registry" do
           pure unit
 
         runRacers rp do
-          st <- initRacersStateWithAdminAndTreasury (adminKey /\ adminKey)
+          _ <- initRacersStateWithAdminAndTreasury (adminKey /\ adminKey)
             (BigInt.fromInt 1_000_000)
             assetPrices
 
@@ -434,7 +422,7 @@ suite = group "Race Registry" do
             $ liftContractM "could not convert hex string to bytearray"
             $ byteArrayFromAscii "TestRaceHash"
 
-          (rgp /\ _) <- setupRegistryAndAssets adminKey userKey st
+          (rgp /\ _) <- setupRegistryAndAssets adminKey userKey
             raceHash
             (BigInt.fromInt 20)
             (BigInt.fromInt 3)
@@ -480,7 +468,7 @@ suite = group "Race Registry" do
           pure unit
 
         runRacers rp do
-          st <- initRacersStateWithAdminAndTreasury (adminKey /\ adminKey)
+          _ <- initRacersStateWithAdminAndTreasury (adminKey /\ adminKey)
             (BigInt.fromInt 1_000_000)
             assetPrices
 
@@ -488,7 +476,7 @@ suite = group "Race Registry" do
             $ liftContractM "could not convert hex string to bytearray"
             $ byteArrayFromAscii "TestRaceHash"
 
-          (rgp /\ _) <- setupRegistryAndAssets adminKey userKey st
+          (rgp /\ _) <- setupRegistryAndAssets adminKey userKey
             raceHash
             (BigInt.fromInt 20)
             (BigInt.fromInt 2)
@@ -523,7 +511,7 @@ suite = group "Race Registry" do
           pure unit
 
         runRacers rp do
-          st <- initRacersStateWithAdminAndTreasury (adminKey /\ attackerKey)
+          _ <- initRacersStateWithAdminAndTreasury (adminKey /\ attackerKey)
             (BigInt.fromInt 1_000_000)
             assetPrices
 
@@ -532,7 +520,6 @@ suite = group "Race Registry" do
             $ byteArrayFromAscii "TestRaceHash"
 
           (rgp /\ mintedAssets) <- setupRegistryAndAssets adminKey attackerKey
-            st
             raceHash
             (BigInt.fromInt 20)
             (BigInt.fromInt 2)
@@ -569,147 +556,6 @@ suite = group "Race Registry" do
             pure unit
 
           pure unit
-
-  {- Contract test cases:
-    - User does not burn enough Nitro
-    - User does not sign when confirming asset selection
-    - Asset selection Tx does not contain all required inputs
-  -}
-
-  only $ test "playground" do
-    withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
-      \(adminKey /\ treasuryKey /\ userKey) -> do
-        rp <- withKeyWallet adminKey do
-          rp <- createRacersParamsHelper
-          _ <- runRacers rp $ adminMintsNitroContract (BigInt.fromInt 1_000_000)
-          pure rp
-
-        runRacers rp do
-          st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
-            (BigInt.fromInt 1_000_000)
-            assetPrices
-
-          raceHash <- lift
-            $ liftContractM "could not convert hex string to bytearray"
-            $ byteArrayFromAscii "TestRaceHash"
-
-          (rgp /\ mintedAssets) <- setupRegistryAndAssets adminKey userKey st
-            raceHash
-            (BigInt.fromInt 0)
-            (BigInt.fromInt 80)
-
-          logInfo' $ show mintedAssets
-
-          -- _ <- withContract (withKeyWallet adminKey)
-          --   $ lift (liftedM "asdf" $ ownPubKeyHashes <#> Array.head)
-          --   >>= registerPositionInRace rgp
-
-          -- logInfo' $ "registreing admin"
-
-          withContract (withKeyWallet userKey) do
-            firstPkh <- lift $ liftedM "Could not get first own public key hash"
-              $ ownPubKeyHashes
-              <#> Array.head
-            firstAddr <- lift $ liftedM "Could not get first address"
-              $ getWalletAddresses
-              <#> Array.head
-
-            -- _ <- withContract (withKeyWallet adminKey) do
-            --   mintNitroAndPayToAddressContract (BigInt.fromInt 10000) firstAddr
-
-            testTk <- lift $ liftContractM "not token name" $
-              (mkTokenName <=< byteArrayFromAscii) "test"
-
-            (carTk /\ driverTk) <- lift $ liftContractM
-              "Could not get driver and car"
-              do
-                d <- _.tokenName <$> find ((_ == DriverType) <<< _.assetType)
-                  mintedAssets
-                c <- _.tokenName <$> find ((_ == CarType) <<< _.assetType)
-                  mintedAssets
-                pure $ c /\ d
-
-            let
-              registerBatch n i = do
-                regstate <- queryRegistryUtxos rgp
-                let
-                  entries = (length :: Array _ -> Int) $ concatMap (snd <<< snd)
-                    <<< Map.toUnfoldable
-                    $ regstate
-                  registryVal =
-                    foldMap
-                      ( _.amount <<< unwrap <<< _.output <<< unwrap <<< fst <<<
-                          snd
-                      ) <<< (Map.toUnfoldable :: _ -> Array _) $ regstate
-                  slots = sum $ map (\(_ /\ _ /\ i) -> i)
-                    $ Array.filter (\(_ /\ tk /\ _) -> tk == slotTokenName)
-                    $ flattenNonAdaAssets registryVal
-                logInfo' $ show $ "entries: " <> show entries
-                logInfo' $ show $ "slots: " <> show slots
-
-                when (BigInt.fromInt entries >= (slots - BigInt.fromInt 10))
-                  $ void
-                  $ withContract (withKeyWallet adminKey)
-                  $ supplyRegistrySlots raceHash rgp (BigInt.fromInt 80)
-
-                logInfo' $ "registering"
-
-                _ <- sequence $ Array.replicate n
-                  (registerPositionInRace rgp firstPkh)
-                _ <- sequence $ Array.replicate n $
-                  confirmAssetSelection rgp firstPkh
-                    ( wrap
-                        { car: carTk
-                        , driver: driverTk
-                        , payoutAddress: firstAddr
-                        }
-                    )
-                us <- map (fst <<< snd) <<< (Map.toUnfoldable :: _ -> Array _)
-                  <$> queryRegistryUtxos rgp
-                logInfo' $ (show $ i * n) <> ": "
-                logInfo' $ show $ map
-                  ( getLovelace <<< valueToCoin <<<
-                      (\u -> (unwrap (unwrap u).output).amount)
-                  )
-                  us
-                logInfo' $ show $ flattenNonAdaAssets $ foldMap
-                  (\u -> (unwrap (unwrap u).output).amount)
-                  us
-              loopFor 0 _ = pure unit
-              loopFor n m = m n >>= const (loopFor (n - 1) m)
-
-            loopFor 20 $ registerBatch 5
-
-            -- _ <- confirmAssetSelection rgp firstPkh
-            --   ( wrap
-            --       { car: carTk
-            --       , driver: driverTk
-            --       , payoutAddress: firstAddr
-            --       }
-            --   )
-
-            -- us <- queryRegistryUtxos rgp
-            -- logInfo' $ show $ (snd <<< snd) <$> (Map.toUnfoldable us :: Array _)
-
-            -- withContract (withKeyWallet adminKey) do
-            --   -- _ <- collectRegistryScriptLeftovers raceHash rgp
-            --   -- us' <- queryRegistryUtxos rgp
-            --   -- logInfo' $ show $ (snd <<< snd) <$> (Map.toUnfoldable us' :: Array _)
-
-            --   _ <- supplyRegistrySlots raceHash rgp $ BigInt.fromInt 10
-            --   pure unit
-
-            -- _ <- registerPositionInRace rgp firstPkh
-
-            us <- map snd <<< (Map.toUnfoldable :: _ -> Array _) <$>
-              queryRegistryUtxos rgp
-            logInfo' $ show $ getLovelace $ valueToCoin $ foldMap
-              (_.amount <<< unwrap <<< _.output <<< unwrap <<< fst)
-              us
-            -- logInfo' $ show $ (snd <<< snd) <$> (Map.toUnfoldable us :: Array _)
-
-            pure unit
-
   where
   walletUtxoDistr :: InitialUTxOs
   walletUtxoDistr =
@@ -757,12 +603,11 @@ suite = group "Race Registry" do
   setupRegistryAndAssets
     :: KeyWallet
     -> KeyWallet
-    -> RacersState
     -> RaceHash
     -> BigInt
     -> BigInt
     -> Racers (RegistryParams /\ Array GameAssetObject)
-  setupRegistryAndAssets adminKey userKey st raceHash nitroFee slots = do
+  setupRegistryAndAssets adminKey userKey raceHash nitroFee slots = do
     withContract (withKeyWallet adminKey)
       do
         assetRequestPolicy <- mkAssetRequestPolicy
@@ -810,7 +655,6 @@ suite = group "Race Registry" do
         5
         availableAssets
         (const $ liftEffect $ counterNonce counterRef)
-        st
 
     (rgp /\ _) <- withContract (withKeyWallet adminKey) $ initRace
       raceHash

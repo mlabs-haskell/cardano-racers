@@ -105,7 +105,7 @@ suite = group "Deposit" do
               , epic: BigInt.fromInt 20000000
               }
 
-          st <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
+          _ <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
             (BigInt.fromInt 1_000_000)
             assetPrices
 
@@ -149,7 +149,7 @@ suite = group "Deposit" do
               retryCount
                 ( consumeAndRedeemRequests 2 availableAssets
                     (const $ pure uniquenessNonce)
-                    st
+
                 )
                 2
 
