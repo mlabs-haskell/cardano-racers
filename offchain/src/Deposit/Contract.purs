@@ -11,7 +11,7 @@ import CardanoRacers.AssetRequest.Types
   ( AirdropAddressDatum
   , AssetRequestRedeemer(BurnRequestToken)
   )
-import CardanoRacers.Nitro.Contract (paysNitroConstraints)
+import CardanoRacers.Deposit.Validator (mkDepositValidator)
 import CardanoRacers.GameAsset.Contract
   ( mintAvailableAssetByRarity
   , mkGameAssetPolicy
@@ -24,12 +24,8 @@ import CardanoRacers.GameAsset.Types
   , Rarity(Epic, Rare, Common)
   , unGameAsset
   )
-import CardanoRacers.Nitro.Contract
-  ( mintNitroAndPayToAddressConstraints
-  , paysNitroConstraints
-  )
+import CardanoRacers.Nitro.Contract (paysNitroConstraints)
 import CardanoRacers.RacersState.Contract (queryRacersRefScriptOutput)
-import CardanoRacers.RacersState.Types (RacersState)
 import Common.ContractHelpers (findAuthInUtxosMap)
 import Contract.Address (Address, scriptHashAddress)
 import Contract.AuxiliaryData (setTxMetadata)
@@ -45,7 +41,7 @@ import Contract.PlutusData
 import Contract.Prim.ByteArray (byteArrayFromAscii, byteArrayToIntArray)
 import Contract.ScriptLookups (UnbalancedTx, mkUnbalancedTx)
 import Contract.ScriptLookups as Lookups
-import Racers (Racers)cyHash, validatorHash)
+import Contract.Scripts (mintingPolicyHash, validatorHash)
 import Contract.Transaction
   ( BalancedSignedTransaction
   , TransactionInput
@@ -95,7 +91,7 @@ import Data.Map (fromFoldable, lookup, singleton, toUnfoldable) as Map
 import Data.String.CodeUnits (fromCharArray)
 import Effect.Aff (try)
 import Effect.Exception (error)
-import Racers (Racers, withContract)
+import Racers (Racers)
 
 -- | Represents a request for a game NFT
 type PendingAssetRequest =
@@ -326,9 +322,8 @@ consumeAndRedeemRequests
   :: Int
   -> Map Rarity AssetOption
   -> (AssetOption -> Aff String)
-  -> RacersState
   -> Racers (Array GameAssetObject)
-consumeAndRedeemRequests chunkSize availableAssets generateNonce st =
+consumeAndRedeemRequests chunkSize availableAssets generateNonce =
   do
     assetRequestMP <- mkAssetRequestPolicy
     driverAssetMP <- mkGameAssetPolicy DriverType

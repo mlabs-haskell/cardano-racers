@@ -358,9 +358,8 @@ confirmAssetSelection rgp pkh participant = do
     allocateSlots sels txisWithSlots =
       foldl folder (sels /\ []) txisWithSlots #
         ( \(remainingSels /\ finalTxis) ->
-            if Array.null remainingSels 
-              then Just finalTxis 
-              else Nothing -- could not allocate all selections, insufficient slots purchased
+            if Array.null remainingSels then Just finalTxis
+            else Nothing -- could not allocate all selections, insufficient slots purchased
         )
       where
       folder
@@ -375,18 +374,19 @@ confirmAssetSelection rgp pkh participant = do
         let
           slotsWithPkh = Array.filter (_ == (PendingSelection pkh)) entries
           otherSlots = Array.filter (_ /= (PendingSelection pkh)) entries
-          newAllocatedSlots = map AssetSelection $ Array.take (length slotsWithPkh)
+          newAllocatedSlots = map AssetSelection $ Array.take
+            (length slotsWithPkh)
             remainingSels
           newRemainingSels = Array.drop (length slotsWithPkh) remainingSels
           remainingSlots = Array.drop (length newAllocatedSlots) slotsWithPkh
         in
-          if Array.null newAllocatedSlots 
-            -- No slots allocated; accumulator remains unchanged. Continue with rest of entries
-            then newRemainingSels /\ updatedTxis
-            else newRemainingSels /\
-              ( updatedTxis <>
-                  [ (txi /\ (newAllocatedSlots <> otherSlots <> remainingSlots)) ]
-              ) -- Update the accumulator with the allocated and remaining slots.
+          if Array.null newAllocatedSlots
+          -- No slots allocated; accumulator remains unchanged. Continue with rest of entries
+          then newRemainingSels /\ updatedTxis
+          else newRemainingSels /\
+            ( updatedTxis <>
+                [ (txi /\ (newAllocatedSlots <> otherSlots <> remainingSlots)) ]
+            ) -- Update the accumulator with the allocated and remaining slots.
 
   allocatedTxiWithEntries <- lift
     $ liftContractM
