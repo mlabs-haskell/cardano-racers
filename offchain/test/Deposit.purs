@@ -147,7 +147,7 @@ suite = group "Deposit" do
 
             withContract (runChecks assertions <<< lift) $
               retryCount
-                ( consumeAndRedeemRequests 2 availableAssets
+                ( consumeAndRedeemRequests 2 Nothing availableAssets
                     (const $ pure uniquenessNonce)
 
                 )

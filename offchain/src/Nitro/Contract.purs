@@ -3,6 +3,7 @@ module CardanoRacers.Nitro.Contract
   , botMintsNitroContract
   , buyNitroContract
   , mintNitroConstraints
+  , mintNitroContract
   , mintNitroAndPayToAddressConstraints
   , mintNitroAndPayToAddressContract
   , paysNitroConstraints

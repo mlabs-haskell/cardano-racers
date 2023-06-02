@@ -3,66 +3,49 @@ module Lib.CardanoRacers.Admin where
 import Contract.Prelude
 
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.RaceRegistry.Contract (initRace)
 import CardanoRacers.RacersState.Contract (modifyRacersStateContract)
 import Contract.Address (addressFromBech32)
-import Contract.Config
-  ( PrivatePaymentKeySource(..)
-  , PrivateStakeKeySource(..)
-  , testnetConfig
-  )
+import Contract.Config (testnetConfig)
 import Contract.Monad (liftContractM, runContract)
 import Contract.Transaction (TransactionHash)
-import Contract.Wallet (WalletExtension)
-import Control.Monad.Error.Class (liftMaybe, throwError)
 import Control.Monad.Trans.Class (lift)
-import Control.Promise (Promise)
-import Ctl.Internal.Deserialization.Keys (privateKeyFromBech32)
-import Ctl.Internal.FfiHelpers (MaybeFfiHelper, maybeFfiHelper)
-import Data.BigInt (BigInt)
-import Data.Function.Uncurried (Fn1)
-import Effect.Aff.Compat (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2)
-import Effect.Exception (error)
+import Control.Promise (Promise, fromAff)
+import Effect.Aff.Compat (EffectFn1, mkEffectFn1)
 import Foreign.Object (Object)
 import Foreign.Object (lookup) as Object
-import Lib.CardanoRacers.Common
-  ( CredentialProvider(..)
-  , Lovelace
-  , Race
-  , toWalletSpec
-  , walletExtensionFromString
-  )
+import Lib.CardanoRacers.Bot (Bot, mkBot)
+import Lib.CardanoRacers.Common (CredentialProvider, Lovelace, toWalletSpec)
 import Lib.CardanoRacers.Queries (Queries, mkQueries)
 import Racers (Racers, runRacers)
 import Record (merge)
 import Type.Row (type (+))
 
 type Admin r =
-  ( setNitroPrice :: Lovelace -> Aff TransactionHash
-  , setAssetPrices :: Object Lovelace -> Aff TransactionHash
-  , setTreasuryAddress :: String -> Aff TransactionHash
-  , setOperatingAddress :: String -> Aff TransactionHash
-  , createRace :: Race -> BigInt -> Aff Unit
+  ( setNitroPrice :: EffectFn1 Lovelace (Promise TransactionHash)
+  , setAssetPrices :: EffectFn1 (Object Lovelace) (Promise TransactionHash)
+  , setTreasuryAddress :: EffectFn1 String (Promise TransactionHash)
+  , setOperatingAddress :: EffectFn1 String (Promise TransactionHash)
   | r
   )
 
 mkAdmin
-  :: CredentialProvider -> RacersParams -> Aff (Record (Admin + ()))
-mkAdmin cp rp = do
-  -- queries <- mkQueries cp rp
+  :: CredentialProvider -> RacersParams -> Record (Admin + Bot + Queries + ())
+mkAdmin cp rp =
   let
+    queries = mkQueries cp rp
+    bot = mkBot cp rp
     walletSpec = toWalletSpec cp
     cfg = testnetConfig { walletSpec = Just walletSpec }
 
     runA :: Racers ~> Aff
     runA = runContract cfg <<< runRacers rp
-  pure $
-    { setNitroPrice: \price -> runA (setNitroPrice price)
-    , setAssetPrices: \ap -> runA (setAssetPrices ap)
-    , setTreasuryAddress: \ta -> runA (setTreasuryAddress ta)
-    , setOperatingAddress: \oa -> runA (setOperatingAddress oa)
-    , createRace: \race slots -> runA (createRace race slots)
-    } -- `merge` queries
+  in
+    { setNitroPrice: mkEffectFn1 $ fromAff <<< runA <<< setNitroPrice
+    , setAssetPrices: mkEffectFn1 $ fromAff <<< runA <<< setAssetPrices
+    , setTreasuryAddress: mkEffectFn1 $ fromAff <<< runA <<< setTreasuryAddress
+    , setOperatingAddress: mkEffectFn1 $ fromAff <<< runA <<<
+        setOperatingAddress
+    } `merge` queries `merge` bot
 
 setNitroPrice :: Lovelace -> Racers TransactionHash
 setNitroPrice nitroPrice = modifyRacersStateContract
@@ -95,7 +78,3 @@ setOperatingAddress addrStr = do
   operatingAddr <- lift $ addressFromBech32 addrStr
   modifyRacersStateContract
     (\cur -> wrap $ (unwrap cur) { operatingAddress = operatingAddr })
-
-createRace :: Race -> BigInt -> Racers Unit
-createRace race slotCount = void $ initRace (wrap race.raceId) race.nitroFee
-  slotCount

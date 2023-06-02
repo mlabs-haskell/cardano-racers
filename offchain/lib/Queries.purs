@@ -4,36 +4,33 @@ import Contract.Prelude
 
 import Aeson (Aeson, encodeAeson)
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types (GameAssetType(..))
-import CardanoRacers.Nitro.Contract (mkNitroPolicy)
 import CardanoRacers.RaceRegistry.Contract (queryRegistryUtxos)
-import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
-import CardanoRacers.RaceSlot.Types (slotTokenName)
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.RacersState.Types (AssetPrices(..))
 import Contract.Address (addressToBech32)
-import Contract.Config (WalletSpec(..), testnetConfig)
-import Contract.Monad (liftedM, runContract)
-import Contract.Scripts (mintingPolicyHash)
-import Contract.Value (scriptCurrencySymbol)
-import Contract.Wallet (WalletExtension(..))
+import Contract.Config
+  ( defaultKupoServerConfig
+  , defaultOgmiosWsConfig
+  , mkCtlBackendParams
+  , testnetConfig
+  )
+import Contract.Monad (runContract)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff)
 import Data.Array (concat) as Array
 import Data.Map (toUnfoldable) as Map
-import Effect.Aff.Compat (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2)
+import Data.UInt as UInt
+import Effect.Aff.Compat (EffectFn1, mkEffectFn1)
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable) as Object
 import Lib.CardanoRacers.Common
-  ( CredentialProvider(..)
+  ( CredentialProvider
   , Lovelace
   , Race
+  , createRegistryParams
   , toWalletSpec
-  , mkCredentialProviderFFI
-  , mkRacersParamsFFI
   )
-import Racers (Racers, runRacers, withContract)
+import Racers (Racers, runRacers)
 
 type Queries r =
   ( getNitroPrice :: EffectFn1 Unit (Promise Lovelace)
@@ -45,19 +42,22 @@ type Queries r =
   | r
   )
 
-mkQueriesFFI
-  :: EffectFn2 CredentialProvider RacersParams (Promise (Record (Queries ())))
-mkQueriesFFI = mkEffectFn2 $ \cp rp -> fromAff $ mkQueries cp rp
-
-mkQueries :: CredentialProvider -> RacersParams -> Aff (Record (Queries ()))
-mkQueries cp rp = do
+mkQueries :: CredentialProvider -> RacersParams -> Record (Queries ())
+mkQueries cp rp =
   let
     walletSpec = toWalletSpec cp
-    cfg = testnetConfig { walletSpec = Just walletSpec }
+    cfg = testnetConfig
+      { walletSpec = Just walletSpec
+      , backendParams = mkCtlBackendParams
+          { kupoConfig: defaultKupoServerConfig
+              { port = UInt.fromInt 1442, path = Nothing }
+          , ogmiosConfig: defaultOgmiosWsConfig
+          }
+      }
 
     runQ :: Racers ~> Aff
     runQ = runContract cfg <<< runRacers rp
-  pure
+  in
     { getNitroPrice: mkEffectFn1 $ const $ fromAff $ runQ getNitroPrice
     , getAssetPrices: mkEffectFn1 $ const $ fromAff $ runQ getAssetPrices
     , getTreasuryAddress: mkEffectFn1 $ const $ fromAff $ runQ
@@ -93,21 +93,7 @@ getOperatingAddress = queryRacersState
 
 queryRaceRegistry :: Race -> Racers (Array Aeson)
 queryRaceRegistry race = do
-  nitroPolicyHash <- mintingPolicyHash <$> mkNitroPolicy
-  driverAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy DriverType
-  carAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy CarType
-  slotSymbol <-
-    withContract (liftedM "could not get currency symbol from policy")
-      $ scriptCurrencySymbol
-      <$> mkRaceSlotPolicy (wrap race.raceId)
-  let
-    rgp = wrap
-      { slotAssetClass: slotSymbol /\ slotTokenName
-      , nitroPolicyHash
-      , driverAssetPolicyHash
-      , carAssetPolicyHash
-      , nitroFee: race.nitroFee
-      }
+  rgp <- createRegistryParams race
   queryRegistryUtxos rgp <#> Map.toUnfoldable >>> map (snd >>> snd)
     >>> Array.concat
     >>> map encodeAeson

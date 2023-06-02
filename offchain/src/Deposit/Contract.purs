@@ -2,6 +2,7 @@ module CardanoRacers.Deposit.Contract
   ( queryRequestsWithAirdropAddress
   , consumeAndRedeemRequests
   , redeemGameAsset
+  , PendingAssetRequest
   ) where
 
 import Contract.Prelude
@@ -320,10 +321,11 @@ redeemGameAsset
 
 consumeAndRedeemRequests
   :: Int
+  -> Maybe Int
   -> Map Rarity AssetOption
   -> (AssetOption -> Aff String)
   -> Racers (Array GameAssetObject)
-consumeAndRedeemRequests chunkSize availableAssets generateNonce =
+consumeAndRedeemRequests chunkSize mMaxRequests availableAssets generateNonce =
   do
     assetRequestMP <- mkAssetRequestPolicy
     driverAssetMP <- mkGameAssetPolicy DriverType
@@ -341,6 +343,7 @@ consumeAndRedeemRequests chunkSize availableAssets generateNonce =
       (unwrap $ validatorHash depositValidator)
 
     pendingRequestsChunked <- chunkBy chunkSize
+      <<< maybe identity Array.take mMaxRequests
       <<< (Map.toUnfoldable :: _ -> Array _)
       <$>
         queryRequestsWithAirdropAddress

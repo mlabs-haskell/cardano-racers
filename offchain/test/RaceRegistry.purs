@@ -653,6 +653,7 @@ suite = group "Race Registry" do
     assets <- withContract (withKeyWallet adminKey) $
       consumeAndRedeemRequests
         5
+        Nothing
         availableAssets
         (const $ liftEffect $ counterNonce counterRef)
 
