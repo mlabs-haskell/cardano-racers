@@ -24,7 +24,6 @@ import Contract.PlutusData
   , genericFromData
   , genericToData
   )
-import Contract.Scripts (ValidatorHash)
 import Data.BigInt (BigInt)
 
 newtype AssetPrices = AssetPrices
