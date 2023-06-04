@@ -11,6 +11,7 @@ module CardanoRacers.GameAsset.Types
   , AssetOption
   , mkGameAsset
   , unGameAsset
+  , rarityFromString
   ) where
 
 import Contract.Prelude
@@ -114,6 +115,12 @@ instance ToData Rarity where
 
 instance FromData Rarity where
   fromData = genericFromData
+
+rarityFromString :: String -> Maybe Rarity
+rarityFromString "Common" = Just Common
+rarityFromString "Rare" = Just Rare
+rarityFromString "Epic" = Just Epic
+rarityFromString _ = Nothing
 
 newtype DriverAttributes = DriverAttributes
   { aggression :: BigInt
@@ -330,6 +337,7 @@ type GameAssetObject =
   , imageUrl :: String
   , name :: Cip25String
   , tokenName :: TokenName
+  , rarity :: Rarity
   , description :: String
   }
 
@@ -342,13 +350,14 @@ mkGameAsset
   :: GameAssetObject
   -> Maybe GameAsset
 mkGameAsset
-  { assetType, attributes, imageUrl, name, description, tokenName }
+  { assetType, attributes, imageUrl, name, rarity, description, tokenName }
   | assetType == DriverType && isJust (driverAttrsFromAttributes attributes) =
       Just $ GameAsset
         { assetType
         , attributes
         , imageUrl
         , name
+        , rarity
         , description
         , tokenName
         }
@@ -358,6 +367,7 @@ mkGameAsset
         , attributes
         , imageUrl
         , name
+        , rarity
         , description
         , tokenName
         }
@@ -377,6 +387,7 @@ instance DecodeAeson GameAsset where
     attributes <- obj .: "attributes"
     imageUrl <- obj .: "imageUrl"
     name <- obj .: "name"
+    rarity <- obj .: "rarity"
     description <- obj .: "description"
     tokenName <- obj .: "tokenName"
     pure $ GameAsset
@@ -384,6 +395,7 @@ instance DecodeAeson GameAsset where
       , attributes
       , imageUrl
       , name
+      , rarity
       , description
       , tokenName
       }
@@ -447,6 +459,7 @@ gameAssetMetadataEntryFromMetadata
 gameAssetMetadataEntryFromMetadata policy tk md = do
   name <- lookupMetadata "name" md >>= fromMetadata
   imageUrl <- lookupMetadata "image" md >>= fromMetadataString
+  rarity <- lookupMetadata "rarity" md >>= fromMetadata >>= rarityFromString
   assetType <- lookupMetadata "type" md >>= fromMetadata >>= case _ of
     "Driver" -> pure DriverType
     "Car" -> pure CarType
@@ -465,6 +478,7 @@ gameAssetMetadataEntryFromMetadata policy tk md = do
         , attributes: attrsMd
         , imageUrl
         , name
+        , rarity
         , description
         , tokenName: (unwrap tk)
         }
