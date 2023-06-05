@@ -26,6 +26,7 @@ import Lib.CardanoRacers.Common
   , Nitro
   , Race
   , createRegistryParams
+  , customCfg
   , toWalletSpec
   )
 import Lib.CardanoRacers.Queries (Queries, mkQueries)
@@ -47,7 +48,7 @@ mkClient cp rp =
   let
     queries = mkQueries cp rp
     walletSpec = toWalletSpec cp
-    cfg = testnetConfig { walletSpec = Just walletSpec }
+    cfg = customCfg walletSpec
 
     runC :: Racers ~> Aff
     runC = runContract cfg <<< runRacers rp

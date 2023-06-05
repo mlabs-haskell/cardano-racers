@@ -3,20 +3,48 @@ module Lib.CardanoRacers.Bot where
 import Contract.Prelude
 
 import CardanoRacers.Common.Types (RacersParams, nitroToken)
-import CardanoRacers.Deposit.Contract (PendingAssetRequest, consumeAndRedeemRequests, queryRequestsWithAirdropAddress)
-import CardanoRacers.GameAsset.Types (AssetOption, CarAttributes(..), DriverAttributes(..), GameAssetAttributes(..), GameAssetObject, Rarity(..))
+import CardanoRacers.Deposit.Contract
+  ( PendingAssetRequest
+  , consumeAndRedeemRequests
+  , queryRequestsWithAirdropAddress
+  )
+import CardanoRacers.GameAsset.Types
+  ( AssetOption
+  , CarAttributes(..)
+  , DriverAttributes(..)
+  , GameAssetAttributes(..)
+  , GameAssetObject
+  , Rarity(..)
+  )
 import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.Nitro.Contract (mintNitroContract, mkNitroPolicy)
-import CardanoRacers.RaceRegistry.Contract (collectRegistryScriptLeftovers, initRace, supplyRegistrySlots)
+import CardanoRacers.RaceRegistry.Contract
+  ( collectRegistryScriptLeftovers
+  , initRace
+  , supplyRegistrySlots
+  )
 import Contract.Address (addressFromBech32, addressToBech32)
 import Contract.Config (testnetConfig)
 import Contract.Metadata (mkCip25String, unCip25String)
 import Contract.Monad (liftContractM, liftedM, runContract)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (mintingPolicyHash)
-import Contract.Transaction (TransactionHash, TransactionInput, awaitTxConfirmed, submitTxFromConstraints)
+import Contract.Transaction
+  ( TransactionHash
+  , TransactionInput
+  , awaitTxConfirmed
+  , submitTxFromConstraints
+  )
 import Contract.TxConstraints as Constraints
-import Contract.Value (adaSymbol, adaToken, getLovelace, lovelaceValueOf, mpsSymbol, valueOf, valueToCoin)
+import Contract.Value
+  ( adaSymbol
+  , adaToken
+  , getLovelace
+  , lovelaceValueOf
+  , mpsSymbol
+  , valueOf
+  , valueToCoin
+  )
 import Contract.Wallet (getWalletBalance)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff, toAffE)
@@ -26,11 +54,28 @@ import Data.BigInt (fromInt, toInt, toString) as BigInt
 import Data.Bitraversable (ltraverse, rtraverse)
 import Data.Map (Map)
 import Data.Map (fromFoldable, toUnfoldable) as Map
-import Effect.Aff.Compat (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2, runEffectFn1)
+import Effect.Aff.Compat
+  ( EffectFn1
+  , EffectFn2
+  , mkEffectFn1
+  , mkEffectFn2
+  , runEffectFn1
+  )
 import Effect.Uncurried (EffectFn4, mkEffectFn4)
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable, toUnfoldable) as Object
-import Lib.CardanoRacers.Common (CredentialProvider, Lovelace, Nitro, Race, assetTypeFromString, assetTypeToString, createRegistryParams, toWalletSpec, tokenNameToString)
+import Lib.CardanoRacers.Common
+  ( CredentialProvider
+  , Lovelace
+  , Nitro
+  , Race
+  , assetTypeFromString
+  , assetTypeToString
+  , createRegistryParams
+  , customCfg
+  , toWalletSpec
+  , tokenNameToString
+  )
 import Lib.CardanoRacers.Queries (Queries, mkQueries)
 import Partial.Unsafe (unsafePartial)
 import Racers (Racers, runRacers, withContract)
@@ -86,7 +131,7 @@ mkBot cp rp =
   let
     queries = mkQueries cp rp
     walletSpec = toWalletSpec cp
-    cfg = testnetConfig { walletSpec = Just walletSpec }
+    cfg = customCfg walletSpec
 
     runC :: Racers ~> Aff
     runC = runContract cfg <<< runRacers rp

@@ -28,6 +28,7 @@ import Lib.CardanoRacers.Common
   , Lovelace
   , Race
   , createRegistryParams
+  , customCfg
   , toWalletSpec
   )
 import Racers (Racers, runRacers)
@@ -46,14 +47,7 @@ mkQueries :: CredentialProvider -> RacersParams -> Record (Queries ())
 mkQueries cp rp =
   let
     walletSpec = toWalletSpec cp
-    cfg = testnetConfig
-      { walletSpec = Just walletSpec
-      , backendParams = mkCtlBackendParams
-          { kupoConfig: defaultKupoServerConfig
-              { port = UInt.fromInt 1442, path = Nothing }
-          , ogmiosConfig: defaultOgmiosWsConfig
-          }
-      }
+    cfg = customCfg walletSpec
 
     runQ :: Racers ~> Aff
     runQ = runContract cfg <<< runRacers rp

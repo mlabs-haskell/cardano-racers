@@ -14,7 +14,11 @@ import Contract.Config
   ( PrivatePaymentKeySource(..)
   , PrivateStakeKeySource(..)
   , WalletSpec(..)
+  , defaultKupoServerConfig
+  , defaultOgmiosWsConfig
+  , mkCtlBackendParams
   , privateKeyFromBytes
+  , testnetConfig
   )
 import Contract.Monad (liftedM)
 import Contract.Prim.ByteArray
@@ -33,10 +37,12 @@ import Ctl.Internal.Serialization.Types (PrivateKey)
 import Data.ArrayBuffer.Types (Uint8Array)
 import Data.Bifunctor (lmap)
 import Data.BigInt (BigInt)
+import Data.BigInt (fromString) as BigInt
 import Data.Char (fromCharCode)
 import Data.Function.Uncurried (Fn1, runFn1)
 import Data.String (Pattern(..), stripPrefix)
 import Data.String.CodeUnits (fromCharArray)
+import Data.UInt (fromInt) as UInt
 import Effect.Aff.Compat (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2)
 import Effect.Exception (error)
 import Partial.Unsafe (unsafePartial)
@@ -50,6 +56,18 @@ data CredentialProvider
   | Keys PrivatePaymentKeySource (Maybe PrivateStakeKeySource)
 
 type Race = { raceId :: Uint8Array, nitroFee :: Nitro }
+
+customCfg walletSpec = testnetConfig
+  { walletSpec = Just walletSpec
+  , backendParams = mkCtlBackendParams
+      { kupoConfig: defaultKupoServerConfig
+          { port = UInt.fromInt 1442, path = Nothing }
+      , ogmiosConfig: defaultOgmiosWsConfig
+      }
+  }
+
+bg :: String -> Effect BigInt
+bg str = liftMaybe (error $ "Bad amount: " <> str) $ BigInt.fromString str
 
 mkCredentialProviderFFI
   :: { mkKeys ::

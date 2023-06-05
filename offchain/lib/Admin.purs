@@ -14,7 +14,12 @@ import Effect.Aff.Compat (EffectFn1, mkEffectFn1)
 import Foreign.Object (Object)
 import Foreign.Object (lookup) as Object
 import Lib.CardanoRacers.Bot (Bot, mkBot)
-import Lib.CardanoRacers.Common (CredentialProvider, Lovelace, toWalletSpec)
+import Lib.CardanoRacers.Common
+  ( CredentialProvider
+  , Lovelace
+  , customCfg
+  , toWalletSpec
+  )
 import Lib.CardanoRacers.Queries (Queries, mkQueries)
 import Racers (Racers, runRacers)
 import Record (merge)
@@ -35,7 +40,7 @@ mkAdmin cp rp =
     queries = mkQueries cp rp
     bot = mkBot cp rp
     walletSpec = toWalletSpec cp
-    cfg = testnetConfig { walletSpec = Just walletSpec }
+    cfg = customCfg walletSpec
 
     runA :: Racers ~> Aff
     runA = runContract cfg <<< runRacers rp
