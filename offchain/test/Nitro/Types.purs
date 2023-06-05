@@ -15,14 +15,10 @@ import CardanoRacers.RacersState.Types
 import Contract.Address (PubKeyHash(PubKeyHash))
 import Contract.Credential (Credential(PubKeyCredential))
 import Contract.Prim.ByteArray (hexToByteArrayUnsafe)
-import Contract.Scripts (ValidatorHash(ValidatorHash))
 import Contract.Test.Mote (TestPlanM)
 import Contract.Value (mkCurrencySymbol, mkTokenName)
 import Ctl.Internal.Plutus.Types.Address (Address(Address))
-import Ctl.Internal.Serialization.Hash
-  ( ed25519KeyHashFromBech32
-  , scriptHashFromBytes
-  )
+import Ctl.Internal.Serialization.Hash (ed25519KeyHashFromBech32)
 import Data.Bifunctor (lmap)
 import Data.BigInt (fromInt) as BigInt
 import Effect.Aff (error)
