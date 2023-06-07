@@ -98,6 +98,7 @@ generateAsset ao nonce rarity = do
       $ mkGameAsset
           { assetType: ao.assetType
           , attributes: attrs
+          , rarity
           , name: cip25Name
           , imageUrl: ao.imageUrl
           , description: ao.description
