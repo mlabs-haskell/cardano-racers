@@ -1,19 +1,43 @@
-import './Common.ts'
+import { Nitro, Race, RacersQueries, Rarity, TokenName, TransactionHash } from './Common';
 
 // Runs in the browser, connects to a browser wallet and exposes racers
 // specific functionality
 
-class Client implements RacersQueries {
-  // constructor() {}
+interface Client extends RacersQueries {
+  /**
+  * Attempst to buy the given amount of Nitro using the current nitro price
+  * from the blockchain
+  * @param {Nitro} amount The amount of Nitro to buy
+  * @returns The transaction hash of the buy transaction
+  */
+  buyNitro(amount: Nitro): Promise<TransactionHash>;
 
-  static async initClient(cfg: ContractConfig, racersParams: RacersParams, walletId: WalletId): Promise<Client>;
+  /**
+  * Requests an asset by rarity, using the current asset prices on the
+  * blockchain
+  * @param {Rarity} rarity The rarity of the asset to request
+  * @returns The transaction hash of the request transaction
+  */
+  requestAsset(rarity: Rarity): Promise<TransactionHash>;
 
-  // writes
-  async buyNitro(amount: Nitro): Promise<TransactionHash>;
-  async requestAsset(rarity: Rarity): Promise<TransactionHash>;
+  /**
+  * Registers in the given race by burning the nitro fee and inserting
+  * a 'registered' pkh entry at the race registry script
+  * @param {Race} race The race to register in identified by raceId and nitroFee
+  * @returns The transaction hash of the register transaction
+  */
+  registerInRace(race: Race): Promise<TransactionHash>;
 
-  async registerInRace(race: Race): Promise<TransactionHash>;
-  async joinRace(race: Race, car: TokenName, driver: TokenName): Promise<TransactionHash>;
+  /**
+  * Confirms asset selection for race participation by providing the token
+  * names for the chosen car and driver. Looks for the assets in the current
+  * wallet and modifies the users 'registered' entry into an 'assetSelection'
+  * @param {Race} race The race to register in identified by raceId and nitroFee
+  * @param {TokenName} car The token name of the chosen car
+  * @param {TokenName} driver The token name of the chosen driver
+  * @returns The transaction hash of the confirm transaction
+  */
+  joinRace(race: Race, car: TokenName, driver: TokenName): Promise<TransactionHash>;
 }
 
 type AssetMetadata = {
@@ -26,9 +50,5 @@ type AssetMetadata = {
 
 type AssetType = "driver" | "car"
 
-type Race = {
-  raceId: Uint8Array;
-  nitroFee: number;
-}
 
 type WalletId = "nami" | "gerowallet" | "flint" | "LodeWallet" | "eternl"

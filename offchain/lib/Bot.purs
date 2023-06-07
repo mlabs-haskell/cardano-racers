@@ -2,7 +2,7 @@ module Lib.CardanoRacers.Bot where
 
 import Contract.Prelude
 
-import CardanoRacers.Common.Types (RacersParams, nitroToken)
+import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Deposit.Contract
   ( PendingAssetRequest
   , consumeAndRedeemRequests
@@ -17,18 +17,17 @@ import CardanoRacers.GameAsset.Types
   , Rarity(..)
   )
 import CardanoRacers.Helpers (paysToAddrConstraint)
-import CardanoRacers.Nitro.Contract (mintNitroContract, mkNitroPolicy)
+import CardanoRacers.Nitro.Contract (mintNitroContract)
 import CardanoRacers.RaceRegistry.Contract
   ( collectRegistryScriptLeftovers
   , initRace
   , supplyRegistrySlots
   )
 import Contract.Address (addressFromBech32, addressToBech32)
-import Contract.Config (testnetConfig)
 import Contract.Metadata (mkCip25String, unCip25String)
 import Contract.Monad (liftContractM, liftedM, runContract)
+import Contract.Prim.ByteArray (byteArrayToHex)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (mintingPolicyHash)
 import Contract.Transaction
   ( TransactionHash
   , TransactionInput
@@ -36,24 +35,19 @@ import Contract.Transaction
   , submitTxFromConstraints
   )
 import Contract.TxConstraints as Constraints
-import Contract.Value
-  ( adaSymbol
-  , adaToken
-  , getLovelace
-  , lovelaceValueOf
-  , mpsSymbol
-  , valueOf
-  , valueToCoin
-  )
+import Contract.Value (adaSymbol, adaToken, lovelaceValueOf, valueOf)
 import Contract.Wallet (getWalletBalance)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff, toAffE)
 import Data.Array (concat, replicate) as Array
+import Data.Bifunctor (rmap)
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt, toInt, toString) as BigInt
 import Data.Bitraversable (ltraverse, rtraverse)
 import Data.Map (Map)
 import Data.Map (fromFoldable, toUnfoldable) as Map
+import Data.String (toLower)
+import Data.UInt (toInt) as UInt
 import Effect.Aff.Compat
   ( EffectFn1
   , EffectFn2
@@ -73,12 +67,14 @@ import Lib.CardanoRacers.Common
   , assetTypeToString
   , createRegistryParams
   , customCfg
+  , fromJsBigInt
+  , toJsBigInt
   , toWalletSpec
   , tokenNameToString
   )
 import Lib.CardanoRacers.Queries (Queries, mkQueries)
 import Partial.Unsafe (unsafePartial)
-import Racers (Racers, runRacers, withContract)
+import Racers (Racers, runRacers)
 import Record (merge)
 import Type.Row (type (+))
 
@@ -101,6 +97,7 @@ type GameAssetFFI =
   { assetType :: String -- "driver" | "car"
   , attributes :: Object Int
   , imageUrl :: String
+  , rarity :: String
   , name :: String
   , tokenName :: String
   , description :: String
@@ -112,7 +109,6 @@ type Bot r =
   ( queryAssetRequests ::
       EffectFn1 Unit (Promise (Object (Array AssetRequestFFI)))
   , getWalletLovelaceBalance :: EffectFn1 Unit (Promise Lovelace)
-  , getWalletNitroBalance :: EffectFn1 Unit (Promise Nitro)
   , mintNitro :: EffectFn1 Nitro (Promise TransactionHash)
   , tryRedeemingPendingRequests ::
       EffectFn4 AvailableAssetsFFI Int Int
@@ -140,8 +136,6 @@ mkBot cp rp =
         queryAssetRequests
     , getWalletLovelaceBalance: mkEffectFn1 $ const $ fromAff $ runC $
         getWalletLovelaceBalance
-    , getWalletNitroBalance: mkEffectFn1 $ const $ fromAff $ runC $
-        getWalletNitroBalance
     , mintNitro: mkEffectFn1 $ fromAff <<< runC <<< mintNitro
     , tryRedeemingPendingRequests: mkEffectFn4 $
         \assets maxRequests chunkBy generateUniquenessNonce ->
@@ -158,7 +152,7 @@ mkBot cp rp =
     } `merge` queries
 
 mintNitro :: Nitro -> Racers TransactionHash
-mintNitro nitroAmount = mintNitroContract nitroAmount
+mintNitro = mintNitroContract <<< fromJsBigInt
 
 queryAssetRequests :: Racers (Object (Array AssetRequestFFI))
 queryAssetRequests = do
@@ -175,23 +169,19 @@ queryAssetRequests = do
     as <- Array.concat <$> traverse
       ( \(r /\ bi) -> do
           i <- liftContractM "Could not convert BigInt to Int" $ BigInt.toInt bi
-          pure $ Array.replicate i { address: addrStr, rarity: show r }
+          pure $ Array.replicate i
+            { address: addrStr, rarity: toLower $ show r }
       )
       requestedAssets
-    pure $ show txi /\ as
+    let
+      txiHash = byteArrayToHex (unwrap (unwrap txi).transactionId)
+      txiIdx = show $ UInt.toInt (unwrap txi).index
+    pure $ (txiHash <> "#" <> txiIdx) /\ as
 
 getWalletLovelaceBalance :: Racers Lovelace
 getWalletLovelaceBalance = lift do
   bal <- liftedM "Could not get wallet balance" getWalletBalance
-  pure $ valueOf bal adaSymbol adaToken
-
-getWalletNitroBalance :: Racers Nitro
-getWalletNitroBalance = do
-  bal <- lift $ liftedM "Could not get wallet balance" getWalletBalance
-  nitroSymbol <- withContract (liftedM "Could not get Nitro symbol") $ mpsSymbol
-    <<< mintingPolicyHash
-    <$> mkNitroPolicy
-  pure $ valueOf bal nitroSymbol nitroToken
+  pure $ toJsBigInt $ valueOf bal adaSymbol adaToken
 
 tryRedeemingPendingRequests
   :: AvailableAssetsFFI
@@ -231,7 +221,7 @@ tryRedeemingPendingRequests
       , assetType
       , imageUrl: affi.imageUrl
       , description: affi.description
-      , nitroAmount: affi.nitroAmount
+      , nitroAmount: fromJsBigInt affi.nitroAmount
       }
 
   toAssetOptionFFI :: AssetOption -> AssetOptionFFI
@@ -240,7 +230,7 @@ tryRedeemingPendingRequests
     , assetType: assetTypeToString ao.assetType
     , imageUrl: ao.imageUrl
     , description: ao.description
-    , nitroAmount: ao.nitroAmount
+    , nitroAmount: toJsBigInt ao.nitroAmount
     }
 
   toGameAssetFFI :: GameAssetObject -> GameAssetFFI
@@ -248,6 +238,7 @@ tryRedeemingPendingRequests
     { name: unCip25String gao.name
     , assetType: assetTypeToString gao.assetType
     , imageUrl: gao.imageUrl
+    , rarity: toLower $ show gao.rarity
     , description: gao.description
     , tokenName: tokenNameToString gao.tokenName
     , attributes: attributesToObject gao.attributes
@@ -268,7 +259,8 @@ tryRedeemingPendingRequests
     ]
 
 createRace :: Race -> Int -> Racers Unit
-createRace race slotCount = void $ initRace (wrap race.raceId) race.nitroFee
+createRace race slotCount = void
+  $ initRace (wrap race.raceId) (fromJsBigInt race.nitroFee)
   $ BigInt.fromInt slotCount
 
 resupplySlots :: Race -> Int -> Racers Unit
@@ -280,8 +272,9 @@ closeRace :: Race -> RewardDistributionFFI -> Racers (Array TransactionHash)
 closeRace race rewardsFFI = do
   rgp <- createRegistryParams race
   collectTxId <- collectRegistryScriptLeftovers (wrap race.raceId) rgp
-  rewards <- traverse (ltraverse $ lift <<< addressFromBech32) $
-    (Object.toUnfoldable :: _ -> Array _) rewardsFFI
+  rewards <- traverse (ltraverse $ lift <<< addressFromBech32)
+    $ rmap fromJsBigInt
+    <$> (Object.toUnfoldable rewardsFFI :: Array _)
 
   let
     constraints :: Constraints.TxConstraints Void Void

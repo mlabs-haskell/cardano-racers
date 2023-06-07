@@ -37,7 +37,6 @@ import Ctl.Internal.Serialization.Types (PrivateKey)
 import Data.ArrayBuffer.Types (Uint8Array)
 import Data.Bifunctor (lmap)
 import Data.BigInt (BigInt)
-import Data.BigInt (fromString) as BigInt
 import Data.Char (fromCharCode)
 import Data.Function.Uncurried (Fn1, runFn1)
 import Data.String (Pattern(..), stripPrefix)
@@ -48,8 +47,19 @@ import Effect.Exception (error)
 import Partial.Unsafe (unsafePartial)
 import Racers (Racers, withContract)
 
-type Lovelace = BigInt
-type Nitro = BigInt
+foreign import fromJsBigInt :: JSBigInt -> BigInt
+foreign import toJsBigInt :: BigInt -> JSBigInt
+
+foreign import data JSBigInt :: Type
+
+type Lovelace = JSBigInt
+type Nitro = JSBigInt
+
+type AssetPricesFFI =
+  { common :: Lovelace
+  , rare :: Lovelace
+  , epic :: Lovelace
+  }
 
 data CredentialProvider
   = Wallet WalletExtension
@@ -65,9 +75,6 @@ customCfg walletSpec = testnetConfig
       , ogmiosConfig: defaultOgmiosWsConfig
       }
   }
-
-bg :: String -> Effect BigInt
-bg str = liftMaybe (error $ "Bad amount: " <> str) $ BigInt.fromString str
 
 mkCredentialProviderFFI
   :: { mkKeys ::
@@ -156,5 +163,5 @@ createRegistryParams race = do
     , nitroPolicyHash
     , driverAssetPolicyHash
     , carAssetPolicyHash
-    , nitroFee: race.nitroFee
+    , nitroFee: fromJsBigInt race.nitroFee
     }

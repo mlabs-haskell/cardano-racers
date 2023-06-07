@@ -3,21 +3,30 @@ module Lib.CardanoRacers.Admin where
 import Contract.Prelude
 
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.RacersState.Contract (modifyRacersStateContract)
+import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
+import CardanoRacers.RacersState.Contract
+  ( initRacersStateContract
+  , modifyRacersStateContract
+  )
+import CardanoRacers.RacersState.Types (AssetPrices(..), RacersState(..))
 import Contract.Address (addressFromBech32)
-import Contract.Config (testnetConfig)
-import Contract.Monad (liftContractM, runContract)
+import Contract.Monad (Contract, liftContractM, liftedM, runContract)
 import Contract.Transaction (TransactionHash)
+import Contract.Wallet (getWalletUtxos)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff)
-import Effect.Aff.Compat (EffectFn1, mkEffectFn1)
+import Data.Array (head) as Array
+import Data.Map (toUnfoldable) as Map
+import Effect.Aff.Compat (EffectFn1, EffectFn2, mkEffectFn1)
 import Foreign.Object (Object)
 import Foreign.Object (lookup) as Object
 import Lib.CardanoRacers.Bot (Bot, mkBot)
 import Lib.CardanoRacers.Common
-  ( CredentialProvider
+  ( AssetPricesFFI
+  , CredentialProvider
   , Lovelace
   , customCfg
+  , fromJsBigInt
   , toWalletSpec
   )
 import Lib.CardanoRacers.Queries (Queries, mkQueries)
@@ -27,11 +36,46 @@ import Type.Row (type (+))
 
 type Admin r =
   ( setNitroPrice :: EffectFn1 Lovelace (Promise TransactionHash)
-  , setAssetPrices :: EffectFn1 (Object Lovelace) (Promise TransactionHash)
+  , setAssetPrices :: EffectFn1 AssetPricesFFI (Promise TransactionHash)
   , setTreasuryAddress :: EffectFn1 String (Promise TransactionHash)
   , setOperatingAddress :: EffectFn1 String (Promise TransactionHash)
   | r
   )
+
+type InitialStateFFI =
+  { treasuryAddress :: String
+  , operatingAddress :: String
+  , assetPrices :: AssetPricesFFI
+  , nitroPrice :: Lovelace
+  }
+
+initRacers :: CredentialProvider -> InitialStateFFI -> Aff RacersParams
+initRacers cp initialState =
+  let
+    walletSpec = toWalletSpec cp
+    cfg = customCfg walletSpec
+  in
+    runContract cfg do
+      utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
+      (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
+        Map.toUnfoldable utxos
+      rp <- NitroHelpers.createRacersParams txi
+      treasuryAddress <- addressFromBech32 initialState.treasuryAddress
+      operatingAddress <- addressFromBech32 initialState.operatingAddress
+      let
+        rs = RacersState
+          { treasuryAddress: treasuryAddress
+          , operatingAddress: operatingAddress
+          , nitroPrice: fromJsBigInt initialState.nitroPrice
+          , assetPrices: AssetPrices
+              { common: fromJsBigInt initialState.assetPrices.common
+              , rare: fromJsBigInt initialState.assetPrices.rare
+              , epic: fromJsBigInt initialState.assetPrices.epic
+              }
+          }
+      _ <- runRacers rp do
+        initRacersStateContract rs
+      pure rp
 
 mkAdmin
   :: CredentialProvider -> RacersParams -> Record (Admin + Bot + Queries + ())
@@ -54,21 +98,16 @@ mkAdmin cp rp =
 
 setNitroPrice :: Lovelace -> Racers TransactionHash
 setNitroPrice nitroPrice = modifyRacersStateContract
-  (\cur -> wrap $ (unwrap cur) { nitroPrice = nitroPrice })
+  (\cur -> wrap $ (unwrap cur) { nitroPrice = fromJsBigInt nitroPrice })
 
-setAssetPrices :: Object Lovelace -> Racers TransactionHash
-setAssetPrices assetPricesObj = do
-  commonPrice <- lift $ liftContractM "Could not get 'common' price" $
-    Object.lookup "common" assetPricesObj
-  rarePrice <- lift $ liftContractM "Could not get 'rare' price" $ Object.lookup
-    "rare"
-    assetPricesObj
-  epicPrice <- lift $ liftContractM "Could not get 'epic' price" $ Object.lookup
-    "epic"
-    assetPricesObj
+setAssetPrices :: AssetPricesFFI -> Racers TransactionHash
+setAssetPrices assetPricesFFI = do
   let
     assetPrices = wrap $
-      { common: commonPrice, rare: rarePrice, epic: epicPrice }
+      { common: fromJsBigInt assetPricesFFI.common
+      , rare: fromJsBigInt assetPricesFFI.rare
+      , epic: fromJsBigInt assetPricesFFI.epic
+      }
   modifyRacersStateContract
     (\cur -> wrap $ (unwrap cur) { assetPrices = assetPrices })
 

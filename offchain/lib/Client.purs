@@ -10,7 +10,6 @@ import CardanoRacers.RaceRegistry.Contract
   ( confirmAssetSelection
   , registerPositionInRace
   )
-import Contract.Config (testnetConfig)
 import Contract.Monad (liftContractM, liftedM, runContract, throwContractError)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.Transaction (TransactionHash)
@@ -27,6 +26,7 @@ import Lib.CardanoRacers.Common
   , Race
   , createRegistryParams
   , customCfg
+  , fromJsBigInt
   , toWalletSpec
   )
 import Lib.CardanoRacers.Queries (Queries, mkQueries)
@@ -62,7 +62,7 @@ mkClient cp rp =
     } `merge` queries
 
 buyNitro :: Nitro -> Racers TransactionHash
-buyNitro = buyNitroContract
+buyNitro = buyNitroContract <<< fromJsBigInt
 
 requestAsset :: String -> Racers TransactionHash
 requestAsset rarityStr = do
@@ -70,7 +70,7 @@ requestAsset rarityStr = do
     "common" -> pure Common
     "rare" -> pure Rare
     "epic" -> pure Epic
-    x -> throwContractError ("Invalid rarity" <> x)
+    x -> throwContractError ("Invalid rarity: " <> x)
   requestAssetByRarity rarity
 
 registerInRace :: Race -> Racers TransactionHash

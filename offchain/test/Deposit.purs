@@ -131,7 +131,6 @@ suite = group "Deposit" do
                   { name, assetType } <- Map.lookup r availableAssets
                   pure $ assetType /\
                     (unCip25String name <> ":" <> uniquenessNonce)
-            logInfo' $ show assetsAndNames
 
             assertions <- lift $ for assetsAndNames $ \(assetType /\ name) -> do
               tkName <-
