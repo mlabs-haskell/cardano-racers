@@ -6,9 +6,11 @@ import Aeson (Aeson, encodeAeson)
 import CardanoRacers.Common.Types (RacersParams, nitroToken)
 import CardanoRacers.Nitro.Contract (mkNitroPolicy)
 import CardanoRacers.RaceRegistry.Contract (queryRegistryUtxos)
-import CardanoRacers.RaceRegistry.Types (RegistryEntry(..))
+import CardanoRacers.RaceRegistry.Types
+  ( RegistryEntry(PendingSelection, AssetSelection)
+  )
 import CardanoRacers.RacersState.Contract (queryRacersState)
-import CardanoRacers.RacersState.Types (AssetPrices(..))
+import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Address (addressToBech32)
 import Contract.Monad (liftedM, runContract)
 import Contract.Prim.ByteArray (rawBytesToHex)
@@ -21,8 +23,6 @@ import Ctl.Internal.Serialization.Hash (ed25519KeyHashToBytes)
 import Data.Array (concat) as Array
 import Data.Map (toUnfoldable) as Map
 import Effect.Aff.Compat (EffectFn1, mkEffectFn1)
-import Foreign.Object (Object)
-import Foreign.Object (fromFoldable) as Object
 import Lib.CardanoRacers.Common
   ( AssetPricesFFI
   , CredentialProvider

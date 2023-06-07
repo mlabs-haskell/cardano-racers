@@ -10,11 +10,11 @@ import CardanoRacers.Deposit.Contract
   )
 import CardanoRacers.GameAsset.Types
   ( AssetOption
-  , CarAttributes(..)
-  , DriverAttributes(..)
-  , GameAssetAttributes(..)
+  , CarAttributes(CarAttributes)
+  , DriverAttributes(DriverAttributes)
+  , GameAssetAttributes(CarAttrs, DriverAttrs)
   , GameAssetObject
-  , Rarity(..)
+  , Rarity(Common, Rare, Epic)
   )
 import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.Nitro.Contract (mintNitroContract)
@@ -23,6 +23,7 @@ import CardanoRacers.RaceRegistry.Contract
   , initRace
   , supplyRegistrySlots
   )
+import Common.ContractHelpers (collectDustByThreshold)
 import Contract.Address (addressFromBech32, addressToBech32)
 import Contract.Metadata (mkCip25String, unCip25String)
 import Contract.Monad (liftContractM, liftedM, runContract)
@@ -103,7 +104,7 @@ type GameAssetFFI =
   , description :: String
   }
 
-type RewardDistributionFFI = Object Lovelace
+type RewardDistributionFFI = Object Lovelace -- bech321 address -> lovelace
 
 type Bot r =
   ( queryAssetRequests ::
@@ -118,6 +119,7 @@ type Bot r =
   , closeRace ::
       EffectFn2 Race RewardDistributionFFI (Promise (Array TransactionHash))
   , createRace :: EffectFn2 Race Int (Promise Unit)
+  , collectDust :: EffectFn1 Lovelace (Promise TransactionHash)
   | r
   )
 
@@ -149,6 +151,7 @@ mkBot cp rp =
         closeRace race rewardDistribution
     , createRace: mkEffectFn2 $ \race slots -> fromAff $ runC $ createRace race
         slots
+    , collectDust: mkEffectFn1 $ fromAff <<< runC <<< collectDust
     } `merge` queries
 
 mintNitro :: Nitro -> Racers TransactionHash
@@ -286,3 +289,6 @@ closeRace race rewardsFFI = do
     constraints
   lift $ awaitTxConfirmed txId
   pure [ collectTxId, txId ]
+
+collectDust :: Lovelace -> Racers TransactionHash
+collectDust = lift <<< collectDustByThreshold <<< fromJsBigInt

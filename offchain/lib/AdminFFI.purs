@@ -1,57 +1,44 @@
 module Lib.CardanoRacers.AdminFFI
   ( module X
-  , mkAdminFFI
-  , mkAdminFFITest
-  , initRacersFFI
+  , mkAdmin
+  , mkAdminTest
+  , initRacers
   ) where
 
 import Contract.Prelude
 
 import Aeson (decodeJsonString, encodeAeson)
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.Helpers (paysToAddrConstraint)
-import Contract.Address (addressFromBech32)
-import Contract.Config (PrivatePaymentKey(..), PrivatePaymentKeySource(..))
-import Contract.Monad (Contract, runContract)
-import Contract.ScriptLookups as Lookups
-import Contract.Transaction (awaitTxConfirmed, submitTxFromConstraints)
-import Contract.TxConstraints as Constraints
-import Contract.Value (lovelaceValueOf)
-import Control.Monad.Error.Class (liftMaybe)
-import Control.Promise (Promise, fromAff)
-import Ctl.Internal.Types.RedeemerTag (RedeemerTag(..))
-import Data.BigInt (BigInt)
-import Data.BigInt (fromString) as BigInt
-import Data.Function.Uncurried (Fn2, mkFn2)
-import Effect.Aff.Compat (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2)
-import Effect.Exception (error)
-import Lib.CardanoRacers.Admin (Admin, InitialStateFFI, initRacers, mkAdmin)
-import Lib.CardanoRacers.Bot (Bot)
-import Lib.CardanoRacers.Client (Client, mkClient)
-import Lib.CardanoRacers.Common
-  ( CredentialProvider(..)
-  , customCfg
-  , mkPrivateKey
-  , toWalletSpec
+import Contract.Config
+  ( PrivatePaymentKey(PrivatePaymentKey)
+  , PrivatePaymentKeySource(PrivatePaymentKeyValue)
   )
-import Lib.CardanoRacers.Common (mkCredentialProviderFFI, mkRacersParamsFFI) as X
+import Control.Promise (Promise, fromAff)
+import Data.Function.Uncurried (Fn2, mkFn2)
+import Effect.Aff.Compat (EffectFn2, mkEffectFn2)
+import Lib.CardanoRacers.Admin (Admin, InitialStateFFI)
+import Lib.CardanoRacers.Admin (initRacers, mkAdmin) as Admin
+import Lib.CardanoRacers.Bot (Bot)
+import Lib.CardanoRacers.Common (CredentialProvider(Keys), mkPrivateKey)
+import Lib.CardanoRacers.Common (mkCredentialProvider, mkRacersParams) as X
 import Lib.CardanoRacers.Queries (Queries)
 import Partial.Unsafe (unsafePartial)
 import Type.Row (type (+))
 
-initRacersFFI :: EffectFn2 CredentialProvider InitialStateFFI (Promise String)
-initRacersFFI = mkEffectFn2 \cp is -> fromAff $ initRacers cp is <#>
+initRacers :: EffectFn2 CredentialProvider InitialStateFFI (Promise String)
+initRacers = mkEffectFn2 \cp is -> fromAff $ Admin.initRacers cp is <#>
   (encodeAeson >>> show)
 
-mkAdminFFI
+mkAdmin
   :: Fn2 CredentialProvider RacersParams (Record (Admin + Bot + Queries + ()))
-mkAdminFFI = mkFn2 mkAdmin
+mkAdmin = mkFn2 Admin.mkAdmin
 
-mkAdminFFITest :: Record (Admin + Bot + Queries + ())
-mkAdminFFITest = mkAdmin (Keys (PrivatePaymentKeyValue privateKey) Nothing) rp
+mkAdminTest :: Record (Admin + Bot + Queries + ())
+mkAdminTest = Admin.mkAdmin (Keys (PrivatePaymentKeyValue privateKey) Nothing)
+  rp
   where
   rp = unsafePartial $ fromJust $ hush $ decodeJsonString
-    "{\"RacersParams\":{\"stateToken\":[{\"unCurrencySymbol\":\"bab9b7cd0932176c73a1290a712330e429a12c012c4edb04d3e31835\"},{\"unTokenName\":\"RacersStateNFT\"}],\"botToken\":[{\"unCurrencySymbol\":\"121d0af155c2e0bc5da5e14701cecdedf05798baadf5d3ab12122c8c\"},{\"unTokenName\":\"RacersBotNFT\"}],\"adminToken\":[{\"unCurrencySymbol\":\"23d5ae79ddf758596aaa32908225b3dce9e0d57650e0d17f5a716309\"},{\"unTokenName\":\"RacersAdminNFT\"}]}}"
+    "{\"RacersParams\":{\"stateToken\":[{\"unCurrencySymbol\":\"552dd2d9684c178b6e013d2b901dd3e3fddabe93809827748bb2ed4b\"},{\"unTokenName\":\"RacersStateNFT\"}],\"botToken\":[{\"unCurrencySymbol\":\"e9500fdc9605f55ea61857c555b01bc80005c79edb9cd81032bdbba2\"},{\"unTokenName\":\"RacersBotNFT\"}],\"adminToken\":[{\"unCurrencySymbol\":\"8acf85912dd60bed6acf6211ad620f29981aa96eb754fd7fcc871a00\"},{\"unTokenName\":\"RacersAdminNFT\"}]}}"
   privateKey = PrivatePaymentKey $ unsafePartial $ fromJust $ mkPrivateKey
     "582043a451628918e1a04e35fc638850d05885bc4d13dd72692194ba82545d7e57ab"
 

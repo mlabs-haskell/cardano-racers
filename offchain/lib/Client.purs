@@ -4,7 +4,7 @@ import Contract.Prelude
 
 import CardanoRacers.AssetRequest.Contract (requestAssetByRarity)
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.GameAsset.Types (Rarity(..))
+import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
 import CardanoRacers.Nitro.Contract (buyNitroContract)
 import CardanoRacers.RaceRegistry.Contract
   ( confirmAssetSelection

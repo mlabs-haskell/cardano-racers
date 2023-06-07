@@ -8,18 +8,19 @@ import CardanoRacers.RacersState.Contract
   ( initRacersStateContract
   , modifyRacersStateContract
   )
-import CardanoRacers.RacersState.Types (AssetPrices(..), RacersState(..))
+import CardanoRacers.RacersState.Types
+  ( AssetPrices(AssetPrices)
+  , RacersState(RacersState)
+  )
 import Contract.Address (addressFromBech32)
-import Contract.Monad (Contract, liftContractM, liftedM, runContract)
+import Contract.Monad (liftContractM, liftedM, runContract)
 import Contract.Transaction (TransactionHash)
 import Contract.Wallet (getWalletUtxos)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff)
 import Data.Array (head) as Array
 import Data.Map (toUnfoldable) as Map
-import Effect.Aff.Compat (EffectFn1, EffectFn2, mkEffectFn1)
-import Foreign.Object (Object)
-import Foreign.Object (lookup) as Object
+import Effect.Aff.Compat (EffectFn1, mkEffectFn1)
 import Lib.CardanoRacers.Bot (Bot, mkBot)
 import Lib.CardanoRacers.Common
   ( AssetPricesFFI

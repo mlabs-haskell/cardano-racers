@@ -5,15 +5,24 @@ import Contract.Prelude
 import Aeson (decodeJsonString)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types (GameAssetType(..))
+import CardanoRacers.GameAsset.Types (GameAssetType(DriverType, CarType))
 import CardanoRacers.Nitro.Contract (mkNitroPolicy)
 import CardanoRacers.RaceRegistry.Types (RegistryParams)
 import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
 import CardanoRacers.RaceSlot.Types (slotTokenName)
 import Contract.Config
-  ( PrivatePaymentKeySource(..)
-  , PrivateStakeKeySource(..)
-  , WalletSpec(..)
+  ( PrivatePaymentKeySource(PrivatePaymentKeyValue)
+  , PrivateStakeKeySource(PrivateStakeKeyValue)
+  , WalletSpec
+      ( ConnectToNami
+      , ConnectToEternl
+      , ConnectToGero
+      , ConnectToFlint
+      , ConnectToLace
+      , ConnectToLode
+      , ConnectToNuFi
+      , UseKeys
+      )
   , defaultKupoServerConfig
   , defaultOgmiosWsConfig
   , mkCtlBackendParams
@@ -23,13 +32,23 @@ import Contract.Config
 import Contract.Monad (liftedM)
 import Contract.Prim.ByteArray
   ( ByteArray
-  , RawBytes(..)
+  , RawBytes(RawBytes)
   , byteArrayToIntArray
   , hexToByteArray
   )
 import Contract.Scripts (mintingPolicyHash)
 import Contract.Value (TokenName, getTokenName, scriptCurrencySymbol)
-import Contract.Wallet (WalletExtension(..))
+import Contract.Wallet
+  ( WalletExtension
+      ( NamiWallet
+      , EternlWallet
+      , NuFiWallet
+      , LodeWallet
+      , GeroWallet
+      , FlintWallet
+      , LaceWallet
+      )
+  )
 import Control.Alt ((<|>))
 import Control.Monad.Error.Class (liftMaybe)
 import Ctl.Internal.FfiHelpers (MaybeFfiHelper, maybeFfiHelper)
@@ -39,7 +58,7 @@ import Data.Bifunctor (lmap)
 import Data.BigInt (BigInt)
 import Data.Char (fromCharCode)
 import Data.Function.Uncurried (Fn1, runFn1)
-import Data.String (Pattern(..), stripPrefix)
+import Data.String (Pattern(Pattern), stripPrefix)
 import Data.String.CodeUnits (fromCharArray)
 import Data.UInt (fromInt) as UInt
 import Effect.Aff.Compat (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2)
@@ -76,12 +95,12 @@ customCfg walletSpec = testnetConfig
       }
   }
 
-mkCredentialProviderFFI
+mkCredentialProvider
   :: { mkKeys ::
          EffectFn2 String (Fn1 MaybeFfiHelper (Maybe String)) CredentialProvider
      , mkWalletExtension :: EffectFn1 String CredentialProvider
      }
-mkCredentialProviderFFI = { mkKeys, mkWalletExtension }
+mkCredentialProvider = { mkKeys, mkWalletExtension }
   where
   mkKeys = mkEffectFn2 $ \pkStr mskStrF -> do
     let mskStr = runFn1 mskStrF maybeFfiHelper
@@ -104,8 +123,8 @@ mkPrivateKey str =
   mkPrivateKey' :: String -> Maybe PrivateKey
   mkPrivateKey' str' = hexToByteArray str' >>= RawBytes >>> privateKeyFromBytes
 
-mkRacersParamsFFI :: EffectFn1 String RacersParams
-mkRacersParamsFFI = mkEffectFn1 $ \rpStr -> liftEither $ lmap (error <<< show) $
+mkRacersParams :: EffectFn1 String RacersParams
+mkRacersParams = mkEffectFn1 $ \rpStr -> liftEither $ lmap (error <<< show) $
   decodeJsonString rpStr
 
 toWalletSpec :: CredentialProvider -> WalletSpec
