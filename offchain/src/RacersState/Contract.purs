@@ -2,7 +2,7 @@ module CardanoRacers.RacersState.Contract
   ( initRacersStateContract
   , modifyRacersStateContract
   , queryRacersState
-  , createRacersRefScriptOutput
+  , createRacersRefScriptOutputs
   , queryRacersRefScriptOutput
   , mkRacersStateValidator
   ) where
@@ -157,21 +157,21 @@ queryRacersState = do
     pure (stateTxi /\ stateTxo /\ rs)
   pure $ rs /\ stateTxi /\ stateTxo
 
-createRacersRefScriptOutput
-  :: PlutusScript -> Racers TransactionInput
-createRacersRefScriptOutput script = do
+createRacersRefScriptOutputs
+  :: Array PlutusScript -> Racers TransactionInput
+createRacersRefScriptOutputs scripts = do
   stateValidatorHash <- validatorHash <$> mkRacersStateValidator
 
   let
-    scriptRef :: ScriptRef
-    scriptRef = PlutusScriptRef script
-
     constraints :: Constraints.TxConstraints Unit Unit
-    constraints =
-      Constraints.mustPayToScriptWithScriptRef stateValidatorHash unitDatum
-        DatumWitness
-        scriptRef
-        (Value.lovelaceValueOf $ BigInt.fromInt 2_000_000)
+    constraints = foldMap
+      ( \script ->
+          Constraints.mustPayToScriptWithScriptRef stateValidatorHash unitDatum
+            DatumWitness
+            (PlutusScriptRef script)
+            (Value.lovelaceValueOf $ BigInt.fromInt 2_000_000)
+      )
+      scripts
 
     lookups :: Lookups.ScriptLookups PlutusData
     lookups = mempty

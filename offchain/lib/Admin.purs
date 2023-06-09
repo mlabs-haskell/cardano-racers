@@ -2,10 +2,16 @@ module Lib.CardanoRacers.Admin where
 
 import Contract.Prelude
 
+import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy)
 import CardanoRacers.Common.Types (RacersParams)
+import CardanoRacers.Deposit.Validator (mkDepositValidator)
+import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
+import CardanoRacers.GameAsset.Types (GameAssetType(..))
+import CardanoRacers.Nitro.Contract (mkNitroPolicy)
 import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
 import CardanoRacers.RacersState.Contract
-  ( initRacersStateContract
+  ( createRacersRefScriptOutputs
+  , initRacersStateContract
   , modifyRacersStateContract
   )
 import CardanoRacers.RacersState.Types
@@ -13,7 +19,8 @@ import CardanoRacers.RacersState.Types
   , RacersState(RacersState)
   )
 import Contract.Address (addressFromBech32)
-import Contract.Monad (liftContractM, liftedM, runContract)
+import Contract.Monad (liftContractM, liftedM, runContract, throwContractError)
+import Contract.Scripts (MintingPolicy(PlutusMintingPolicy))
 import Contract.Transaction (TransactionHash)
 import Contract.Wallet (getWalletUtxos)
 import Control.Monad.Trans.Class (lift)
@@ -75,6 +82,35 @@ initRacers cp initialState =
               }
           }
       _ <- runRacers rp do
+        assetRequestPolicy <- mkAssetRequestPolicy
+        driverAssetPolicy <- mkGameAssetPolicy DriverType
+        carAssetPolicy <- mkGameAssetPolicy CarType
+        nitroPolicy <- mkNitroPolicy
+
+        nitroScriptRef <- lift $ case nitroPolicy of
+          PlutusMintingPolicy s -> pure s
+          _ -> throwContractError "Not plutus script"
+        assetRequestScriptRef <- lift $ case assetRequestPolicy of
+          PlutusMintingPolicy s -> pure s
+          _ -> throwContractError "Not plutus script"
+        driverPolicyRef <- lift $ case driverAssetPolicy of
+          PlutusMintingPolicy s -> pure s
+          _ -> throwContractError "Not plutus script"
+        carPolicyRef <- lift $ case carAssetPolicy of
+          PlutusMintingPolicy s -> pure s
+          _ -> throwContractError "Not plutus script"
+
+        depositAssetScriptRef <- unwrap <$> mkDepositValidator
+
+        traverse_ createRacersRefScriptOutputs
+          [ [ nitroScriptRef
+            , assetRequestScriptRef
+            ]
+          , [ driverPolicyRef
+            , carPolicyRef
+            , depositAssetScriptRef
+            ]
+          ]
         initRacersStateContract rs
       pure rp
 

@@ -6,20 +6,16 @@ import CardanoRacers.AssetRequest.Contract
   ( mkAssetRequestPolicy
   , requestAssetByRarity
   )
-import CardanoRacers.Deposit.Contract
-  ( consumeAndRedeemRequests
-  )
-import CardanoRacers.Deposit.Validator
-  ( mkDepositValidator
-  )
+import CardanoRacers.Deposit.Contract (consumeAndRedeemRequests)
+import CardanoRacers.Deposit.Validator (mkDepositValidator)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types
   ( AssetOption
   , GameAssetType(CarType, DriverType)
   , Rarity(Common, Rare, Epic)
   )
-import CardanoRacers.Nitro.Contract (adminMintsNitroContract)
-import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput)
+import CardanoRacers.Nitro.Contract (adminMintsNitroContract, mkNitroPolicy)
+import CardanoRacers.RacersState.Contract (createRacersRefScriptOutputs)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Log (logInfo')
 import Contract.Metadata (mkCip25String, unCip25String)
@@ -70,7 +66,11 @@ suite = group "Deposit" do
               assetRequestPolicy <- mkAssetRequestPolicy
               driverAssetPolicy <- mkGameAssetPolicy DriverType
               carAssetPolicy <- mkGameAssetPolicy CarType
+              nitroPolicy <- mkNitroPolicy
 
+              nitroScriptRef <- lift $ case nitroPolicy of
+                PlutusMintingPolicy s -> pure s
+                _ -> throwContractError "Not plutus script"
               assetRequestScriptRef <- lift $ case assetRequestPolicy of
                 PlutusMintingPolicy s -> pure s
                 _ -> throwContractError "Not plutus script"
@@ -83,10 +83,15 @@ suite = group "Deposit" do
 
               depositAssetScriptRef <- unwrap <$> mkDepositValidator
 
-              _ <- createRacersRefScriptOutput assetRequestScriptRef
-              _ <- createRacersRefScriptOutput driverPolicyRef
-              _ <- createRacersRefScriptOutput carPolicyRef
-              _ <- createRacersRefScriptOutput depositAssetScriptRef
+              traverse_ createRacersRefScriptOutputs
+                [ [ nitroScriptRef
+                  , assetRequestScriptRef
+                  ]
+                , [ driverPolicyRef
+                  , carPolicyRef
+                  , depositAssetScriptRef
+                  ]
+                ]
 
               driverSymbol <- lift
                 $ liftContractM "could not get currency symbol"

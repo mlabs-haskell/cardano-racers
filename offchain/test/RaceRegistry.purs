@@ -41,7 +41,7 @@ import CardanoRacers.RaceRegistry.Types
   )
 import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
 import CardanoRacers.RaceSlot.Types (RaceHash, slotTokenName)
-import CardanoRacers.RacersState.Contract (createRacersRefScriptOutput)
+import CardanoRacers.RacersState.Contract (createRacersRefScriptOutputs)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Address (scriptHashAddress)
 import Contract.Metadata (mkCip25String)
@@ -630,11 +630,15 @@ suite = group "Race Registry" do
 
         depositAssetScriptRef <- unwrap <$> mkDepositValidator
 
-        _ <- createRacersRefScriptOutput nitroScriptRef
-        _ <- createRacersRefScriptOutput assetRequestScriptRef
-        _ <- createRacersRefScriptOutput driverPolicyRef
-        _ <- createRacersRefScriptOutput carPolicyRef
-        _ <- createRacersRefScriptOutput depositAssetScriptRef
+        traverse_ createRacersRefScriptOutputs
+          [ [ nitroScriptRef
+            , assetRequestScriptRef
+            ]
+          , [ driverPolicyRef
+            , carPolicyRef
+            , depositAssetScriptRef
+            ]
+          ]
 
         pure unit
 
