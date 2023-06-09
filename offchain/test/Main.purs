@@ -63,5 +63,9 @@ config =
   , suppressLogs: false
   , hooks: emptyHooks
   , clusterConfig:
-      { slotLength: Seconds 0.05 }
+      { slotLength: Seconds 0.1
+      , epochSize: Nothing
+      , maxTxSize: Nothing
+      , raiseExUnitsToMax: false
+      }
   }

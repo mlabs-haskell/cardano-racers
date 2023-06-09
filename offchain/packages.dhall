@@ -353,7 +353,7 @@ let additions =
           , "web-html"
           ]
         , repo = "https://github.com/Plutonomicon/cardano-transaction-lib.git"
-        , version = "6fa2ad10e96c3b8969afdb9c5d869dd600a73510"
+        , version = "6d35376f2fe8d689bc0713a11ee30382f06b91da"
         }
       , noble-secp256k1 =
         { dependencies =
