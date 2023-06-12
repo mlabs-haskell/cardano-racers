@@ -216,6 +216,10 @@
         // {
           script-exporter = onchain.script-exporter system;
           exported-scripts = onchain.exported-scripts system;
+          admin-bundle = (offchain.projectFor system).bundlePursProject {
+              main = "Lib.CardanoRacers.AdminFFI";
+              entrypoint = "admin.js";
+          };
         }
       );
       checks = perSystem (system:
