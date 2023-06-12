@@ -11,18 +11,10 @@ import CardanoRacers.RaceRegistry.Types (RegistryParams)
 import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
 import CardanoRacers.RaceSlot.Types (slotTokenName)
 import Contract.Config
-  ( PrivatePaymentKeySource(PrivatePaymentKeyValue)
-  , PrivateStakeKeySource(PrivateStakeKeyValue)
-  , WalletSpec
-      ( ConnectToNami
-      , ConnectToEternl
-      , ConnectToGero
-      , ConnectToFlint
-      , ConnectToLace
-      , ConnectToLode
-      , ConnectToNuFi
-      , UseKeys
-      )
+  ( PrivatePaymentKeySource(..)
+  , PrivateStakeKeySource(..)
+  , StakeKeyPresence(..)
+  , WalletSpec(..)
   , defaultKupoServerConfig
   , defaultOgmiosWsConfig
   , mkCtlBackendParams
@@ -49,20 +41,27 @@ import Contract.Wallet
       , LaceWallet
       )
   )
+import Contract.Wallet.Key
+  ( keyWalletPrivatePaymentKey
+  , keyWalletPrivateStakeKey
+  , mkKeyWalletFromMnemonic
+  )
 import Control.Alt ((<|>))
 import Control.Monad.Error.Class (liftMaybe)
-import Ctl.Internal.FfiHelpers (MaybeFfiHelper, maybeFfiHelper)
 import Ctl.Internal.Serialization.Types (PrivateKey)
 import Data.ArrayBuffer.Types (Uint8Array)
 import Data.Bifunctor (lmap)
 import Data.BigInt (BigInt)
 import Data.Char (fromCharCode)
-import Data.Function.Uncurried (Fn1, runFn1)
+import Data.Profunctor.Choice (left)
 import Data.String (Pattern(Pattern), stripPrefix)
 import Data.String.CodeUnits (fromCharArray)
 import Data.UInt (fromInt) as UInt
 import Effect.Aff.Compat (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2)
 import Effect.Exception (error)
+import Effect.Uncurried (EffectFn4, mkEffectFn4)
+import Foreign.Object (Object)
+import Foreign.Object (fromFoldable) as Object
 import Partial.Unsafe (unsafePartial)
 import Racers (Racers, withContract)
 
@@ -80,9 +79,7 @@ type AssetPricesFFI =
   , epic :: Lovelace
   }
 
-data CredentialProvider
-  = Wallet WalletExtension
-  | Keys PrivatePaymentKeySource (Maybe PrivateStakeKeySource)
+type CredentialProvider = WalletSpec
 
 type Race = { raceId :: Uint8Array, nitroFee :: Nitro }
 
@@ -95,26 +92,61 @@ customCfg walletSpec = testnetConfig
       }
   }
 
-mkCredentialProvider
-  :: { mkKeys ::
-         EffectFn2 String (Fn1 MaybeFfiHelper (Maybe String)) CredentialProvider
-     , mkWalletExtension :: EffectFn1 String CredentialProvider
+mkWalletSpec
+  :: { walletFromMnemonic :: EffectFn4 String Int Int Boolean CredentialProvider
+     , walletFromPrivateKey :: EffectFn1 String CredentialProvider
+     , walletFromPrivateKeyAndStakeKey ::
+         EffectFn2 String String CredentialProvider
+     , browserWallet :: Object (EffectFn1 Unit CredentialProvider)
      }
-mkCredentialProvider = { mkKeys, mkWalletExtension }
+mkWalletSpec =
+  { walletFromMnemonic
+  , walletFromPrivateKey
+  , walletFromPrivateKeyAndStakeKey
+  , browserWallet
+  }
   where
-  mkKeys = mkEffectFn2 $ \pkStr mskStrF -> do
-    let mskStr = runFn1 mskStrF maybeFfiHelper
-    mSk <- for mskStr $ liftMaybe (error "Could not deserialise secret key") <<<
-      mkPrivateKey
-    pk <- liftMaybe (error "Could not deserialise private key") $ mkPrivateKey
-      pkStr
-    pure $ Keys (PrivatePaymentKeyValue $ wrap pk)
-      (PrivateStakeKeyValue <<< wrap <$> mSk)
+  walletFromMnemonic = mkEffectFn4 $
+    \mnemonic accountIndex addressIndex hasStake -> do
+      kw <- liftEither $ left error $ mkKeyWalletFromMnemonic mnemonic
+        { accountIndex: UInt.fromInt accountIndex
+        , addressIndex: UInt.fromInt addressIndex
+        }
+        (if hasStake then WithStakeKey else WithoutStakeKey)
+      pure $ UseKeys (PrivatePaymentKeyValue $ keyWalletPrivatePaymentKey kw)
+        (PrivateStakeKeyValue <$> keyWalletPrivateStakeKey kw)
 
-  mkWalletExtension = mkEffectFn1 $ \weStr -> do
-    we <- liftMaybe (error "Could not deserialise wallet extension") $
-      walletExtensionFromString weStr
-    pure $ Wallet we
+  walletFromPrivateKey = mkEffectFn1 $ \privateKeyStr -> do
+    privateKey <- liftMaybe (error "Could not deserialise private key") $
+      mkPrivateKey
+        privateKeyStr
+    pure $ UseKeys (PrivatePaymentKeyValue $ wrap privateKey) Nothing
+
+  walletFromPrivateKeyAndStakeKey = mkEffectFn2 $ \privateKeyStr stakeKeyStr ->
+    do
+      privateKey <- liftMaybe (error "Could not deserialise private key") $
+        mkPrivateKey
+          privateKeyStr
+      stakeKey <- liftMaybe (error "Could not deserialise stake key") $
+        mkPrivateKey
+          stakeKeyStr
+      pure $ UseKeys (PrivatePaymentKeyValue $ wrap privateKey)
+        (Just $ PrivateStakeKeyValue $ wrap stakeKey)
+
+  browserWallet = Object.fromFoldable
+    $ map
+        ( \(name /\ spec) -> ("connectTo" <> name) /\ mkEffectFn1
+            (const $ pure spec)
+        )
+    $
+      [ "Nami" /\ ConnectToNami
+      , "GeroWallet" /\ ConnectToGero
+      , "Flint" /\ ConnectToFlint
+      , "Eternl" /\ ConnectToEternl
+      , "LodeWallet" /\ ConnectToLode
+      , "Lace" /\ ConnectToLace
+      , "NuFi" /\ ConnectToNuFi
+      ]
 
 mkPrivateKey :: String -> Maybe PrivateKey
 mkPrivateKey str =
@@ -126,16 +158,6 @@ mkPrivateKey str =
 mkRacersParams :: EffectFn1 String RacersParams
 mkRacersParams = mkEffectFn1 $ \rpStr -> liftEither $ lmap (error <<< show) $
   decodeJsonString rpStr
-
-toWalletSpec :: CredentialProvider -> WalletSpec
-toWalletSpec (Wallet NamiWallet) = ConnectToNami
-toWalletSpec (Wallet GeroWallet) = ConnectToGero
-toWalletSpec (Wallet FlintWallet) = ConnectToFlint
-toWalletSpec (Wallet EternlWallet) = ConnectToEternl
-toWalletSpec (Wallet LodeWallet) = ConnectToLode
-toWalletSpec (Wallet LaceWallet) = ConnectToLace
-toWalletSpec (Wallet NuFiWallet) = ConnectToNuFi
-toWalletSpec (Keys pk msk) = UseKeys pk msk
 
 walletExtensionFromString :: String -> Maybe WalletExtension
 walletExtensionFromString name = case name of

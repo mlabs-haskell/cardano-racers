@@ -72,14 +72,3 @@ interface Bot extends RacersQueries {
   */
   closeRace(race: Race, rewardDistribution: {[key: Address]: Lovelace}): Promise<TransactionHash[]>
 }
-
-// type ContractConfig = {
-//   backendParams: QueryBackendParams,
-//   networkId: NetworkId,
-//   walletSpec: Maybe WalletSpec
-// }
-// 
-// type Credential = {
-//   credential: PrivateKey
-//   stakingCredential?: PrivateKey
-// } | SeedPhrase

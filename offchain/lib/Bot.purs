@@ -25,6 +25,7 @@ import CardanoRacers.RaceRegistry.Contract
   )
 import Common.ContractHelpers (collectDustByThreshold)
 import Contract.Address (addressFromBech32, addressToBech32)
+import Contract.Config (WalletSpec)
 import Contract.Metadata (mkCip25String, unCip25String)
 import Contract.Monad (liftContractM, liftedM, runContract)
 import Contract.Prim.ByteArray (byteArrayToHex)
@@ -60,8 +61,7 @@ import Effect.Uncurried (EffectFn4, mkEffectFn4)
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable, toUnfoldable) as Object
 import Lib.CardanoRacers.Common
-  ( CredentialProvider
-  , Lovelace
+  ( Lovelace
   , Nitro
   , Race
   , assetTypeFromString
@@ -70,7 +70,6 @@ import Lib.CardanoRacers.Common
   , customCfg
   , fromJsBigInt
   , toJsBigInt
-  , toWalletSpec
   , tokenNameToString
   )
 import Lib.CardanoRacers.Queries (Queries, mkQueries)
@@ -124,11 +123,10 @@ type Bot r =
   )
 
 mkBot
-  :: CredentialProvider -> RacersParams -> Record (Bot + Queries + ())
-mkBot cp rp =
+  :: WalletSpec -> RacersParams -> Record (Bot + Queries + ())
+mkBot walletSpec rp =
   let
-    queries = mkQueries cp rp
-    walletSpec = toWalletSpec cp
+    queries = mkQueries walletSpec rp
     cfg = customCfg walletSpec
 
     runC :: Racers ~> Aff

@@ -12,6 +12,7 @@ import CardanoRacers.RaceRegistry.Types
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Address (addressToBech32)
+import Contract.Config (WalletSpec)
 import Contract.Monad (liftedM, runContract)
 import Contract.Prim.ByteArray (rawBytesToHex)
 import Contract.Scripts (mintingPolicyHash)
@@ -25,14 +26,12 @@ import Data.Map (toUnfoldable) as Map
 import Effect.Aff.Compat (EffectFn1, mkEffectFn1)
 import Lib.CardanoRacers.Common
   ( AssetPricesFFI
-  , CredentialProvider
   , Lovelace
   , Nitro
   , Race
   , createRegistryParams
   , customCfg
   , toJsBigInt
-  , toWalletSpec
   , tokenNameToString
   )
 import Racers (Racers, runRacers, withContract)
@@ -48,10 +47,9 @@ type Queries r =
   | r
   )
 
-mkQueries :: CredentialProvider -> RacersParams -> Record (Queries ())
-mkQueries cp rp =
+mkQueries :: WalletSpec -> RacersParams -> Record (Queries ())
+mkQueries walletSpec rp =
   let
-    walletSpec = toWalletSpec cp
     cfg = customCfg walletSpec
 
     runQ :: Racers ~> Aff

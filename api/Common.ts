@@ -28,6 +28,31 @@ export interface RacersQueries {
   queryRaceRegistry(race: Race): Promise<RegistryEntry[]>
 }
 
+
+/**
+ * mkWalletSpec - Creates a wallet specification object with functions to create a wallet from various inputs.
+ * 
+ * @returns {object} - Returns an object with the following properties:
+ * - walletFromMnemonic: Function to create a wallet from a mnemonic string. Takes four arguments: mnemonic string, account index, address index, and a boolean indicating if the wallet has a stake.
+ * - walletFromPrivateKey: Function to create a wallet from a private key string.
+ * - walletFromPrivateKeyAndStakeKey: Function to create a wallet from a private key and a stake key strings.
+ * - browserWallet: An object mapping wallet names to functions that connect to these wallets.
+ * 
+ * @throws Will throw an error if the provided mnemonic or private keys cannot be correctly converted into a wallet.
+ */
+function mkWalletSpec(): object;
+
+/**
+ * mkRacersParams - Function to create a RacersParams instance from a JSON string.
+ * 
+ * @param {string} rpStr - The JSON string to be converted into RacersParams.
+ * 
+ * @returns {RacersParams} - Returns an instance of RacersParams created from the provided JSON string.
+ * 
+ * @throws Will throw an error if the provided JSON string cannot be correctly decoded into a RacersParams instance.
+ */
+function mkRacersParams(rpStr: string): RacersParams;
+
 export type Nitro = BigInt
 export type Lovelace = BigInt
 export type Address = string // bech32 encoded address string

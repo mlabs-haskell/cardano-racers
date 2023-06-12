@@ -10,6 +10,7 @@ import CardanoRacers.RaceRegistry.Contract
   ( confirmAssetSelection
   , registerPositionInRace
   )
+import Contract.Config (WalletSpec)
 import Contract.Monad (liftContractM, liftedM, runContract, throwContractError)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.Transaction (TransactionHash)
@@ -21,13 +22,11 @@ import Ctl.Internal.Contract.Wallet (ownPubKeyHashes)
 import Data.Array (head) as Array
 import Effect.Aff.Compat (EffectFn1, EffectFn3, mkEffectFn1, mkEffectFn3)
 import Lib.CardanoRacers.Common
-  ( CredentialProvider
-  , Nitro
+  ( Nitro
   , Race
   , createRegistryParams
   , customCfg
   , fromJsBigInt
-  , toWalletSpec
   )
 import Lib.CardanoRacers.Queries (Queries, mkQueries)
 import Racers (Racers, runRacers)
@@ -43,11 +42,10 @@ type Client r =
   )
 
 mkClient
-  :: CredentialProvider -> RacersParams -> Record (Client + Queries + ())
-mkClient cp rp =
+  :: WalletSpec -> RacersParams -> Record (Client + Queries + ())
+mkClient walletSpec rp =
   let
-    queries = mkQueries cp rp
-    walletSpec = toWalletSpec cp
+    queries = mkQueries walletSpec rp
     cfg = customCfg walletSpec
 
     runC :: Racers ~> Aff

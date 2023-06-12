@@ -28,7 +28,7 @@ import Control.Monad.Trans.Class (lift)
 import Data.Array (find) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
-import Data.Map (filter, isEmpty, isEmpty, keys, toUnfoldable) as Map
+import Data.Map (filter, isEmpty, keys, toUnfoldable) as Map
 import Racers (Racers)
 
 findAnyAuthUtxo

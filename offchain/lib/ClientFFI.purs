@@ -7,23 +7,24 @@ import CardanoRacers.Common.Types (RacersParams)
 import Contract.Config
   ( PrivatePaymentKey(PrivatePaymentKey)
   , PrivatePaymentKeySource(PrivatePaymentKeyValue)
+  , WalletSpec(UseKeys)
   )
 import Data.Function.Uncurried (Fn2, mkFn2)
 import Lib.CardanoRacers.Client (Client)
 import Lib.CardanoRacers.Client (mkClient) as Client
-import Lib.CardanoRacers.Common (CredentialProvider(Keys), mkPrivateKey)
-import Lib.CardanoRacers.Common (mkCredentialProvider, mkRacersParams) as X
+import Lib.CardanoRacers.Common (mkPrivateKey)
+import Lib.CardanoRacers.Common (mkRacersParams, mkWalletSpec) as X
 import Lib.CardanoRacers.Queries (Queries)
 import Partial.Unsafe (unsafePartial)
 import Type.Row (type (+))
 
 mkClient
-  :: Fn2 CredentialProvider RacersParams (Record (Client + Queries + ()))
+  :: Fn2 WalletSpec RacersParams (Record (Client + Queries + ()))
 mkClient = mkFn2 Client.mkClient
 
 mkClientTest :: Record (Client + Queries + ())
 mkClientTest = Client.mkClient
-  (Keys (PrivatePaymentKeyValue privateKey) Nothing)
+  (UseKeys (PrivatePaymentKeyValue privateKey) Nothing)
   rp
   where
   rp = unsafePartial $ fromJust $ hush $ decodeJsonString

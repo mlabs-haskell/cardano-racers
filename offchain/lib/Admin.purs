@@ -18,11 +18,13 @@ import CardanoRacers.RacersState.Types
   ( AssetPrices(AssetPrices)
   , RacersState(RacersState)
   )
-import Contract.Address (addressFromBech32)
+import Contract.Address (addressFromBech32, addressToBech32)
+import Contract.Config (WalletSpec)
+import Contract.Log (logInfo')
 import Contract.Monad (liftContractM, liftedM, runContract, throwContractError)
 import Contract.Scripts (MintingPolicy(PlutusMintingPolicy))
 import Contract.Transaction (TransactionHash)
-import Contract.Wallet (getWalletUtxos)
+import Contract.Wallet (getWalletAddress, getWalletAddresses, getWalletUtxos)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff)
 import Data.Array (head) as Array
@@ -31,11 +33,9 @@ import Effect.Aff.Compat (EffectFn1, mkEffectFn1)
 import Lib.CardanoRacers.Bot (Bot, mkBot)
 import Lib.CardanoRacers.Common
   ( AssetPricesFFI
-  , CredentialProvider
   , Lovelace
   , customCfg
   , fromJsBigInt
-  , toWalletSpec
   )
 import Lib.CardanoRacers.Queries (Queries, mkQueries)
 import Racers (Racers, runRacers)
@@ -57,13 +57,14 @@ type InitialStateFFI =
   , nitroPrice :: Lovelace
   }
 
-initRacers :: CredentialProvider -> InitialStateFFI -> Aff RacersParams
-initRacers cp initialState =
+initRacers :: WalletSpec -> InitialStateFFI -> Aff RacersParams
+initRacers walletSpec initialState =
   let
-    walletSpec = toWalletSpec cp
     cfg = customCfg walletSpec
   in
     runContract cfg do
+      addrs <- getWalletAddresses
+      traverse_ (logInfo' <=< addressToBech32) addrs
       utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
       (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
         Map.toUnfoldable utxos
@@ -115,12 +116,11 @@ initRacers cp initialState =
       pure rp
 
 mkAdmin
-  :: CredentialProvider -> RacersParams -> Record (Admin + Bot + Queries + ())
-mkAdmin cp rp =
+  :: WalletSpec -> RacersParams -> Record (Admin + Bot + Queries + ())
+mkAdmin walletSpec rp =
   let
-    queries = mkQueries cp rp
-    bot = mkBot cp rp
-    walletSpec = toWalletSpec cp
+    queries = mkQueries walletSpec rp
+    bot = mkBot walletSpec rp
     cfg = customCfg walletSpec
 
     runA :: Racers ~> Aff

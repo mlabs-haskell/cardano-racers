@@ -5,6 +5,7 @@ import { Address, AssetPrices, Lovelace, RacersQueries, TransactionHash } from "
 // such racers instant initialization, onchain state modifications and race
 // creation.
 
+
 interface Admin extends RacersQueries {
 
   // static async initClient(cfg: ContractConfig, racersParams: RacersParams, walletId: WalletId): Promise<Admin>;
@@ -55,3 +56,20 @@ interface Admin extends RacersQueries {
 
   // close race
 }
+
+/**
+ * initRacers - Initialize a Racers instance. Mints AdminNFT, BotNFT, StateNFT.
+ * Pays StateNFT to state script. Creates reference scripts for NitroPolicy, AssetRequestPolicy, DriverAssetPolicy, CarAssetPolicy, DepositScript
+ * 
+ * @param {WalletSpec} walletSpec - Specifies the wallet for the operation.
+ * @param {InitialStateFFI} initialState - The initial state for the Racers instance, which includes:
+ * - treasuryAddress: The address of the treasury
+ * - operatingAddress: The operating address
+ * - assetPrices: The initial asset prices
+ * - nitroPrice: The initial price of nitro
+ * 
+ * @returns {Promise<RacersParams>} - Returns a promise that resolves to the parameters of the created Racers instance.
+ */
+function initRacers(walletSpec: WalletSpec, initialState: InitialStateFFI): Promise<RacersParams>;
+
+

@@ -7,12 +7,13 @@ import CardanoRacers.Common.Types (RacersParams)
 import Contract.Config
   ( PrivatePaymentKey(PrivatePaymentKey)
   , PrivatePaymentKeySource(PrivatePaymentKeyValue)
+  , WalletSpec(UseKeys)
   )
 import Data.Function.Uncurried (Fn2, mkFn2)
 import Lib.CardanoRacers.Bot (Bot)
 import Lib.CardanoRacers.Bot (mkBot) as Bot
-import Lib.CardanoRacers.Common (CredentialProvider(Keys), mkPrivateKey)
-import Lib.CardanoRacers.Common (mkCredentialProvider, mkRacersParams) as X
+import Lib.CardanoRacers.Common (CredentialProvider, mkPrivateKey)
+import Lib.CardanoRacers.Common (mkRacersParams, mkWalletSpec) as X
 import Lib.CardanoRacers.Queries (Queries)
 import Partial.Unsafe (unsafePartial)
 import Type.Row (type (+))
@@ -22,7 +23,7 @@ mkBot
 mkBot = mkFn2 Bot.mkBot
 
 mkBotTest :: Record (Bot + Queries + ())
-mkBotTest = Bot.mkBot (Keys (PrivatePaymentKeyValue privateKey) Nothing) rp
+mkBotTest = Bot.mkBot (UseKeys (PrivatePaymentKeyValue privateKey) Nothing) rp
   where
   rp = unsafePartial $ fromJust $ hush $ decodeJsonString
     "{\"RacersParams\":{\"stateToken\":[{\"unCurrencySymbol\":\"bab9b7cd0932176c73a1290a712330e429a12c012c4edb04d3e31835\"},{\"unTokenName\":\"RacersStateNFT\"}],\"botToken\":[{\"unCurrencySymbol\":\"121d0af155c2e0bc5da5e14701cecdedf05798baadf5d3ab12122c8c\"},{\"unTokenName\":\"RacersBotNFT\"}],\"adminToken\":[{\"unCurrencySymbol\":\"23d5ae79ddf758596aaa32908225b3dce9e0d57650e0d17f5a716309\"},{\"unTokenName\":\"RacersAdminNFT\"}]}}"
