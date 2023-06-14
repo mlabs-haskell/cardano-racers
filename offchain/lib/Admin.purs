@@ -19,7 +19,7 @@ import CardanoRacers.RacersState.Types
   , RacersState(RacersState)
   )
 import Contract.Address (addressFromBech32, addressToBech32)
-import Contract.Config (WalletSpec)
+import Contract.Config (ContractParams, WalletSpec)
 import Contract.Log (logInfo')
 import Contract.Monad (liftContractM, liftedM, runContract, throwContractError)
 import Contract.Scripts (MintingPolicy(PlutusMintingPolicy))
@@ -34,7 +34,6 @@ import Lib.CardanoRacers.Bot (Bot, mkBot)
 import Lib.CardanoRacers.Common
   ( AssetPricesFFI
   , Lovelace
-  , customCfg
   , fromJsBigInt
   )
 import Lib.CardanoRacers.Queries (Queries, mkQueries)
@@ -57,10 +56,11 @@ type InitialStateFFI =
   , nitroPrice :: Lovelace
   }
 
-initRacers :: WalletSpec -> InitialStateFFI -> Aff RacersParams
-initRacers walletSpec initialState =
+initRacers
+  :: ContractParams -> WalletSpec -> InitialStateFFI -> Aff RacersParams
+initRacers cp walletSpec initialState =
   let
-    cfg = customCfg walletSpec
+    cfg = cp { walletSpec = Just walletSpec }
   in
     runContract cfg do
       addrs <- getWalletAddresses
@@ -112,16 +112,20 @@ initRacers walletSpec initialState =
             , depositAssetScriptRef
             ]
           ]
+
         initRacersStateContract rs
       pure rp
 
 mkAdmin
-  :: WalletSpec -> RacersParams -> Record (Admin + Bot + Queries + ())
-mkAdmin walletSpec rp =
+  :: ContractParams
+  -> WalletSpec
+  -> RacersParams
+  -> Record (Admin + Bot + Queries + ())
+mkAdmin cp walletSpec rp =
   let
-    queries = mkQueries walletSpec rp
-    bot = mkBot walletSpec rp
-    cfg = customCfg walletSpec
+    queries = mkQueries cp walletSpec rp
+    bot = mkBot cp walletSpec rp
+    cfg = cp { walletSpec = Just walletSpec }
 
     runA :: Racers ~> Aff
     runA = runContract cfg <<< runRacers rp

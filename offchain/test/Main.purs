@@ -63,7 +63,7 @@ config =
   , suppressLogs: false
   , hooks: emptyHooks
   , clusterConfig:
-      { slotLength: Seconds 0.1
+      { slotLength: Seconds 0.05
       , epochSize: Nothing
       , maxTxSize: Nothing
       , raiseExUnitsToMax: false

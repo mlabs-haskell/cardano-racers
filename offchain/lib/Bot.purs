@@ -25,7 +25,7 @@ import CardanoRacers.RaceRegistry.Contract
   )
 import Common.ContractHelpers (collectDustByThreshold)
 import Contract.Address (addressFromBech32, addressToBech32)
-import Contract.Config (WalletSpec)
+import Contract.Config (ContractParams, WalletSpec)
 import Contract.Metadata (mkCip25String, unCip25String)
 import Contract.Monad (liftContractM, liftedM, runContract)
 import Contract.Prim.ByteArray (byteArrayToHex)
@@ -67,7 +67,6 @@ import Lib.CardanoRacers.Common
   , assetTypeFromString
   , assetTypeToString
   , createRegistryParams
-  , customCfg
   , fromJsBigInt
   , toJsBigInt
   , tokenNameToString
@@ -123,11 +122,11 @@ type Bot r =
   )
 
 mkBot
-  :: WalletSpec -> RacersParams -> Record (Bot + Queries + ())
-mkBot walletSpec rp =
+  :: ContractParams -> WalletSpec -> RacersParams -> Record (Bot + Queries + ())
+mkBot cp walletSpec rp =
   let
-    queries = mkQueries walletSpec rp
-    cfg = customCfg walletSpec
+    queries = mkQueries cp walletSpec rp
+    cfg = cp { walletSpec = Just walletSpec }
 
     runC :: Racers ~> Aff
     runC = runContract cfg <<< runRacers rp

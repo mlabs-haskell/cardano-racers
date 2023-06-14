@@ -12,7 +12,7 @@ import CardanoRacers.RaceRegistry.Types
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Address (addressToBech32)
-import Contract.Config (WalletSpec)
+import Contract.Config (ContractParams, WalletSpec)
 import Contract.Monad (liftedM, runContract)
 import Contract.Prim.ByteArray (rawBytesToHex)
 import Contract.Scripts (mintingPolicyHash)
@@ -30,7 +30,6 @@ import Lib.CardanoRacers.Common
   , Nitro
   , Race
   , createRegistryParams
-  , customCfg
   , toJsBigInt
   , tokenNameToString
   )
@@ -47,10 +46,10 @@ type Queries r =
   | r
   )
 
-mkQueries :: WalletSpec -> RacersParams -> Record (Queries ())
-mkQueries walletSpec rp =
+mkQueries :: ContractParams -> WalletSpec -> RacersParams -> Record (Queries ())
+mkQueries cp walletSpec rp =
   let
-    cfg = customCfg walletSpec
+    cfg = cp { walletSpec = Just walletSpec }
 
     runQ :: Racers ~> Aff
     runQ = runContract cfg <<< runRacers rp
