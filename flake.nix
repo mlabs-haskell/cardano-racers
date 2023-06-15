@@ -23,6 +23,7 @@
           haskell-nix.overlay
           cardano-transaction-lib.overlays.purescript
           cardano-transaction-lib.overlays.runtime
+          cardano-transaction-lib.overlays.spago
         ];
         inherit (haskell-nix) config;
       };
@@ -197,6 +198,42 @@
             };
           };
       };
+
+      bundlesFor = system:
+      let
+        pkgs = nixpkgsFor system;
+        project = (offchain.projectFor system);
+        builtPursProject = project.buildPursProject {};
+        adminBundledPursProject = project.bundlePursProject {
+          main = "Lib.CardanoRacers.AdminFFI ";
+          entrypoint = "index.js";
+        };
+        clientBundledPursProject = project.bundlePursProject {
+          main = "Lib.CardanoRacers.ClientFFI ";
+          entrypoint = "index.js";
+        };
+      in pkgs.runCommand "admin-bundle-cmd" {
+          buildInputs = [
+            pkgs.nodejs
+            project.nodeModules
+            builtPursProject
+          ];
+          nativeBuildInputs = [
+            project.purs
+            pkgs.easy-ps.spago
+          ];
+        }
+        ''
+        export HOME=$TMP
+        export NODE_PATH="${project.nodeModules}/lib/node_modules"
+        export PATH="${project.nodeModules}/bin:$PATH"
+
+        mkdir -p $out/dist/racers-admin $out/dist/racers-client $out/dist/racers-bot
+        cp -r ${adminBundledPursProject}/dist/* $out/dist/racers-admin
+        cp -r ${clientBundledPursProject}/dist/* $out/dist/racers-client
+        cp -r ${builtPursProject}/* $out/dist/racers-bot
+        '';
+
     in
     {
       inherit nixpkgsFor;
@@ -216,10 +253,8 @@
         // {
           script-exporter = onchain.script-exporter system;
           exported-scripts = onchain.exported-scripts system;
-          admin-bundle = (offchain.projectFor system).bundlePursProject {
-              main = "Lib.CardanoRacers.AdminFFI";
-              entrypoint = "admin.js";
-          };
+          client-bundle = clientBundleFor system;
+          bundles = bundlesFor system;
         }
       );
       checks = perSystem (system:
