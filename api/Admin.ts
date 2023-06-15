@@ -30,6 +30,8 @@ export interface MkAdmin extends RacersUtils {
   /**
    * initRacers - Initialize a Racers instance. Mints AdminNFT, BotNFT, StateNFT.
    * Pays StateNFT to state script. Creates reference scripts for NitroPolicy, AssetRequestPolicy, DriverAssetPolicy, CarAssetPolicy, DepositScript
+   * BotNFT remains in the wallet balance and should be sent to the Bot address
+   * manually.
    *
    * @param {WalletSpec} walletSpec - Specifies the wallet for the operation.
    * @param {InitialStateFFI} initialState - The initial state for the Racers instance, which includes:

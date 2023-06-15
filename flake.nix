@@ -199,19 +199,33 @@
           };
       };
 
+
       bundlesFor = system:
       let
         pkgs = nixpkgsFor system;
         project = (offchain.projectFor system);
         builtPursProject = project.buildPursProject {};
-        adminBundledPursProject = project.bundlePursProject {
-          main = "Lib.CardanoRacers.AdminFFI ";
-          entrypoint = "index.js";
-        };
-        clientBundledPursProject = project.bundlePursProject {
-          main = "Lib.CardanoRacers.ClientFFI ";
-          entrypoint = "index.js";
-        };
+        createEntrypoint = eName: pkgs.writeText "${eName}-text" ''
+          "use strict";
+          import("./output.js").then(m => window.racers${eName} = m);
+          console.log("racers${eName} ready");
+        '';
+        wrapWithCustomEntrypoint = eName: b: b.overrideAttrs (_: prev: {
+          buildCommand = ''
+            cp ${(createEntrypoint eName)} ${pkgs.lib.toLower eName}-entry.js
+            ${prev.buildCommand}
+            '';
+        });
+        adminBundledPursProject = wrapWithCustomEntrypoint "Admin" (project.bundlePursProject {
+          main = "Lib.CardanoRacers.AdminFFI";
+          entrypoint = "admin-entry.js";
+          browserRuntime = true;
+        });
+        clientBundledPursProject = wrapWithCustomEntrypoint "Client" (project.bundlePursProject {
+          main = "Lib.CardanoRacers.ClientFFI";
+          entrypoint = "client-entry.js";
+          browserRuntime = true;
+        });
       in pkgs.runCommand "admin-bundle-cmd" {
           buildInputs = [
             pkgs.nodejs
@@ -253,8 +267,11 @@
         // {
           script-exporter = onchain.script-exporter system;
           exported-scripts = onchain.exported-scripts system;
-          client-bundle = clientBundleFor system;
           bundles = bundlesFor system;
+          test-bundle = (offchain.projectFor system).bundlePursProject {
+            main = "Lib.CardanoRacers.AdminFFI";
+            entrypoint = "index.js";
+          };
         }
       );
       checks = perSystem (system:
