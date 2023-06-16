@@ -245,8 +245,36 @@
         mkdir -p $out/dist/racers-admin $out/dist/racers-client $out/dist/racers-bot
         cp -r ${adminBundledPursProject}/dist/* $out/dist/racers-admin
         cp -r ${clientBundledPursProject}/dist/* $out/dist/racers-client
-        cp -r ${builtPursProject}/* $out/dist/racers-bot
+
+        cp -r ${builtPursProject}/output $out/dist/racers-bot/
+        cp ${builtPursProject}/build/package.json $out/dist/racers-bot/
+        cp ${builtPursProject}/build/package-lock.json $out/dist/racers-bot/
+        cp ${builtPursProject}/build/index.js $out/dist/racers-bot/
         '';
+
+      gzippedBundlesFor = system:
+        let
+          pkgs = nixpkgsFor system;
+          bundles = bundlesFor system;
+        in pkgs.runCommand "gzipped-bundles" {
+            buildInputs = [
+              pkgs.gnutar
+              bundles
+            ];
+          }
+          ''
+            mkdir -p $out
+            mkdir -p ./admin
+            mkdir -p ./client
+            mkdir -p ./bot
+            cp -r ${bundles}/dist/racers-admin/* ./admin
+            cp -r ${bundles}/dist/racers-client/* ./client
+            cp -r ${bundles}/dist/racers-bot/* ./bot
+            chmod -R 755 ./admin ./client ./bot
+            tar -czf $out/admin-browser-bundle.tar.gz -C ./admin .
+            tar -czf $out/client-browser-bundle.tar.gz -C ./client .
+            tar -czf $out/bot-bundle.tar.gz -C ./bot .
+          '';
 
     in
     {
@@ -268,10 +296,7 @@
           script-exporter = onchain.script-exporter system;
           exported-scripts = onchain.exported-scripts system;
           bundles = bundlesFor system;
-          test-bundle = (offchain.projectFor system).bundlePursProject {
-            main = "Lib.CardanoRacers.AdminFFI";
-            entrypoint = "index.js";
-          };
+          gzipped-bundles = gzippedBundlesFor system;
         }
       );
       checks = perSystem (system:
