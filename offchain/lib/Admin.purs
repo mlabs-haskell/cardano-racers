@@ -6,7 +6,7 @@ import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Deposit.Validator (mkDepositValidator)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
-import CardanoRacers.GameAsset.Types (GameAssetType(..))
+import CardanoRacers.GameAsset.Types (GameAssetType(DriverType, CarType))
 import CardanoRacers.Nitro.Contract (mkNitroPolicy)
 import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
 import CardanoRacers.RacersState.Contract
@@ -22,8 +22,8 @@ import Contract.Address (addressFromBech32, addressToBech32)
 import Contract.Config (ContractParams, WalletSpec)
 import Contract.Log (logInfo')
 import Contract.Monad (liftContractM, liftedM, runContract, throwContractError)
+import Contract.Prim.ByteArray (byteArrayToHex)
 import Contract.Scripts (MintingPolicy(PlutusMintingPolicy))
-import Contract.Transaction (TransactionHash)
 import Contract.Wallet (getWalletAddresses, getWalletUtxos)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff)
@@ -34,6 +34,7 @@ import Lib.CardanoRacers.Bot (Bot, mkBot)
 import Lib.CardanoRacers.Common
   ( AssetPricesFFI
   , Lovelace
+  , TransactionHashFFI
   , fromJsBigInt
   )
 import Lib.CardanoRacers.Queries (Queries, mkQueries)
@@ -42,10 +43,10 @@ import Record (merge)
 import Type.Row (type (+))
 
 type Admin r =
-  ( setNitroPrice :: EffectFn1 Lovelace (Promise TransactionHash)
-  , setAssetPrices :: EffectFn1 AssetPricesFFI (Promise TransactionHash)
-  , setTreasuryAddress :: EffectFn1 String (Promise TransactionHash)
-  , setOperatingAddress :: EffectFn1 String (Promise TransactionHash)
+  ( setNitroPrice :: EffectFn1 Lovelace (Promise TransactionHashFFI)
+  , setAssetPrices :: EffectFn1 AssetPricesFFI (Promise TransactionHashFFI)
+  , setTreasuryAddress :: EffectFn1 String (Promise TransactionHashFFI)
+  , setOperatingAddress :: EffectFn1 String (Promise TransactionHashFFI)
   | r
   )
 
@@ -137,11 +138,12 @@ mkAdmin cp walletSpec rp =
         setOperatingAddress
     } `merge` queries `merge` bot
 
-setNitroPrice :: Lovelace -> Racers TransactionHash
-setNitroPrice nitroPrice = modifyRacersStateContract
-  (\cur -> wrap $ (unwrap cur) { nitroPrice = fromJsBigInt nitroPrice })
+setNitroPrice :: Lovelace -> Racers TransactionHashFFI
+setNitroPrice nitroPrice = (byteArrayToHex <<< unwrap) <$>
+  modifyRacersStateContract
+    (\cur -> wrap $ (unwrap cur) { nitroPrice = fromJsBigInt nitroPrice })
 
-setAssetPrices :: AssetPricesFFI -> Racers TransactionHash
+setAssetPrices :: AssetPricesFFI -> Racers TransactionHashFFI
 setAssetPrices assetPricesFFI = do
   let
     assetPrices = wrap $
@@ -149,17 +151,20 @@ setAssetPrices assetPricesFFI = do
       , rare: fromJsBigInt assetPricesFFI.rare
       , epic: fromJsBigInt assetPricesFFI.epic
       }
-  modifyRacersStateContract
+  txh <- modifyRacersStateContract
     (\cur -> wrap $ (unwrap cur) { assetPrices = assetPrices })
+  pure $ byteArrayToHex (unwrap txh)
 
-setTreasuryAddress :: String -> Racers TransactionHash
+setTreasuryAddress :: String -> Racers TransactionHashFFI
 setTreasuryAddress addrStr = do
   treasuryAddr <- lift $ addressFromBech32 addrStr
-  modifyRacersStateContract
+  txh <- modifyRacersStateContract
     (\cur -> wrap $ (unwrap cur) { treasuryAddress = treasuryAddr })
+  pure $ byteArrayToHex (unwrap txh)
 
-setOperatingAddress :: String -> Racers TransactionHash
+setOperatingAddress :: String -> Racers TransactionHashFFI
 setOperatingAddress addrStr = do
   operatingAddr <- lift $ addressFromBech32 addrStr
-  modifyRacersStateContract
+  txh <- modifyRacersStateContract
     (\cur -> wrap $ (unwrap cur) { operatingAddress = operatingAddr })
+  pure $ byteArrayToHex (unwrap txh)

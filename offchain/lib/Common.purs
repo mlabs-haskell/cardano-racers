@@ -107,6 +107,8 @@ type AssetPricesFFI =
 
 type CredentialProvider = WalletSpec
 
+type TransactionHashFFI = String
+
 type Race = { raceId :: Uint8Array, nitroFee :: Nitro }
 
 contractParams

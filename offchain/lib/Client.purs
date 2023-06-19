@@ -12,8 +12,7 @@ import CardanoRacers.RaceRegistry.Contract
   )
 import Contract.Config (ContractParams, WalletSpec)
 import Contract.Monad (liftContractM, liftedM, runContract, throwContractError)
-import Contract.Prim.ByteArray (byteArrayFromAscii)
-import Contract.Transaction (TransactionHash)
+import Contract.Prim.ByteArray (byteArrayFromAscii, byteArrayToHex)
 import Contract.Value (mkTokenName)
 import Contract.Wallet (getWalletAddresses)
 import Control.Monad.Trans.Class (lift)
@@ -24,6 +23,7 @@ import Effect.Aff.Compat (EffectFn1, EffectFn3, mkEffectFn1, mkEffectFn3)
 import Lib.CardanoRacers.Common
   ( Nitro
   , Race
+  , TransactionHashFFI
   , createRegistryParams
   , fromJsBigInt
   )
@@ -33,10 +33,10 @@ import Record (merge)
 import Type.Row (type (+))
 
 type Client r =
-  ( buyNitro :: EffectFn1 Nitro (Promise TransactionHash)
-  , requestAsset :: EffectFn1 String (Promise TransactionHash)
-  , registerInRace :: EffectFn1 Race (Promise TransactionHash)
-  , joinRace :: EffectFn3 Race String String (Promise TransactionHash)
+  ( buyNitro :: EffectFn1 Nitro (Promise TransactionHashFFI)
+  , requestAsset :: EffectFn1 String (Promise TransactionHashFFI)
+  , registerInRace :: EffectFn1 Race (Promise TransactionHashFFI)
+  , joinRace :: EffectFn3 Race String String (Promise TransactionHashFFI)
   | r
   )
 
@@ -61,28 +61,30 @@ mkClient cp walletSpec rp =
         driver
     } `merge` queries
 
-buyNitro :: Nitro -> Racers TransactionHash
-buyNitro = buyNitroContract <<< fromJsBigInt
+buyNitro :: Nitro -> Racers TransactionHashFFI
+buyNitro = map (byteArrayToHex <<< unwrap) <<< buyNitroContract <<< fromJsBigInt
 
-requestAsset :: String -> Racers TransactionHash
+requestAsset :: String -> Racers TransactionHashFFI
 requestAsset rarityStr = do
   rarity <- lift $ case rarityStr of
     "common" -> pure Common
     "rare" -> pure Rare
     "epic" -> pure Epic
     x -> throwContractError ("Invalid rarity: " <> x)
-  requestAssetByRarity rarity
+  txh <- requestAssetByRarity rarity
+  pure $ byteArrayToHex (unwrap txh)
 
-registerInRace :: Race -> Racers TransactionHash
+registerInRace :: Race -> Racers TransactionHashFFI
 registerInRace race = do
   rgp <- createRegistryParams race
   firstPkh <- lift $ liftedM "Could not get first own public key hash"
     $ ownPubKeyHashes
     <#> Array.head
 
-  registerPositionInRace rgp firstPkh
+  txh <- registerPositionInRace rgp firstPkh
+  pure $ byteArrayToHex (unwrap txh)
 
-joinRace :: Race -> String -> String -> Racers TransactionHash
+joinRace :: Race -> String -> String -> Racers TransactionHashFFI
 joinRace race carTokenStr driverTokenStr = do
   rgp <- createRegistryParams race
   carToken <- lift
@@ -107,4 +109,5 @@ joinRace race carTokenStr driverTokenStr = do
       , payoutAddress: firstAddr
       }
 
-  confirmAssetSelection rgp firstPkh participant
+  txh <- confirmAssetSelection rgp firstPkh participant
+  pure $ byteArrayToHex (unwrap txh)

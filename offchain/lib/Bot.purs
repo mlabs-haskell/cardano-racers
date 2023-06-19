@@ -31,8 +31,7 @@ import Contract.Monad (liftContractM, liftedM, runContract)
 import Contract.Prim.ByteArray (byteArrayToHex)
 import Contract.ScriptLookups as Lookups
 import Contract.Transaction
-  ( TransactionHash
-  , TransactionInput
+  ( TransactionInput
   , awaitTxConfirmed
   , submitTxFromConstraints
   )
@@ -64,6 +63,7 @@ import Lib.CardanoRacers.Common
   ( Lovelace
   , Nitro
   , Race
+  , TransactionHashFFI
   , assetTypeFromString
   , assetTypeToString
   , createRegistryParams
@@ -108,16 +108,16 @@ type Bot r =
   ( queryAssetRequests ::
       EffectFn1 Unit (Promise (Object (Array AssetRequestFFI)))
   , getWalletLovelaceBalance :: EffectFn1 Unit (Promise Lovelace)
-  , mintNitro :: EffectFn1 Nitro (Promise TransactionHash)
+  , mintNitro :: EffectFn1 Nitro (Promise TransactionHashFFI)
   , tryRedeemingPendingRequests ::
       EffectFn4 AvailableAssetsFFI Int Int
         (EffectFn1 AssetOptionFFI (Promise BigInt))
         (Promise (Array GameAssetFFI)) -- TODO: This should also return the transaction input to match the api
   , resupplySlots :: EffectFn2 Race Int (Promise Unit)
   , closeRace ::
-      EffectFn2 Race RewardDistributionFFI (Promise (Array TransactionHash))
+      EffectFn2 Race RewardDistributionFFI (Promise (Array TransactionHashFFI))
   , createRace :: EffectFn2 Race Int (Promise Unit)
-  , collectDust :: EffectFn1 Lovelace (Promise TransactionHash)
+  , collectDust :: EffectFn1 Lovelace (Promise TransactionHashFFI)
   | r
   )
 
@@ -151,8 +151,9 @@ mkBot cp walletSpec rp =
     , collectDust: mkEffectFn1 $ fromAff <<< runC <<< collectDust
     } `merge` queries
 
-mintNitro :: Nitro -> Racers TransactionHash
-mintNitro = mintNitroContract <<< fromJsBigInt
+mintNitro :: Nitro -> Racers TransactionHashFFI
+mintNitro = map (byteArrayToHex <<< unwrap) <<< mintNitroContract <<<
+  fromJsBigInt
 
 queryAssetRequests :: Racers (Object (Array AssetRequestFFI))
 queryAssetRequests = do
@@ -268,7 +269,7 @@ resupplySlots race slotCount = do
   rgp <- createRegistryParams race
   void $ supplyRegistrySlots (wrap race.raceId) rgp $ BigInt.fromInt slotCount
 
-closeRace :: Race -> RewardDistributionFFI -> Racers (Array TransactionHash)
+closeRace :: Race -> RewardDistributionFFI -> Racers (Array TransactionHashFFI)
 closeRace race rewardsFFI = do
   rgp <- createRegistryParams race
   collectTxId <- collectRegistryScriptLeftovers (wrap race.raceId) rgp
@@ -285,7 +286,9 @@ closeRace race rewardsFFI = do
   txId <- lift $ submitTxFromConstraints (mempty :: Lookups.ScriptLookups Void)
     constraints
   lift $ awaitTxConfirmed txId
-  pure [ collectTxId, txId ]
+  pure [ byteArrayToHex (unwrap collectTxId), byteArrayToHex (unwrap txId) ]
 
-collectDust :: Lovelace -> Racers TransactionHash
-collectDust = lift <<< collectDustByThreshold <<< fromJsBigInt
+collectDust :: Lovelace -> Racers TransactionHashFFI
+collectDust = lift <<< map (byteArrayToHex <<< unwrap)
+  <<< collectDustByThreshold
+  <<< fromJsBigInt
