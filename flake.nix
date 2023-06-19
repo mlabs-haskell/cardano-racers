@@ -250,6 +250,7 @@
         cp ${builtPursProject}/build/package.json $out/dist/racers-bot/
         cp ${builtPursProject}/build/package-lock.json $out/dist/racers-bot/
         cp ${builtPursProject}/build/index.js $out/dist/racers-bot/
+        cp ${builtPursProject}/build/index.d.ts $out/dist/racers-bot/
         '';
 
       gzippedBundlesFor = system:

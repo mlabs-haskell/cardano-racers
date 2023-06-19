@@ -24,7 +24,7 @@ import Contract.Log (logInfo')
 import Contract.Monad (liftContractM, liftedM, runContract, throwContractError)
 import Contract.Scripts (MintingPolicy(PlutusMintingPolicy))
 import Contract.Transaction (TransactionHash)
-import Contract.Wallet (getWalletAddress, getWalletAddresses, getWalletUtxos)
+import Contract.Wallet (getWalletAddresses, getWalletUtxos)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff)
 import Data.Array (head) as Array

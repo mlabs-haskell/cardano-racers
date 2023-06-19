@@ -1,11 +1,9 @@
 {
-  "name": "cardano-racers-bot",
+  "name": "cardano-racers",
   "version": "0.1.0",
   "description": "",
   "main": "index.js",
-  "directories": {
-    "test": "test"
-  },
+  "types": "index.d.ts",
   "scripts": {},
   "author": "",
   "license": "MIT",
