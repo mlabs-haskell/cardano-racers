@@ -5,7 +5,8 @@
 module DepositScript (script) where
 
 import CommonTypes (RacersParams, adminToken, botToken)
-import Plutonomy qualified (optimizeUPLC)
+import Ledger.Value (assetClassValue, geq)
+import Plutonomy qualified (aggressiveOptimizerOptions, optimizeUPLCWith)
 import Plutus.V2.Ledger.Api (
   Script,
   ScriptContext (scriptContextTxInfo),
@@ -16,13 +17,12 @@ import Plutus.V2.Ledger.Api (
 import Plutus.V2.Ledger.Contexts (valueSpent)
 import PlutusTx qualified (compile, unsafeFromBuiltinData)
 import PlutusTx.Prelude
-import Ledger.Value (assetClassValue, geq)
 
 {-# INLINEABLE mkDepositValidator #-}
 mkDepositValidator :: RacersParams -> ScriptContext -> Bool
 mkDepositValidator rp ctx =
   traceIfFalse "admin token not present" inputContainsAdminNft
-  || traceIfFalse "bot token not present" inputContainsBotNft
+    || traceIfFalse "bot token not present" inputContainsBotNft
   where
     info :: TxInfo
     !info = scriptContextTxInfo ctx
@@ -48,4 +48,4 @@ mkValidator rp _datum _redeemer context =
     if result then () else traceError "Failed verification"
 
 script :: Script
-script = fromCompiledCode $ Plutonomy.optimizeUPLC $$(PlutusTx.compile [||mkValidator||])
+script = fromCompiledCode $ Plutonomy.optimizeUPLCWith Plutonomy.aggressiveOptimizerOptions $$(PlutusTx.compile [||mkValidator||])

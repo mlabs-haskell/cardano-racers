@@ -9,7 +9,7 @@ import Constants (nitroTokenName)
 import Data.Function (on)
 import GHC.Generics
 import GHC.Show (Show)
-import Plutonomy qualified (optimizeUPLC)
+import Plutonomy qualified (aggressiveOptimizerOptions, optimizeUPLCWith)
 import Plutus.V1.Ledger.Value (AssetClass (AssetClass), assetClass, assetClassValue, assetClassValueOf, geq, mpsSymbol)
 import Plutus.V2.Ledger.Api (
   Address,
@@ -47,8 +47,8 @@ compareParticipant :: RaceParticipant -> RaceParticipant -> Ordering
 compareParticipant
   (RaceParticipant car1 driver1 payoutAddress1)
   (RaceParticipant car2 driver2 payoutAddress2) =
-          (compare `on` serialiseData . toBuiltinData) car1 car2 
-      <> (compare `on` serialiseData . toBuiltinData) driver1 driver2 
+    (compare `on` serialiseData . toBuiltinData) car1 car2
+      <> (compare `on` serialiseData . toBuiltinData) driver1 driver2
       <> (compare `on` serialiseData . toBuiltinData) payoutAddress1 payoutAddress2
 
 instance Eq RaceParticipant where
@@ -224,4 +224,4 @@ mkScript racersParams registryParams _dat red ctx =
     if result then () else traceError "Failed verification"
 
 script :: Script
-script = fromCompiledCode $ Plutonomy.optimizeUPLC $$(PlutusTx.compile [||mkScript||])
+script = fromCompiledCode $ Plutonomy.optimizeUPLCWith Plutonomy.aggressiveOptimizerOptions $$(PlutusTx.compile [||mkScript||])

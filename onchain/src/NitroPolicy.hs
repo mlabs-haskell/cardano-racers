@@ -13,7 +13,7 @@ import GHC.Generics (Generic)
 import GHC.Show (Show)
 import Ledger (AssetClass)
 import Ledger.Value (assetClass, assetClassValue, assetClassValueOf, geq)
-import Plutonomy qualified (optimizeUPLC)
+import Plutonomy qualified (aggressiveOptimizerOptions, optimizeUPLCWith)
 import Plutus.V2.Ledger.Api (
   Script,
   ScriptContext (scriptContextTxInfo),
@@ -84,4 +84,4 @@ mkPolicy rp redeemer context =
     if result then () else traceError "Failed verification"
 
 script :: Script
-script = fromCompiledCode $ Plutonomy.optimizeUPLC $$(PlutusTx.compile [||mkPolicy||])
+script = fromCompiledCode $ Plutonomy.optimizeUPLCWith Plutonomy.aggressiveOptimizerOptions $$(PlutusTx.compile [||mkPolicy||])

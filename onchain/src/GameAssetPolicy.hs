@@ -8,7 +8,7 @@ import PlutusTx.Prelude
 
 import CommonTypes (GameAsset, RacersParams, adminToken, botToken)
 import Ledger.Value (assetClassValue, geq)
-import Plutonomy qualified (optimizeUPLC)
+import Plutonomy qualified (aggressiveOptimizerOptions, optimizeUPLCWith)
 import Plutus.V2.Ledger.Api (
   Script,
   ScriptContext (scriptContextTxInfo),
@@ -46,4 +46,4 @@ mkPolicy gapp assetType _redeemer context =
     if result then () else traceError "Failed verification"
 
 script :: Script
-script = fromCompiledCode $ Plutonomy.optimizeUPLC $$(PlutusTx.compile [||mkPolicy||])
+script = fromCompiledCode $ Plutonomy.optimizeUPLCWith Plutonomy.aggressiveOptimizerOptions $$(PlutusTx.compile [||mkPolicy||])
