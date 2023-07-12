@@ -2,13 +2,13 @@ module Common.ContractHelpers
   ( findAnyAuthUtxo
   , findAuthInUtxosMap
   , findAdminAuthUtxo
-  , collectDust
+  , collectDustByThreshold
   ) where
 
 import Contract.Prelude
 
 import CardanoRacers.Common.Types (RacersParams)
-import Contract.Monad (Contract, liftedM)
+import Contract.Monad (Contract, liftedM, throwContractError)
 import Contract.ScriptLookups as Lookups
 import Contract.Transaction
   ( TransactionHash
@@ -26,8 +26,9 @@ import Control.Apply (lift2)
 import Control.Monad.Reader.Class (asks)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (find) as Array
+import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
-import Data.Map (filter, keys, toUnfoldable) as Map
+import Data.Map (filter, isEmpty, keys, toUnfoldable) as Map
 import Racers (Racers)
 
 findAnyAuthUtxo
@@ -78,8 +79,8 @@ findAuthInUtxosMap rp utxos =
   in
     mUtxo
 
-collectDust :: Contract TransactionHash
-collectDust = do
+collectDustByThreshold :: BigInt -> Contract TransactionHash
+collectDustByThreshold threshold = do
   utxos <- liftedM "could not get wallet utxos" $ getWalletUtxos
 
   let
@@ -89,9 +90,13 @@ collectDust = do
             value = (unwrap (unwrap txo).output).amount
             adaAmount = getLovelace $ valueToCoin value
           in
-            adaAmount <= (BigInt.fromInt 4_000_000)
+            adaAmount <= threshold
       )
       utxos
+
+  when (Map.isEmpty dustUtxos) $ throwContractError "No dust utxos found"
+
+  let
 
     constraints :: Constraints.TxConstraints Void Void
     constraints = foldMap Constraints.mustSpendPubKeyOutput $ Map.keys dustUtxos

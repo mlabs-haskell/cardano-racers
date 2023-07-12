@@ -27,7 +27,6 @@ import Contract.PlutusData
   , genericToData
   )
 import Control.Alt ((<|>))
-import Foreign.Object (Object)
 
 newtype AirdropAddressDatum = AirdropAddressDatum
   { airdropAddress :: Address }

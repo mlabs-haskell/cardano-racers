@@ -6,6 +6,8 @@ You can edit this file as you like.
 , dependencies =
   [ "aeson"
   , "aff"
+  , "aff-promise"
+  , "arraybuffer-types"
   , "arrays"
   , "bifunctors"
   , "bigints"
@@ -16,6 +18,8 @@ You can edit this file as you like.
   , "exceptions"
   , "foldable-traversable"
   , "foreign-object"
+  , "foreign"
+  , "functions"
   , "integers"
   , "lcg"
   , "lists"
@@ -32,8 +36,10 @@ You can edit this file as you like.
   , "spec"
   , "strings"
   , "transformers"
+  , "typelevel-prelude"
   , "uint"
   ]
 , packages = ./packages.dhall
-, sources = [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs" ]
+, sources =
+  [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs", "lib/**/*.purs" ]
 }

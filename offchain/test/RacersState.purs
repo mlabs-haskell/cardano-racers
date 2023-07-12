@@ -87,7 +87,7 @@ suite = group "RacersState script:" do
               let
                 newState = wrap $ (unwrap prevState)
                   { nitroPrice = BigInt.fromInt 2000000 }
-              _ <- RacersState.modifyRacersStateContract newState
+              _ <- RacersState.modifyRacersStateContract $ const newState
               updatedRacersState /\ _ <- RacersState.queryRacersState
               newState `shouldEqual` updatedRacersState
     test "Attempt to change RacersState fails without admin token" do

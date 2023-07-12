@@ -5,7 +5,7 @@ module AssetRequestPolicy where
 
 import CommonTypes (RacersParams (adminToken, botToken, stateToken), RacersState, Rarity, airdropAddress, assetPrices, getPrice)
 import Ledger.Value (Value, assetClass, assetClassValue, flattenValue, geq)
-import Plutonomy qualified (optimizeUPLC)
+import Plutonomy qualified (aggressiveOptimizerOptions, optimizeUPLCWith)
 import Plutus.V2.Ledger.Api (
   CurrencySymbol,
   Datum (getDatum),
@@ -13,7 +13,8 @@ import Plutus.V2.Ledger.Api (
   Script,
   ScriptContext (scriptContextTxInfo),
   TxInfo (txInfoMint),
-  fromCompiledCode, ValidatorHash
+  ValidatorHash,
+  fromCompiledCode,
  )
 import Plutus.V2.Ledger.Contexts (ownCurrencySymbol, scriptOutputsAt, valueLockedBy, valueSpent)
 import PlutusTx qualified (FromData (fromBuiltinData), compile, unsafeFromBuiltinData, unstableMakeIsData)
@@ -132,4 +133,4 @@ mkPolicy rp depositValHash red context =
     if result then () else traceError "Failed verification"
 
 script :: Script
-script = fromCompiledCode $ Plutonomy.optimizeUPLC $$(PlutusTx.compile [||mkPolicy||])
+script = fromCompiledCode $ Plutonomy.optimizeUPLCWith Plutonomy.aggressiveOptimizerOptions $$(PlutusTx.compile [||mkPolicy||])

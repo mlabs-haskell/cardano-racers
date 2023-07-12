@@ -2,7 +2,7 @@ module CardanoRacers.RacersState.Contract
   ( initRacersStateContract
   , modifyRacersStateContract
   , queryRacersState
-  , createRacersRefScriptOutput
+  , createRacersRefScriptOutputs
   , queryRacersRefScriptOutput
   , mkRacersStateValidator
   ) where
@@ -91,17 +91,20 @@ initRacersStateContract ns = do
 -- | throws if admin token is not present in wallet balance or if state token is
 -- | not already locked at script
 modifyRacersStateContract
-  :: RacersState -> Racers TransactionHash
-modifyRacersStateContract rs = do
+  :: (RacersState -> RacersState) -> Racers TransactionHash
+modifyRacersStateContract modifyState = do
   racersVal <- mkRacersStateValidator
   rp <- asks _.params
+
+  (oldState /\ stateTxi /\ stateTxo) <- queryRacersState
+
   let
+    newState = modifyState oldState
     vhash = validatorHash racersVal
-    datum = Datum $ toData $ rs
-    red = Redeemer $ toData $ SetRacersState $ rs
+    datum = Datum $ toData $ newState
+    red = Redeemer $ toData $ SetRacersState newState
     stateVal = uncurry Value.singleton (unwrap rp).stateToken one
 
-  (_ /\ stateTxi /\ stateTxo) <- queryRacersState
   (adminTxi /\ adminTxo) <- findAdminAuthUtxo >>=
     (lift <<< liftContractM "Could not find admin token in wallet")
 
@@ -154,21 +157,21 @@ queryRacersState = do
     pure (stateTxi /\ stateTxo /\ rs)
   pure $ rs /\ stateTxi /\ stateTxo
 
-createRacersRefScriptOutput
-  :: PlutusScript -> Racers TransactionInput
-createRacersRefScriptOutput script = do
+createRacersRefScriptOutputs
+  :: Array PlutusScript -> Racers TransactionInput
+createRacersRefScriptOutputs scripts = do
   stateValidatorHash <- validatorHash <$> mkRacersStateValidator
 
   let
-    scriptRef :: ScriptRef
-    scriptRef = PlutusScriptRef script
-
     constraints :: Constraints.TxConstraints Unit Unit
-    constraints =
-      Constraints.mustPayToScriptWithScriptRef stateValidatorHash unitDatum
-        DatumWitness
-        scriptRef
-        (Value.lovelaceValueOf $ BigInt.fromInt 2_000_000)
+    constraints = foldMap
+      ( \script ->
+          Constraints.mustPayToScriptWithScriptRef stateValidatorHash unitDatum
+            DatumWitness
+            (PlutusScriptRef script)
+            (Value.lovelaceValueOf $ BigInt.fromInt 2_000_000)
+      )
+      scripts
 
     lookups :: Lookups.ScriptLookups PlutusData
     lookups = mempty

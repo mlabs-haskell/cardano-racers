@@ -49,7 +49,7 @@ import Contract.Value
 import Contract.Wallet (getWalletAddresses)
 import Control.Monad.Reader.Trans (asks)
 import Control.Monad.Trans.Class (lift)
-import Data.Array (head, singleton) as Array
+import Data.Array (head) as Array
 import Data.BigInt (fromInt, toNumber) as BigInt
 import Data.Int (ceil)
 import Data.Map (singleton) as Map

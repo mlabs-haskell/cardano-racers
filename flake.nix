@@ -1,7 +1,7 @@
 {
   inputs = {
     plutip.url = github:mlabs-haskell/plutip/8364c43ac6bc9ea140412af9a23c691adf67a18b;
-    cardano-transaction-lib.url = github:Plutonomicon/cardano-transaction-lib/d9ef85a964a49ea8c9d1898599aceb45a341db65;
+    cardano-transaction-lib.url = github:Plutonomicon/cardano-transaction-lib/6d35376f2fe8d689bc0713a11ee30382f06b91da;
     nixpkgs.follows = "cardano-transaction-lib/nixpkgs";
     plutonomy = {
       url = github:well-typed/plutonomy/6c01302ba8cf3be4f71617e106cd5ef7ed10fc63;
@@ -23,6 +23,7 @@
           haskell-nix.overlay
           cardano-transaction-lib.overlays.purescript
           cardano-transaction-lib.overlays.runtime
+          cardano-transaction-lib.overlays.spago
         ];
         inherit (haskell-nix) config;
       };
@@ -197,6 +198,85 @@
             };
           };
       };
+
+
+      bundlesFor = system:
+      let
+        pkgs = nixpkgsFor system;
+        project = (offchain.projectFor system);
+        builtPursProject = project.buildPursProject {};
+        createEntrypoint = eName: pkgs.writeText "${eName}-text" ''
+          "use strict";
+          import("./output.js").then(m => window.racers${eName} = m);
+          console.log("racers${eName} ready");
+        '';
+        wrapWithCustomEntrypoint = eName: b: b.overrideAttrs (_: prev: {
+          buildCommand = ''
+            cp ${(createEntrypoint eName)} ${pkgs.lib.toLower eName}-entry.js
+            ${prev.buildCommand}
+            '';
+        });
+        adminBundledPursProject = wrapWithCustomEntrypoint "Admin" (project.bundlePursProject {
+          main = "Lib.CardanoRacers.AdminFFI";
+          entrypoint = "admin-entry.js";
+          browserRuntime = true;
+        });
+        clientBundledPursProject = wrapWithCustomEntrypoint "Client" (project.bundlePursProject {
+          main = "Lib.CardanoRacers.ClientFFI";
+          entrypoint = "client-entry.js";
+          browserRuntime = true;
+        });
+      in pkgs.runCommand "admin-bundle-cmd" {
+          buildInputs = [
+            pkgs.nodejs
+            project.nodeModules
+            builtPursProject
+          ];
+          nativeBuildInputs = [
+            project.purs
+            pkgs.easy-ps.spago
+          ];
+        }
+        ''
+        export HOME=$TMP
+        export NODE_PATH="${project.nodeModules}/lib/node_modules"
+        export PATH="${project.nodeModules}/bin:$PATH"
+
+        mkdir -p $out/dist/racers-admin $out/dist/racers-client $out/dist/racers-bot
+        cp -r ${adminBundledPursProject}/dist/* $out/dist/racers-admin
+        cp -r ${clientBundledPursProject}/dist/* $out/dist/racers-client
+
+        cp -r ${builtPursProject}/output $out/dist/racers-bot/
+        cp ${builtPursProject}/build/package.json $out/dist/racers-bot/
+        cp ${builtPursProject}/build/package-lock.json $out/dist/racers-bot/
+        cp ${builtPursProject}/build/index.js $out/dist/racers-bot/
+        cp ${builtPursProject}/build/index.d.ts $out/dist/racers-bot/
+        '';
+
+      gzippedBundlesFor = system:
+        let
+          pkgs = nixpkgsFor system;
+          bundles = bundlesFor system;
+        in pkgs.runCommand "gzipped-bundles" {
+            buildInputs = [
+              pkgs.gnutar
+              bundles
+            ];
+          }
+          ''
+            mkdir -p $out
+            mkdir -p ./admin
+            mkdir -p ./client
+            mkdir -p ./bot
+            cp -r ${bundles}/dist/racers-admin/* ./admin
+            cp -r ${bundles}/dist/racers-client/* ./client
+            cp -r ${bundles}/dist/racers-bot/* ./bot
+            chmod -R 755 ./admin ./client ./bot
+            tar -czf $out/admin-browser-bundle.tar.gz -C ./admin .
+            tar -czf $out/client-browser-bundle.tar.gz -C ./client .
+            tar -czf $out/bot-bundle.tar.gz -C ./bot .
+          '';
+
     in
     {
       inherit nixpkgsFor;
@@ -216,6 +296,8 @@
         // {
           script-exporter = onchain.script-exporter system;
           exported-scripts = onchain.exported-scripts system;
+          bundles = bundlesFor system;
+          gzipped-bundles = gzippedBundlesFor system;
         }
       );
       checks = perSystem (system:
