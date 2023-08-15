@@ -4,6 +4,8 @@ import Contract.Prelude
 
 import Aeson (Aeson, encodeAeson)
 import CardanoRacers.Common.Types (RacersParams, nitroToken)
+import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
+import CardanoRacers.GameAsset.Types (GameAssetType(CarType, DriverType))
 import CardanoRacers.Nitro.Contract (mkNitroPolicy)
 import CardanoRacers.RaceRegistry.Contract (queryRegistryUtxos)
 import CardanoRacers.RaceRegistry.Types
@@ -12,17 +14,22 @@ import CardanoRacers.RaceRegistry.Types
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Address (addressToBech32)
+import Contract.AssocMap as PlutusMap
 import Contract.Config (ContractParams, WalletSpec)
-import Contract.Monad (liftedM, runContract)
+import Contract.Monad (liftContractM, liftedM, runContract)
 import Contract.Prim.ByteArray (rawBytesToHex)
 import Contract.Scripts (mintingPolicyHash)
-import Contract.Value (mpsSymbol, valueOf)
+import Contract.Value (getValue, mpsSymbol, scriptCurrencySymbol, valueOf)
+import Contract.Value as Value
 import Contract.Wallet (getWalletBalance)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff)
 import Ctl.Internal.Serialization.Hash (ed25519KeyHashToBytes)
 import Data.Array (concat) as Array
 import Data.Map (toUnfoldable) as Map
+import Data.Maybe (fromMaybe)
+import Data.Newtype (unwrap)
+import Data.TextDecoder (decodeUtf8)
 import Effect.Aff.Compat (EffectFn1, mkEffectFn1)
 import Lib.CardanoRacers.Common
   ( AssetPricesFFI
@@ -35,6 +42,11 @@ import Lib.CardanoRacers.Common
   )
 import Racers (Racers, runRacers, withContract)
 
+type NFT =
+  { name :: String
+  , assetType :: String
+  }
+
 type Queries r =
   ( getNitroPrice :: EffectFn1 Unit (Promise Lovelace)
   , getAssetPrices ::
@@ -43,6 +55,7 @@ type Queries r =
   , getOperatingAddress :: EffectFn1 Unit (Promise String) -- Address as bech32
   , queryRaceRegistry :: EffectFn1 Race (Promise (Array Aeson))
   , getWalletNitroBalance :: EffectFn1 Unit (Promise Nitro)
+  , getWalletNFTs :: EffectFn1 Unit (Promise (Array NFT))
   | r
   )
 
@@ -63,6 +76,7 @@ mkQueries cp walletSpec rp =
     , getWalletNitroBalance: mkEffectFn1 $ const $ fromAff $ runQ $
         getWalletNitroBalance
     , queryRaceRegistry: mkEffectFn1 $ fromAff <<< runQ <<< queryRaceRegistry
+    , getWalletNFTs: mkEffectFn1 $ const $ fromAff $ runQ $ getWalletNFTs
     }
 
 getNitroPrice :: Racers Lovelace
@@ -116,3 +130,36 @@ getWalletNitroBalance = do
     <<< mintingPolicyHash
     <$> mkNitroPolicy
   pure $ toJsBigInt $ valueOf bal nitroSymbol nitroToken
+
+getWalletNFTs :: Racers (Array NFT)
+getWalletNFTs = do
+  bal <- lift $ liftedM "Could not get wallet balance" getWalletBalance
+  carPolicy <- mkGameAssetPolicy CarType
+  carSymbol <- lift $ liftContractM "Could not get game asset symbol (car)" $
+    scriptCurrencySymbol carPolicy
+  driverPolicy <- mkGameAssetPolicy DriverType
+  driverSymbol <- lift
+    $ liftContractM "Could not get game asset symbol (driver)"
+    $ scriptCurrencySymbol driverPolicy
+  let
+    cars =
+      PlutusMap.keys $ fromMaybe PlutusMap.empty $
+        PlutusMap.lookup carSymbol (getValue bal)
+    drivers =
+      PlutusMap.keys $ fromMaybe PlutusMap.empty $
+        PlutusMap.lookup driverSymbol (getValue bal)
+  carArray <- for cars \car -> do
+    name <- lift $ liftContractM "Could not make required token names"
+      $ hush
+      $ decodeUtf8
+      $ unwrap
+      $ Value.getTokenName car
+    pure { assetType: "car", name }
+  driverArray <- for drivers \driver -> do
+    name <- lift $ liftContractM "Could not make required token names"
+      $ hush
+      $ decodeUtf8
+      $ unwrap
+      $ Value.getTokenName driver
+    pure { assetType: "driver", name }
+  pure $ carArray <> driverArray

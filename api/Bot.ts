@@ -74,6 +74,8 @@ export interface Bot extends RacersQueries {
     generateUniquenessNonce: (requestedAsset: AssetOption) => Promise<number>
   ): Promise<[TxOutReference, GameAsset][]>;
 
+  createRace(race: Race, slots: number): Promise<void>;
+
   /**
    * Mints and locks additional `slots` slot tokens to the given `race`
    * @param {Race} race The raceId and nitroFee that identifies the specific race to resupply
@@ -81,6 +83,8 @@ export interface Bot extends RacersQueries {
    * @returns The transaction hash of the mint transaction
    */
   resupplySlots(race: Race, slots: number): Promise<void>;
+
+  collectDust(amount: Lovelace): Promise<TransactionHash>;
 
   // make reward payment >> burns all slots
   // must make sure rewards payment succeeded before burning slots
