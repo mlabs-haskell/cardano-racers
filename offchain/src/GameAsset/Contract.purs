@@ -28,7 +28,6 @@ import Contract.AuxiliaryData (setTxMetadata)
 import Contract.Metadata (mkCip25String, unCip25String)
 import Contract.Monad (liftContractM, liftedE, liftedM)
 import Contract.PlutusData (toData)
-import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts
   ( MintingPolicy(PlutusMintingPolicy)
@@ -61,6 +60,7 @@ import Control.Monad.Trans.Class (lift)
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (singleton) as Map
 import Data.Profunctor.Choice (left)
+import Data.TextEncoder (encodeUtf8)
 import Effect.Exception (error)
 import Racers (Racers, withContract)
 import Random.LCG (randomSeed)
@@ -84,11 +84,8 @@ generateAsset ao nonce rarity = do
   cip25Name <- liftMaybe (error "could not create cip25 string from asset name")
     $ mkCip25String ao.name
 
-  nameByteArray <- liftMaybe (error "could not create name byte array")
-    $ byteArrayFromAscii
-    $ (unCip25String cip25Name)
-    <> ":"
-    <> nonce
+  let
+    nameByteArray = wrap $ encodeUtf8 $ unCip25String cip25Name <> ":" <> nonce
 
   tkName <- liftMaybe (error "could not create token name") $ mkTokenName
     $ nameByteArray

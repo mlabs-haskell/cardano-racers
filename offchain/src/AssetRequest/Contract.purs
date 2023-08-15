@@ -20,7 +20,6 @@ import CardanoRacers.RacersState.Types (getAssetPrice)
 import CardanoRacers.ScriptsFFI (assetRequestPolicy)
 import Contract.Monad (liftContractM, liftedM)
 import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
-import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts
   ( MintingPolicy(PlutusMintingPolicy)
@@ -54,6 +53,7 @@ import Data.BigInt (fromInt, toNumber) as BigInt
 import Data.Int (ceil)
 import Data.Map (singleton) as Map
 import Data.Profunctor.Choice (left)
+import Data.TextEncoder (encodeUtf8)
 import Effect.Exception (error)
 import Racers (Racers)
 
@@ -72,7 +72,7 @@ requestAssetByRarity rarity = do
 
   requestTokenName <- lift $ liftContractM "Could not make required token names"
     $
-      (Value.mkTokenName <=< byteArrayFromAscii) (show rarity)
+      (Value.mkTokenName <<< wrap <<< encodeUtf8) (show rarity)
 
   mAssetRequestPolicyRef <- queryRacersRefScriptOutput
     (unwrap $ mintingPolicyHash assetRequestPolicy)
