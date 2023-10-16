@@ -21,11 +21,11 @@ import Contract.Prim.ByteArray (rawBytesToHex)
 import Contract.Scripts (mintingPolicyHash)
 import Contract.Value (getValue, mpsSymbol, scriptCurrencySymbol, valueOf)
 import Contract.Value as Value
-import Contract.Wallet (getWalletBalance)
+import Contract.Wallet (getWalletAddresses, getWalletBalance)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff)
 import Ctl.Internal.Serialization.Hash (ed25519KeyHashToBytes)
-import Data.Array (concat) as Array
+import Data.Array (concat, head) as Array
 import Data.Map (toUnfoldable) as Map
 import Data.Maybe (fromMaybe)
 import Data.Newtype (unwrap)
@@ -56,6 +56,7 @@ type Queries r =
   , queryRaceRegistry :: EffectFn1 Race (Promise (Array Aeson))
   , getWalletNitroBalance :: EffectFn1 Unit (Promise Nitro)
   , getWalletNFTs :: EffectFn1 Unit (Promise (Array NFT))
+  , getWalletAddress :: EffectFn1 Unit (Promise String)
   | r
   )
 
@@ -77,6 +78,7 @@ mkQueries cp walletSpec rp =
         getWalletNitroBalance
     , queryRaceRegistry: mkEffectFn1 $ fromAff <<< runQ <<< queryRaceRegistry
     , getWalletNFTs: mkEffectFn1 $ const $ fromAff $ runQ $ getWalletNFTs
+    , getWalletAddress: mkEffectFn1 $ const $ fromAff $ runQ $ getWalletAddress
     }
 
 getNitroPrice :: Racers Lovelace
@@ -122,6 +124,12 @@ queryRaceRegistry race = do
             , "address": addrStr
             }
         }
+
+getWalletAddress :: Racers String
+getWalletAddress = do
+  ownAddr <- lift $ liftedM "could not get first wallet address"
+    (Array.head <$> getWalletAddresses)
+  lift $ addressToBech32 ownAddr
 
 getWalletNitroBalance :: Racers Nitro
 getWalletNitroBalance = do
