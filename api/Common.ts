@@ -36,6 +36,17 @@ export interface RacersQueries {
    * Query available NFTs from the wallet.
    */
   getWalletNFTs(): Promise<WalletGameAsset[]>;
+
+  /**
+   * Query wallet address
+   */
+  getWalletAddress(): Promise<Address>;
+
+  /**
+   * Query wallet pubkeyhash (payment component of the address, used for
+   * comparisons with results of `queryRaceRegistry`
+   */
+  getWalletPubKeyHash(): Promise<PubKeyHash>;
 }
 
 export type WalletSpec = any;
@@ -149,10 +160,6 @@ export type TransactionHash = string; // Transaction ID as hex string
 export type GameAssetType = "driver" | "car";
 
 export type TxOutReference = string;
-
-export type Registered = {
-  address: Address;
-};
 
 export type AssetSelection = {
   car: string;
