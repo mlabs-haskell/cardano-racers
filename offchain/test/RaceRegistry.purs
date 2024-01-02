@@ -43,7 +43,7 @@ import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
 import CardanoRacers.RaceSlot.Types (RaceHash, slotTokenName)
 import CardanoRacers.RacersState.Contract (createRacersRefScriptOutputs)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
-import Contract.Address (scriptHashAddress)
+import Contract.Address (PubKeyHash, scriptHashAddress)
 import Contract.Metadata (mkCip25String)
 import Contract.Monad (liftContractM, liftedM, throwContractError)
 import Contract.PlutusData (toData)
@@ -133,6 +133,7 @@ suite = group "Race Registry" do
           let
             nitroFee = BigInt.fromInt 100
             slots = BigInt.fromInt 10
+            utxoCount = BigInt.fromInt 3
             rgp = wrap
               { slotAssetClass: slotSymbol /\ slotTokenName
               , nitroPolicyHash
@@ -153,7 +154,7 @@ suite = group "Race Registry" do
           _ <-
             withContract
               (runChecks [ assertions ] <<< lift <<< withKeyWallet adminKey) $
-              initRace raceHash nitroFee slots
+              initRace raceHash nitroFee slots utxoCount
 
           pure unit
   test "Valid user race registration" do
@@ -184,8 +185,7 @@ suite = group "Race Registry" do
               $ ownPubKeyHashes
               <#> Array.head
 
-            -- Register in the race
-            _ <- registerPositionInRace rgp firstPkh
+            _ <- registerInRaceWithFirstAvailableSlot rgp firstPkh
 
             -- Check if the user is registered with the correct assets
             us <- queryRegistryUtxos rgp
@@ -225,11 +225,11 @@ suite = group "Race Registry" do
                 $ ownPubKeyHashes
                 <#> Array.head
 
-              -- Register in the race
-              _ <- registerPositionInRace rgp firstPkh -- first registration passes
-              failure <- try $ registerPositionInRace rgp firstPkh
+              _ <- registerInRaceWithFirstAvailableSlot rgp firstPkh
+              failure <- try $ registerInRaceWithFirstAvailableSlot rgp firstPkh
 
               failure `shouldSatisfy` isLeft
+
   test "Valid registration and confirmation of assets" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
       \(adminKey /\ treasuryKey /\ userKey) -> do
@@ -271,8 +271,13 @@ suite = group "Race Registry" do
                   mintedAssets
                 pure $ c /\ d
 
+            (slotTxi /\ _) <-
+              withContract
+                (liftedM "Could not find any valid UTxOs with free slot tokens")
+                $
+                  findUtxoWithAvailableSlotToken rgp
             -- Register in the race
-            _ <- registerPositionInRace rgp firstPkh
+            _ <- registerPositionInRace rgp firstPkh slotTxi
 
             let
               raceParticipant = wrap
@@ -327,15 +332,13 @@ suite = group "Race Registry" do
                 c <- mkTokenName <=< byteArrayFromAscii $ "BadCarAsset"
                 pure $ c /\ d
 
-            -- Register in the race
-            _ <- registerPositionInRace rgp firstPkh
+            _ <- registerInRaceWithFirstAvailableSlot rgp firstPkh
 
             let
               raceParticipant = wrap
                 { car: carTk, driver: driverTk, payoutAddress: firstAddr }
             -- Confirm participating assets
-            failure <- try $ confirmAssetSelection rgp firstPkh
-              raceParticipant
+            failure <- try $ confirmAssetSelection rgp firstPkh raceParticipant
 
             failure `shouldSatisfy` isLeft
   test "Altering existing entries fails" do
@@ -381,7 +384,7 @@ suite = group "Race Registry" do
               $ ownPubKeyHashes
               <#> Array.head
 
-            _ <- registerPositionInRace rgp firstPkh
+            _ <- registerInRaceWithFirstAvailableSlot rgp firstPkh
             pure unit
 
           res <- try $ withContract (withKeyWallet treasuryKey) $
@@ -431,8 +434,8 @@ suite = group "Race Registry" do
             firstPkh <- lift $ liftedM "Could not get first own public key hash"
               $ ownPubKeyHashes
               <#> Array.head
-            _ <- registerPositionInRace rgp firstPkh
-            _ <- registerPositionInRace rgp firstPkh
+            _ <- registerInRaceWithFirstAvailableSlot rgp firstPkh
+            _ <- registerInRaceWithFirstAvailableSlot rgp firstPkh
             pure unit
 
           _ <- withContract (withKeyWallet attackerKey) $
@@ -541,7 +544,7 @@ suite = group "Race Registry" do
                   mintedAssets
                 pure $ c /\ d
 
-            _ <- registerPositionInRace rgp firstPkh
+            _ <- registerInRaceWithFirstAvailableSlot rgp firstPkh
 
             res <- try $ doesNotSignAssetSelection rgp
               ( wrap
@@ -665,6 +668,7 @@ suite = group "Race Registry" do
       raceHash
       nitroFee
       slots
+      (BigInt.fromInt 3)
 
     pure (rgp /\ assets)
 
@@ -709,6 +713,16 @@ enrollsAlteringExistingEntries rgp = do
       (constraints <> nitroConstraints)
     awaitTxConfirmed txId
     pure txId
+
+registerInRaceWithFirstAvailableSlot
+  :: RegistryParams -> PubKeyHash -> Racers TransactionHash
+registerInRaceWithFirstAvailableSlot rgp firstPkh =
+  do
+    withContract
+      (liftedM "Could not find any valid UTxOs with free slot tokens")
+      (findUtxoWithAvailableSlotToken rgp)
+    >>= registerPositionInRace rgp firstPkh
+    <<< fst
 
 userSpendsSlotTokens :: RegistryParams -> Racers TransactionHash
 userSpendsSlotTokens rgp = do
