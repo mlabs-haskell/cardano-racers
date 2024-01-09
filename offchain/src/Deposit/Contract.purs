@@ -39,7 +39,7 @@ import Contract.PlutusData
   , toData
   , unitRedeemer
   )
-import Contract.Prim.ByteArray (byteArrayFromAscii, byteArrayToIntArray)
+import Contract.Prim.ByteArray (byteArrayToIntArray)
 import Contract.ScriptLookups (UnbalancedTx, mkUnbalancedTx)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (mintingPolicyHash, validatorHash)
@@ -90,6 +90,7 @@ import Data.List.Lazy as List
 import Data.Map (Map)
 import Data.Map (fromFoldable, lookup, singleton, toUnfoldable) as Map
 import Data.String.CodeUnits (fromCharArray)
+import Data.TextEncoder (encodeUtf8)
 import Effect.Aff (try)
 import Effect.Exception (error)
 import Racers (Racers)
@@ -242,7 +243,7 @@ redeemGameAsset
       fold <$> for requestedAssets \(rarity /\ count) ->
         let
           tokenNameStr = show rarity
-          tkNameM = Value.mkTokenName <=< byteArrayFromAscii $ tokenNameStr
+          tkNameM = Value.mkTokenName $ wrap $ encodeUtf8 $ tokenNameStr
           red = Redeemer $ toData $ BurnRequestToken
         in
           tkNameM <#> \tkName -> maybe
@@ -370,7 +371,7 @@ consumeAndRedeemRequests chunkSize mMaxRequests availableAssets generateNonce =
     pure $ Array.concat mintedAssets
 
   where
-  -- | Allows chaining of transactions together by processing 
+  -- | Allows chaining of transactions together by processing
   -- | an UnbalancedTx and returning the result in CPS.
   withChainedTx
     :: forall r

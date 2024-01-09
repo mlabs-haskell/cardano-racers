@@ -17,7 +17,7 @@ import CardanoRacers.GameAsset.Types
   , GameAssetNftMetadata
   , GameAssetNftMetadataEntry(GameAssetNftMetadataEntry)
   , GameAssetType(DriverType, CarType)
-  , Rarity
+  , Rarity(Common, Rare, Epic)
   , mkGameAsset
   )
 import CardanoRacers.Helpers (paysToAddrConstraint)
@@ -28,7 +28,6 @@ import Contract.AuxiliaryData (setTxMetadata)
 import Contract.Metadata (mkCip25String, unCip25String)
 import Contract.Monad (liftContractM, liftedE, liftedM)
 import Contract.PlutusData (toData)
-import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts
   ( MintingPolicy(PlutusMintingPolicy)
@@ -61,6 +60,8 @@ import Control.Monad.Trans.Class (lift)
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (singleton) as Map
 import Data.Profunctor.Choice (left)
+import Data.Profunctor.Strong (first)
+import Data.TextEncoder (encodeUtf8)
 import Effect.Exception (error)
 import Racers (Racers, withContract)
 import Random.LCG (randomSeed)
@@ -76,19 +77,16 @@ type RawAssetOption =
 
 generateAsset
   :: RawAssetOption -> String -> Rarity -> Effect (GameAsset /\ TokenName)
-generateAsset ao nonce rarity = do
-  attrs <- case ao.assetType of
-    CarType -> CarAttrs <$> generateNewCar rarity
-    DriverType -> DriverAttrs <$> generateNewDriver rarity
+generateAsset ao nonce requestedRarity = do
+  attrs /\ rarity <- case ao.assetType of
+    CarType -> first CarAttrs <$> generateNewCar requestedRarity
+    DriverType -> first DriverAttrs <$> generateNewDriver requestedRarity
 
   cip25Name <- liftMaybe (error "could not create cip25 string from asset name")
     $ mkCip25String ao.name
 
-  nameByteArray <- liftMaybe (error "could not create name byte array")
-    $ byteArrayFromAscii
-    $ (unCip25String cip25Name)
-    <> ":"
-    <> nonce
+  let
+    nameByteArray = wrap $ encodeUtf8 $ unCip25String cip25Name <> ":" <> nonce
 
   tkName <- liftMaybe (error "could not create token name") $ mkTokenName
     $ nameByteArray
@@ -107,7 +105,7 @@ generateAsset ao nonce rarity = do
 
   pure (ga /\ tkName)
 
-generateNewDriver :: Rarity -> Effect DriverAttributes
+generateNewDriver :: Rarity -> Effect (DriverAttributes /\ Rarity)
 generateNewDriver rarity = do
   seed <- randomSeed
   let ps = generateUniformParameters seed rarity
@@ -123,9 +121,9 @@ generateNewDriver rarity = do
       , reflexes: BigInt.fromInt p3
       , luck: BigInt.fromInt p4
       }
-  pure driver
+  pure (driver /\ getNewRarity ps)
 
-generateNewCar :: Rarity -> Effect CarAttributes
+generateNewCar :: Rarity -> Effect (CarAttributes /\ Rarity)
 generateNewCar rarity = do
   seed <- randomSeed
   let ps = generateUniformParameters seed rarity
@@ -141,7 +139,16 @@ generateNewCar rarity = do
       , topSpeed: BigInt.fromInt p3
       , aerodynamics: BigInt.fromInt p4
       }
-  pure car
+  pure (car /\ getNewRarity ps)
+
+getNewRarity :: Array Int -> Rarity
+getNewRarity params =
+  let
+    totalSum = sum params
+  in
+    if totalSum > 20000 then Epic
+    else if totalSum > 10000 then Rare
+    else Common
 
 mintGameAsset :: RawAssetOption -> Rarity -> String -> Racers TransactionHash
 mintGameAsset aoo r nonce = do

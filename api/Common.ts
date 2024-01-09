@@ -26,6 +26,27 @@ export interface RacersQueries {
    * @returns A list of all registered and participated entries
    */
   queryRaceRegistry(race: Race): Promise<RegistryEntry[]>;
+
+  /**
+   * Query available NITRO amount from the wallet
+   */
+  getWalletNitroBalance(): Promise<Nitro>;
+
+  /**
+   * Query available NFTs from the wallet.
+   */
+  getWalletNFTs(): Promise<WalletGameAsset[]>;
+
+  /**
+   * Query wallet address
+   */
+  getWalletAddress(): Promise<Address>;
+
+  /**
+   * Query wallet pubkeyhash (payment component of the address, used for
+   * comparisons with results of `queryRaceRegistry`
+   */
+  getWalletPubKeyHash(): Promise<PubKeyHash>;
 }
 
 export type WalletSpec = any;
@@ -140,10 +161,6 @@ export type GameAssetType = "driver" | "car";
 
 export type TxOutReference = string;
 
-export type Registered = {
-  address: Address;
-};
-
 export type AssetSelection = {
   car: string;
   driver: string;
@@ -157,6 +174,11 @@ export type RegistryEntry =
 export type Race = {
   raceId: Uint8Array;
   nitroFee: Nitro;
+};
+
+export type WalletGameAsset = {
+  assetType: GameAssetType;
+  name: string;
 };
 
 export type GameAsset = {
