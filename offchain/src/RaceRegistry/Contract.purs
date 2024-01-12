@@ -51,8 +51,6 @@ collectRegistryScriptLeftovers
   :: RaceHash -> RegistryParams -> Int -> Racers TransactionHash
 collectRegistryScriptLeftovers raceHash rgp outputsToCollect = do
   registryScript <- mkRaceRegistryScript rgp
-  -- utxosAtRegistry <- lift $ utxosAt
-  --   (scriptHashAddress (validatorHash registryScript) Nothing)
 
   (authTxi /\ authTxo) <- withContract (liftedM "could not find any auth utxo")
     findAnyAuthUtxo
@@ -140,8 +138,6 @@ findUtxoWithAvailableSlotToken rgp =
   Array.head <<< Map.toUnfoldable <$> filterRegistryUtxos rgp
     (\totalSlots entries -> totalSlots > length entries)
 
--- TODO: this should be remove as selected UTxO to spend slots from should be
--- orchestrated by the server side
 findSlotUtxoByTxInput
   :: RegistryParams
   -> TransactionInput
@@ -272,7 +268,6 @@ supplyRegistrySlots raceHash rgp slotCount utxoCount = do
     awaitTxConfirmed txId
     pure txId
 
--- TODO: add parameter to specify which UTxO to spend slots from
 registerPositionInRace
   :: RegistryParams
   -> PubKeyHash
