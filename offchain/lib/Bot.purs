@@ -2,7 +2,7 @@ module Lib.CardanoRacers.Bot where
 
 import Contract.Prelude
 
-import Aeson (encodeAeson, stringifyAeson)
+import Aeson (Aeson, encodeAeson, stringifyAeson)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Deposit.Contract (PendingAssetRequest, consumeAndRedeemRequests, queryRequestsWithAirdropAddress)
 import CardanoRacers.GameAsset.Types (AssetOption, CarAttributes(CarAttributes), DriverAttributes(DriverAttributes), GameAssetAttributes(CarAttrs, DriverAttrs), GameAssetObject, Rarity(Common, Rare, Epic))
@@ -41,7 +41,7 @@ import Effect.Uncurried (EffectFn4, mkEffectFn4)
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable, toUnfoldable) as Object
 import Lib.CardanoRacers.Common (Lovelace, Nitro, Race, TransactionHashFFI, assetTypeFromString, assetTypeToString, createRegistryParams, fromJsBigInt, toJsBigInt, tokenNameToString)
-import Lib.CardanoRacers.Queries (Queries, mkQueries)
+import Lib.CardanoRacers.Queries (Queries, mkQueries, registryEntryToAeson)
 import Partial.Unsafe (unsafePartial)
 import Racers (Racers, runRacers)
 import Record (merge)
@@ -75,7 +75,7 @@ type GameAssetFFI =
 type SlotUtxoFFI =
   { slotTxIn :: String
   , slotCount :: String
-  , registrations :: Array String
+  , registrations :: Array Aeson
   }
 
 type RewardDistributionFFI = Object Lovelace -- bech321 address -> lovelace
@@ -166,18 +166,20 @@ queryAssetRequests = do
 queryRaceSlotUtxos :: Race -> Racers (Array SlotUtxoFFI)
 queryRaceSlotUtxos race = do
   rgp <- createRegistryParams race
-  queryRegistryUtxos rgp
-    <#> Map.toUnfoldable
-    >>> map
-      ( \(txi /\ (txo /\ rges)) ->
-          { slotTxIn: byteArrayToHex (unwrap (unwrap txi).transactionId) <> "#"
-              <> show (UInt.toInt (unwrap txi).index)
-          , slotCount: BigInt.toString $ uncurry
-              (valueOf (unwrap (unwrap txo).output).amount)
-              (unwrap rgp).slotAssetClass
-          , registrations: map (stringifyAeson <<< encodeAeson) rges
-          }
+  regUtxos <- queryRegistryUtxos rgp <#> Map.toUnfoldable
+  traverse 
+      ( \(txi /\ (txo /\ rges)) -> do
+          reAeson <- traverse registryEntryToAeson rges
+          pure $
+            { slotTxIn: byteArrayToHex (unwrap (unwrap txi).transactionId) <> "#"
+                <> show (UInt.toInt (unwrap txi).index)
+            , slotCount: BigInt.toString $ uncurry
+                (valueOf (unwrap (unwrap txo).output).amount)
+                (unwrap rgp).slotAssetClass
+            , registrations: reAeson
+            }
       )
+      regUtxos
 
 getWalletLovelaceBalance :: Racers Lovelace
 getWalletLovelaceBalance = lift do

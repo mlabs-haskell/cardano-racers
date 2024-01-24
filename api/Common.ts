@@ -203,4 +203,10 @@ export type AssetRequest = {
   address: Address;
 };
 
+export type RaceSlotOutput = {
+  slotTxIn: string,
+  slotCount: number,
+  registrations: RegistryEntry[],
+}
+
 export type RacersParams = string; // json string

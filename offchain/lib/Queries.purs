@@ -113,16 +113,10 @@ getOperatingAddress = queryRacersState
   >>= lift
   <<< addressToBech32
 
-queryRaceRegistry :: Race -> Racers (Array Aeson)
-queryRaceRegistry race = do
-  rgp <- createRegistryParams race
-  us <- queryRegistryUtxos rgp <#> Map.toUnfoldable >>> map (snd >>> snd) >>>
-    Array.concat
-  traverse entryToAeson us
-  where
-  entryToAeson (PendingSelection pkh) = pure $ encodeAeson
+registryEntryToAeson :: RegistryEntry -> Racers Aeson
+registryEntryToAeson (PendingSelection pkh) = pure $ encodeAeson
     { "registered": rawBytesToHex $ ed25519KeyHashToBytes (unwrap pkh) }
-  entryToAeson (AssetSelection par) =
+registryEntryToAeson (AssetSelection par) =
     lift (addressToBech32 (unwrap par).payoutAddress) <#> \addrStr ->
       encodeAeson
         { "assetSelection":
@@ -131,6 +125,13 @@ queryRaceRegistry race = do
             , "address": addrStr
             }
         }
+
+queryRaceRegistry :: Race -> Racers (Array Aeson)
+queryRaceRegistry race = do
+  rgp <- createRegistryParams race
+  us <- queryRegistryUtxos rgp <#> Map.toUnfoldable >>> map (snd >>> snd) >>>
+    Array.concat
+  traverse registryEntryToAeson us
 
 getWalletAddress :: Racers String
 getWalletAddress = do

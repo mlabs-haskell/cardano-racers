@@ -11,6 +11,7 @@ import {
   RacersUtils,
   RacersParams,
   RacersQueries,
+  RaceSlotOutput,
   Rarity,
   TransactionHash,
   TxOutReference,
@@ -33,6 +34,13 @@ export interface Bot extends RacersQueries {
    * @returns A map of TxOutReference to AssetRequest[]
    */
   queryAssetRequests(): Promise<{ [key: TxOutReference]: AssetRequest[] }>;
+
+  /**
+   * Use this function to query the current available slots utxos to return
+   * corresponding Utxos to the client in order to facilitate simultaneous
+   * registration
+   */
+  queryRaceSlotUtxos(race: Race): Promise<{ [key: TxOutReference]: RaceSlotOutput[] }>;
 
   /**
    * Get current wallet's Lovelace balance
