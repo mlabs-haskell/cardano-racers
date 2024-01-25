@@ -44,7 +44,7 @@ interface Client extends RacersQueries {
    * @param {Race} race The race to register in identified by raceId and nitroFee
    * @returns The transaction hash of the register transaction
    */
-  registerInRace(race: Race): Promise<TransactionHash>;
+  registerInRace(race: Race, slotTxIn: string): Promise<TransactionHash>;
 
   /**
    * Confirms asset selection for race participation by providing the token

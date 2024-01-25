@@ -82,7 +82,7 @@ export interface Bot extends RacersQueries {
     generateUniquenessNonce: (requestedAsset: AssetOption) => Promise<number>
   ): Promise<[TxOutReference, GameAsset][]>;
 
-  createRace(race: Race, slots: number): Promise<void>;
+  createRace(race: Race, slots: number, utxoCount: number): Promise<void>;
 
   /**
    * Mints and locks additional `slots` slot tokens to the given `race`
@@ -90,7 +90,7 @@ export interface Bot extends RacersQueries {
    * @param {number} slots The number of slots to mint and lock
    * @returns The transaction hash of the mint transaction
    */
-  resupplySlots(race: Race, slots: number): Promise<void>;
+  resupplySlots(race: Race, slots: number, utxoCount: number): Promise<void>;
 
   collectDust(amount: Lovelace): Promise<TransactionHash>;
 

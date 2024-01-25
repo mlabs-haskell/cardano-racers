@@ -93,10 +93,8 @@ type Bot r =
   , resupplySlots :: EffectFn3 Race Int Int (Promise Unit)
   , closeRace ::
       EffectFn2 Race RewardDistributionFFI (Promise (Array TransactionHashFFI))
-  -- TODO: parameterise the slot distribution number (no of slots per utxo)
   , createRace :: EffectFn3 Race Int Int (Promise Unit)
   , collectDust :: EffectFn1 Lovelace (Promise TransactionHashFFI)
-  -- TODO: query the list of utxos that contain slots given a race
   | r
   )
 
