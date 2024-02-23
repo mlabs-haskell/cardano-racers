@@ -264,14 +264,13 @@ createRace race slotCount utxoCount = void
   $ initRace
       (wrap race.raceId)
       (fromJsBigInt race.nitroFee)
-      (BigInt.fromInt slotCount)
-      (BigInt.fromInt utxoCount)
+      slotCount
+      utxoCount
 
 resupplySlots :: Race -> Int -> Int -> Racers Unit
 resupplySlots race slotCount utxoCount = do
   rgp <- createRegistryParams race
-  void $ supplyRegistrySlots (wrap race.raceId) rgp (BigInt.fromInt slotCount)
-    (BigInt.fromInt utxoCount)
+  void $ supplyRegistrySlots (wrap race.raceId) rgp slotCount utxoCount
 
 closeRace :: Race -> RewardDistributionFFI -> Racers (Array TransactionHashFFI)
 closeRace race rewardsFFI = do

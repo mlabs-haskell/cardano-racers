@@ -132,8 +132,8 @@ suite = group "Race Registry" do
 
           let
             nitroFee = BigInt.fromInt 100
-            slots = BigInt.fromInt 10
-            utxoCount = BigInt.fromInt 3
+            slots = 10
+            utxoCount = 3
             rgp = wrap
               { slotAssetClass: slotSymbol /\ slotTokenName
               , nitroPolicyHash
@@ -149,7 +149,7 @@ suite = group "Race Registry" do
           let
             assertions = checkTokenGainAtAddress'
               (label registryScriptAddress "RaceRegistry Address")
-              (slotSymbol /\ slotTokenName /\ slots)
+              (slotSymbol /\ slotTokenName /\ (BigInt.fromInt slots))
 
           _ <-
             withContract
@@ -176,7 +176,7 @@ suite = group "Race Registry" do
 
           (rgp /\ _) <- setupRegistryAndAssets adminKey userKey raceHash
             (BigInt.fromInt 20)
-            (BigInt.fromInt 2)
+            2
 
           withContract (withKeyWallet userKey) do
             _ <- buyNitroContract $ BigInt.fromInt 100
@@ -215,7 +215,7 @@ suite = group "Race Registry" do
 
             (rgp /\ _) <- setupRegistryAndAssets adminKey userKey raceHash
               (BigInt.fromInt 20)
-              (BigInt.fromInt 1) -- only 1 slot
+              1 -- only 1 slot
 
             withContract (withKeyWallet userKey) do
               _ <- buyNitroContract $ BigInt.fromInt 100
@@ -250,7 +250,7 @@ suite = group "Race Registry" do
           (rgp /\ mintedAssets) <- setupRegistryAndAssets adminKey userKey
             raceHash
             (BigInt.fromInt 20)
-            (BigInt.fromInt 2)
+            2
 
           withContract (withKeyWallet userKey) do
             _ <- buyNitroContract $ BigInt.fromInt 100
@@ -313,7 +313,7 @@ suite = group "Race Registry" do
 
           (rgp /\ _) <- setupRegistryAndAssets adminKey userKey raceHash
             (BigInt.fromInt 20)
-            (BigInt.fromInt 2)
+            2
 
           withContract (withKeyWallet userKey) do
             _ <- buyNitroContract $ BigInt.fromInt 100
@@ -377,7 +377,7 @@ suite = group "Race Registry" do
           (rgp /\ _) <- setupRegistryAndAssets adminKey userKey
             raceHash
             (BigInt.fromInt 20)
-            (BigInt.fromInt 2)
+            2
 
           withContract (withKeyWallet userKey) do
             firstPkh <- lift $ liftedM "Could not get first own public key hash"
@@ -428,7 +428,7 @@ suite = group "Race Registry" do
           (rgp /\ _) <- setupRegistryAndAssets adminKey userKey
             raceHash
             (BigInt.fromInt 20)
-            (BigInt.fromInt 3)
+            3
 
           withContract (withKeyWallet userKey) do
             firstPkh <- lift $ liftedM "Could not get first own public key hash"
@@ -482,7 +482,7 @@ suite = group "Race Registry" do
           (rgp /\ _) <- setupRegistryAndAssets adminKey userKey
             raceHash
             (BigInt.fromInt 20)
-            (BigInt.fromInt 2)
+            2
 
           res <- try $ withContract (withKeyWallet attackerKey) $
             userSpendsSlotTokens rgp
@@ -525,7 +525,7 @@ suite = group "Race Registry" do
           (rgp /\ mintedAssets) <- setupRegistryAndAssets adminKey attackerKey
             raceHash
             (BigInt.fromInt 20)
-            (BigInt.fromInt 2)
+            2
 
           _ <- withContract (withKeyWallet attackerKey) do
             firstPkh <- lift $ liftedM "Could not get first own public key hash"
@@ -608,7 +608,7 @@ suite = group "Race Registry" do
     -> KeyWallet
     -> RaceHash
     -> BigInt
-    -> BigInt
+    -> Int
     -> Racers (RegistryParams /\ Array GameAssetObject)
   setupRegistryAndAssets adminKey userKey raceHash nitroFee slots = do
     withContract (withKeyWallet adminKey)
@@ -668,7 +668,7 @@ suite = group "Race Registry" do
       raceHash
       nitroFee
       slots
-      (BigInt.fromInt 3)
+      1
 
     pure (rgp /\ assets)
 

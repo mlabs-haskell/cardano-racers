@@ -36,8 +36,7 @@ import Contract.Wallet (getWalletUtxos)
 import Control.Apply (lift2)
 import Control.Monad.Reader.Trans (asks)
 import Control.Monad.Trans.Class (lift)
-import Data.Array (concat, drop, filter, find, head, null, take) as Array
-import Data.Array (replicate)
+import Data.Array (concat, drop, filter, find, head, null, take, replicate, zipWith) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt, toInt) as BigInt
 import Data.FoldableWithIndex (findWithIndex)
@@ -151,8 +150,8 @@ findSlotUtxoByTxInput rgp txInput = do
 initRace
   :: RaceHash
   -> BigInt
-  -> BigInt
-  -> BigInt
+  -> Int
+  -> Int
   -> Racers (RegistryParams /\ TransactionHash)
 initRace raceHash entryNitroFee totalSlots utxoCount = do
   nitroPolicyHash <- mintingPolicyHash <$> mkNitroPolicy
@@ -166,7 +165,7 @@ initRace raceHash entryNitroFee totalSlots utxoCount = do
       <$> mkRaceSlotPolicy raceHash
   (slotConstraints /\ slotLookups) <- mintRaceSlotTokenConstraints
     raceHash
-    totalSlots
+    (BigInt.fromInt totalSlots)
 
   (authTxi /\ authTxo) <- withContract (liftedM "could not find any auth utxo")
     findAnyAuthUtxo
@@ -182,20 +181,12 @@ initRace raceHash entryNitroFee totalSlots utxoCount = do
 
   registryVHash <- validatorHash <$> mkRaceRegistryScript rgp
 
-  let slotPerUtxo = totalSlots `div` utxoCount
-
-  utxoCountInt <- lift $ liftContractM "Could not get Int from BigInt"
-    $ BigInt.toInt
-    $ utxoCount
-
   let
+    baseSlotPerUtxo = totalSlots `div` utxoCount
+    remainderSlots = totalSlots `mod` utxoCount
 
-    singleUtxoSlotValue :: Value
-    singleUtxoSlotValue = Value.singleton slotSymbol slotTokenName slotPerUtxo
-
-    remainderSlotValue :: Value
-    remainderSlotValue = Value.singleton slotSymbol slotTokenName
-      (totalSlots `mod` slotPerUtxo)
+    slotValue :: BigInt -> Value
+    slotValue i = Value.singleton slotSymbol slotTokenName i
 
     emptyRegistryDatum = wrap $ toData (wrap [] :: RegistryDatum)
 
@@ -206,10 +197,14 @@ initRace raceHash entryNitroFee totalSlots utxoCount = do
       DatumInline
       v
 
+    utxoVals :: Array Value
+    utxoVals = let base = Array.replicate utxoCount $ slotValue $ BigInt.fromInt baseSlotPerUtxo
+                   rems = Array.replicate remainderSlots (slotValue $ BigInt.fromInt 1) <> Array.replicate (utxoCount - remainderSlots) mempty 
+                in Array.zipWith (<>) base rems
+
     constraints :: Constraints.TxConstraints Void Void
     constraints = Constraints.mustSpendPubKeyOutput authTxi <> slotConstraints
-      <> fold (replicate (utxoCountInt - 1) $ registryOutput singleUtxoSlotValue)
-      <> registryOutput (remainderSlotValue <> singleUtxoSlotValue)
+      <> (fold $ map registryOutput utxoVals)
 
     lookups :: Lookups.ScriptLookups Void
     lookups = slotLookups <> Lookups.unspentOutputs
@@ -223,28 +218,25 @@ initRace raceHash entryNitroFee totalSlots utxoCount = do
 supplyRegistrySlots
   :: RaceHash
   -> RegistryParams
-  -> BigInt
-  -> BigInt
+  -> Int
+  -> Int
   -> Racers TransactionHash
 supplyRegistrySlots raceHash rgp slotCount utxoCount = do
   (slotConstraints /\ slotLookups) <- mintRaceSlotTokenConstraints raceHash
-    slotCount
+    (BigInt.fromInt slotCount)
   registryVHash <- validatorHash <$> mkRaceRegistryScript rgp
 
-  let slotPerUtxo = slotCount `div` utxoCount
+  let 
+    baseSlotPerUtxo = slotCount `div` utxoCount
+    remainderSlots = slotCount `mod` utxoCount
 
-  utxoCountInt <- lift $ liftContractM "Could not get Int from BigInt"
-    $ BigInt.toInt
-    $ utxoCount
+    slotValue :: BigInt -> Value
+    slotValue i = uncurry Value.singleton (unwrap rgp).slotAssetClass i
 
-  let
-    singleUtxoSlotValue :: Value
-    singleUtxoSlotValue = uncurry Value.singleton (unwrap rgp).slotAssetClass
-      slotPerUtxo
-
-    remainderSlotValue :: Value
-    remainderSlotValue = uncurry Value.singleton (unwrap rgp).slotAssetClass
-      (slotCount `mod` slotPerUtxo)
+    utxoVals :: Array Value
+    utxoVals = let base = Array.replicate utxoCount $ slotValue $ BigInt.fromInt baseSlotPerUtxo
+                   rems = Array.replicate remainderSlots (slotValue $ BigInt.fromInt 1) <> Array.replicate (utxoCount - remainderSlots) mempty 
+                in Array.zipWith (<>) base rems
 
     registryOutput :: Value -> Constraints.TxConstraints Void Void
     registryOutput v = Constraints.mustPayToScript
@@ -257,8 +249,7 @@ supplyRegistrySlots raceHash rgp slotCount utxoCount = do
 
     constraints :: Constraints.TxConstraints Void Void
     constraints = slotConstraints
-      <> fold (replicate (utxoCountInt - 1) $ registryOutput singleUtxoSlotValue)
-      <> registryOutput (remainderSlotValue <> singleUtxoSlotValue)
+      <> (fold $ map registryOutput utxoVals)
 
     lookups :: Lookups.ScriptLookups Void
     lookups = slotLookups
