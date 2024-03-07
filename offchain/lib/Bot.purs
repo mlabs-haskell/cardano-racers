@@ -40,7 +40,7 @@ import Effect.Aff.Compat (EffectFn1, EffectFn2, EffectFn3, mkEffectFn1, mkEffect
 import Effect.Uncurried (EffectFn4, mkEffectFn4)
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable, toUnfoldable) as Object
-import Lib.CardanoRacers.Common (Lovelace, Nitro, Race, TransactionHashFFI, assetTypeFromString, assetTypeToString, createRegistryParams, fromJsBigInt, toJsBigInt, tokenNameToString)
+import Lib.CardanoRacers.Common (Lovelace, Nitro, Race, TransactionHashFFI, AssetPricesFFI, assetTypeFromString, assetTypeToString, createRegistryParams, fromJsBigInt, toJsBigInt, tokenNameToString, setAssetPrices)
 import Lib.CardanoRacers.Queries (Queries, mkQueries, registryEntryToAeson)
 import Partial.Unsafe (unsafePartial)
 import Racers (Racers, runRacers)
@@ -84,6 +84,7 @@ type Bot r =
   ( queryAssetRequests ::
       EffectFn1 Unit (Promise (Object (Array AssetRequestFFI)))
   , queryRaceSlotUtxos :: EffectFn1 Race (Promise (Array SlotUtxoFFI))
+  , setAssetPrices :: EffectFn1 AssetPricesFFI (Promise TransactionHashFFI)
   , getWalletLovelaceBalance :: EffectFn1 Unit (Promise Lovelace)
   , mintNitro :: EffectFn1 Nitro (Promise TransactionHashFFI)
   , tryRedeemingPendingRequests ::
@@ -114,6 +115,7 @@ mkBot cp walletSpec rp =
     , getWalletLovelaceBalance: mkEffectFn1 $ const $ fromAff $ runC $
         getWalletLovelaceBalance
     , mintNitro: mkEffectFn1 $ fromAff <<< runC <<< mintNitro
+    , setAssetPrices: mkEffectFn1 $ fromAff <<< runC <<< setAssetPrices
     , tryRedeemingPendingRequests: mkEffectFn4 $
         \assets maxRequests chunkBy generateUniquenessNonce ->
           fromAff $ runC $ tryRedeemingPendingRequests assets maxRequests

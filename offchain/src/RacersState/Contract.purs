@@ -14,7 +14,7 @@ import CardanoRacers.RacersState.Types
   , RacersStateRedeemer(SetRacersState)
   )
 import CardanoRacers.ScriptsFFI (racersStateValidatorScript)
-import Common.ContractHelpers (findAdminAuthUtxo)
+import Common.ContractHelpers (findAnyAuthUtxo)
 import Contract.Address (scriptHashAddress)
 import Contract.Monad (liftContractM, liftedM)
 import Contract.PlutusData
@@ -105,7 +105,7 @@ modifyRacersStateContract modifyState = do
     red = Redeemer $ toData $ SetRacersState newState
     stateVal = uncurry Value.singleton (unwrap rp).stateToken one
 
-  (adminTxi /\ adminTxo) <- findAdminAuthUtxo >>=
+  (adminTxi /\ adminTxo) <- findAnyAuthUtxo >>=
     (lift <<< liftContractM "Could not find admin token in wallet")
 
   let

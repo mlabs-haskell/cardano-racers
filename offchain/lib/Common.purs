@@ -10,6 +10,7 @@ import CardanoRacers.Nitro.Contract (mkNitroPolicy)
 import CardanoRacers.RaceRegistry.Types (RegistryParams)
 import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
 import CardanoRacers.RaceSlot.Types (slotTokenName)
+import CardanoRacers.RacersState.Contract (modifyRacersStateContract)
 import Contract.Config
   ( ContractParams
   , NetworkId(TestnetId, MainnetId)
@@ -39,6 +40,7 @@ import Contract.Prim.ByteArray
   , RawBytes(RawBytes)
   , byteArrayToIntArray
   , hexToByteArray
+  , byteArrayToHex
   )
 import Contract.Scripts (mintingPolicyHash)
 import Contract.Value (TokenName, getTokenName, scriptCurrencySymbol)
@@ -318,3 +320,15 @@ createRegistryParams race = do
     , carAssetPolicyHash
     , nitroFee: fromJsBigInt race.nitroFee
     }
+
+setAssetPrices :: AssetPricesFFI -> Racers TransactionHashFFI
+setAssetPrices assetPricesFFI = do
+  let
+    assetPrices = wrap $
+      { common: fromJsBigInt assetPricesFFI.common
+      , rare: fromJsBigInt assetPricesFFI.rare
+      , epic: fromJsBigInt assetPricesFFI.epic
+      }
+  txh <- modifyRacersStateContract
+    (\cur -> wrap $ (unwrap cur) { assetPrices = assetPrices })
+  pure $ byteArrayToHex (unwrap txh)

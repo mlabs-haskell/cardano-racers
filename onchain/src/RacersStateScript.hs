@@ -5,7 +5,7 @@ module RacersStateScript (script) where
 
 import PlutusTx.Prelude
 
-import CommonTypes (RacersParams, RacersState, adminToken, stateToken)
+import CommonTypes (RacersParams, RacersState, adminToken, botToken, stateToken)
 import Ledger (Datum (getDatum))
 import Ledger.Value (assetClassValue, geq)
 import Plutonomy qualified (aggressiveOptimizerOptions, optimizeUPLCWith)
@@ -27,7 +27,8 @@ PlutusTx.unstableMakeIsData ''RacersStateRedeemer
 {-# INLINEABLE mkRacersStateValidator #-}
 mkRacersStateValidator :: RacersParams -> RacersStateRedeemer -> ScriptContext -> Bool
 mkRacersStateValidator nsp (SetRacersState ns) ctx =
-  traceIfFalse "Admin token not present" inputContainsAdminNft
+  ( traceIfFalse "Admin token not present" inputContainsAdminNft || 
+    traceIfFalse "Bot token not present" inputContainsBotNft)
     && traceIfFalse "game state invalid: " (setsRacersStateTo ns)
   where
     info :: TxInfo
@@ -38,6 +39,9 @@ mkRacersStateValidator nsp (SetRacersState ns) ctx =
 
     inputContainsAdminNft :: Bool
     inputContainsAdminNft = valueSpent info `geq` assetClassValue (adminToken nsp) 1
+
+    inputContainsBotNft :: Bool
+    inputContainsBotNft = valueSpent info `geq` assetClassValue (botToken nsp) 1
 
     outputsLockedByTheScript :: [(OutputDatum, Value)]
     outputsLockedByTheScript = scriptOutputsAt (ownHash ctx) info

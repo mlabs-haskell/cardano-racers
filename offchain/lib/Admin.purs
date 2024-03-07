@@ -44,7 +44,6 @@ import Type.Row (type (+))
 
 type Admin r =
   ( setNitroPrice :: EffectFn1 Lovelace (Promise TransactionHashFFI)
-  , setAssetPrices :: EffectFn1 AssetPricesFFI (Promise TransactionHashFFI)
   , setTreasuryAddress :: EffectFn1 String (Promise TransactionHashFFI)
   , setOperatingAddress :: EffectFn1 String (Promise TransactionHashFFI)
   | r
@@ -132,7 +131,6 @@ mkAdmin cp walletSpec rp =
     runA = runContract cfg <<< runRacers rp
   in
     { setNitroPrice: mkEffectFn1 $ fromAff <<< runA <<< setNitroPrice
-    , setAssetPrices: mkEffectFn1 $ fromAff <<< runA <<< setAssetPrices
     , setTreasuryAddress: mkEffectFn1 $ fromAff <<< runA <<< setTreasuryAddress
     , setOperatingAddress: mkEffectFn1 $ fromAff <<< runA <<<
         setOperatingAddress
@@ -142,18 +140,6 @@ setNitroPrice :: Lovelace -> Racers TransactionHashFFI
 setNitroPrice nitroPrice = (byteArrayToHex <<< unwrap) <$>
   modifyRacersStateContract
     (\cur -> wrap $ (unwrap cur) { nitroPrice = fromJsBigInt nitroPrice })
-
-setAssetPrices :: AssetPricesFFI -> Racers TransactionHashFFI
-setAssetPrices assetPricesFFI = do
-  let
-    assetPrices = wrap $
-      { common: fromJsBigInt assetPricesFFI.common
-      , rare: fromJsBigInt assetPricesFFI.rare
-      , epic: fromJsBigInt assetPricesFFI.epic
-      }
-  txh <- modifyRacersStateContract
-    (\cur -> wrap $ (unwrap cur) { assetPrices = assetPrices })
-  pure $ byteArrayToHex (unwrap txh)
 
 setTreasuryAddress :: String -> Racers TransactionHashFFI
 setTreasuryAddress addrStr = do
