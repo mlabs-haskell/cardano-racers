@@ -19,6 +19,7 @@ import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (validatorHash)
 import Contract.Test.Mote (TestPlanM)
+import Contract.Test.Assert (runChecks)
 import Contract.Test.Plutip
   ( InitialUTxOs
   , PlutipTest
@@ -40,6 +41,7 @@ import Racers (runRacers, withContract)
 import Test.CardanoRacers.Helpers
   ( createRacersParamsHelper
   , initRacersStateWithAdminAndTreasury
+  , fractionOfExUnitsCheck
   )
 import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
 
@@ -90,7 +92,7 @@ suite = group "RacersState script:" do
               _ <- RacersState.modifyRacersStateContract $ const newState
               updatedRacersState /\ _ <- RacersState.queryRacersState
               newState `shouldEqual` updatedRacersState
-    test "Attempt to change RacersState fails without admin token" do
+    test "Modify RacersState witho bot NFT" do
       withWallets (walletUtxoDistr /\ walletUtxoDistr) \(admin /\ eve) -> do
         rpBeforeUpdate <- withKeyWallet admin createRacersParamsHelper
         botTk <- withKeyWallet eve $ mintBotNftHelper
@@ -144,8 +146,9 @@ suite = group "RacersState script:" do
               constraints' = Constraints.mustSpendPubKeyOutput botTxi
                 <> constraints
               lookups' = lookups <> Lookups.unspentOutputs ownUtxos
+              assertions = [ fractionOfExUnitsCheck 0.75 ]
 
-            resE' <- try $ lift $ submitTxFromConstraints lookups' constraints'
+            resE' <- try $ lift $ runChecks assertions $ lift $ submitTxFromConstraints lookups' constraints'
             resE' `shouldSatisfy` isLeft
   where
   walletUtxoDistr :: InitialUTxOs
