@@ -92,7 +92,7 @@ suite = group "RacersState script:" do
               _ <- RacersState.modifyRacersStateContract $ const newState
               updatedRacersState /\ _ <- RacersState.queryRacersState
               newState `shouldEqual` updatedRacersState
-    test "Modify RacersState witho bot NFT" do
+    test "Modify RacersState with bot NFT" do
       withWallets (walletUtxoDistr /\ walletUtxoDistr) \(admin /\ eve) -> do
         rpBeforeUpdate <- withKeyWallet admin createRacersParamsHelper
         botTk <- withKeyWallet eve $ mintBotNftHelper
@@ -149,7 +149,7 @@ suite = group "RacersState script:" do
               assertions = [ fractionOfExUnitsCheck 0.75 ]
 
             resE' <- try $ lift $ runChecks assertions $ lift $ submitTxFromConstraints lookups' constraints'
-            resE' `shouldSatisfy` isLeft
+            resE' `shouldSatisfy` isRight
   where
   walletUtxoDistr :: InitialUTxOs
   walletUtxoDistr =

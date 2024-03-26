@@ -26,7 +26,6 @@ import Contract.Test.Assert
   ( checkGainAtAddress'
   , checkTokenGainAtAddress'
   , checkTokenLossAtAddress'
-  , checkExUnitsNotExceed
   , label
   , runChecks
   )
@@ -51,10 +50,10 @@ import Contract.Wallet (getWalletAddresses, getWalletUtxos)
 import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
-import Data.BigInt (fromInt, toNumber, fromNumber, fromString) as BigInt
+import Data.BigInt (fromInt, toNumber) as BigInt
 import Data.Int (ceil)
 import Data.Map (singleton, toUnfoldable) as Map
-import Mote (group, test, only)
+import Mote (group, test)
 import Racers (runRacers, withContract)
 import Test.CardanoRacers.Helpers
   ( createRacersParamsHelper
@@ -62,7 +61,6 @@ import Test.CardanoRacers.Helpers
   , fractionOfExUnitsCheck
   )
 import Test.Spec.Assertions (shouldSatisfy)
-import Partial.Unsafe (unsafePartial)
 
 suite :: TestPlanM PlutipTest Unit
 suite = group "NitroToken script" do
