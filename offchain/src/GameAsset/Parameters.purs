@@ -33,23 +33,34 @@ chooseUpperExclusive x y = choose x y >>= \n ->
   if n == y then chooseUpperExclusive x y else pure n
 
 generateUniformParameters :: Seed -> Rarity -> Array Int
-generateUniformParameters seed r = flip evalGen { newSeed: seed, size: 1 }
-  $ chooseInt (rarityMinRequirement r) maxTotalScore
-  >>= splitXTimes 2
-  where
-  maxTotalScore = parameterCount * maxParameterScore
+generateUniformParameters seed r = flip evalGen { newSeed: seed, size: 1} $ do
+  let maxTotalScore = parameterCount * maxParameterScore
+      initialParams = [1,1,1,1]
+      adjustedMaxTotalScore = maxTotalScore - sum initialParams
 
-  splitXTimes :: Int -> Int -> Gen (Array Int)
-  splitXTimes 0 n = pure [ n ]
-  splitXTimes level n = do
-    -- to ensure that every attribute has a minimum value of 1, random pivot
-    -- ranges from 2 ^ (level - 1) to n - 2 ^ (level - 1)
-    let
-      splitRandom :: Gen (Int /\ Int)
-      splitRandom = chooseInt (2 `pow` (level - 1)) (n - 2 `pow` (level - 1))
-        >>= \pivot -> pure $ pivot /\ (n - pivot)
-    (pivot /\ rest) <- splitRandom
-    lift2 (<>) (splitXTimes (level - 1) pivot) (splitXTimes (level - 1) rest)
+      singleDistrPass :: Int -> Array Int -> Gen (Int /\ Array Int)
+      singleDistrPass 0 params = pure (0 /\ params)
+      singleDistrPass rem params = case Array.uncons params of
+          Nothing -> pure (rem /\ [])
+          Just {head: p, tail: ps} ->
+            let room = maxParameterScore - p
+            in if room == 0
+              then do
+                (rem /\ ps') <- singleDistrPass rem ps
+                pure (rem /\ Array.cons p ps')
+              else do
+                scoreAdded <- chooseInt 1 (min room rem)
+                (rem /\ ps') <- singleDistrPass (rem - scoreAdded) ps
+                pure (rem /\ Array.cons (scoreAdded + p) ps')
+
+      distribute :: Int -> Array Int -> Gen (Array Int)
+      distribute 0 params = pure params
+      distribute rem params = do
+        (rem /\ params') <- singleDistrPass rem params
+        distribute rem params'
+
+  total <- chooseInt (rarityMinRequirement r) adjustedMaxTotalScore
+  distribute total initialParams
 
 generateGaussianParameters :: Seed -> Rarity -> (Array Int)
 generateGaussianParameters seed rarity = flip evalGen { newSeed: seed, size: 1 }
@@ -79,3 +90,4 @@ gaussianRandomGen mean std = do
   pure $ Math.abs $ mean + std * z
   where
   randomUnitInterval = chooseUpperExclusive 0.0 1.0
+

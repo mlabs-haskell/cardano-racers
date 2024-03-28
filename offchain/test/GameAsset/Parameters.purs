@@ -33,6 +33,11 @@ suite = group "Parameters" do
     $ quickCheckGen' 10000
     $ all (_ > 0)
     <$> paramsGen
+  test "All params have value less than 10000" 
+    $ liftEffect
+    $ quickCheckGen' 10000
+    $ all (_ <= 10000)
+    <$> paramsGen
   test "Common params have combined score of >= 4" do
     liftEffect $ quickCheckGen' 10000 $ sum
       >>> lift2 (&&)
@@ -51,3 +56,4 @@ suite = group "Parameters" do
         (_ >= 20000)
         (_ <= 40000)
       <$> paramsByRarityGen Epic
+
