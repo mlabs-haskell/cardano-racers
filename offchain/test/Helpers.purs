@@ -23,10 +23,10 @@ import Racers (Racers, withContract)
 import Partial.Unsafe (unsafePartial)
 
 fractionOfExUnitsCheck :: forall (a :: Type). Number -> ContractCheck a
-fractionOfExUnitsCheck ratio' = 
+fractionOfExUnitsCheck ratio = 
   let maxExUnits = {mem: BigInt.fromInt 14, steps: BigInt.fromInt 10000}
       mult = BigInt.toNumber $ BigInt.fromInt 1000000
-      ratio = 1.0
+      -- ratio = ratio'
   in checkExUnitsNotExceed 
      { mem: unsafePartial $ fromJust $ BigInt.fromNumber (BigInt.toNumber maxExUnits.mem * ratio * mult)
      , steps: unsafePartial $ fromJust $ BigInt.fromNumber (BigInt.toNumber maxExUnits.steps * ratio * mult)
