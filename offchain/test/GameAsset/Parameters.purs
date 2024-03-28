@@ -56,4 +56,3 @@ suite = group "Parameters" do
         (_ >= 20000)
         (_ <= 40000)
       <$> paramsByRarityGen Epic
-
