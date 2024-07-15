@@ -54,7 +54,7 @@ import Contract.Scripts
   , mintingPolicyHash
   , validatorHash
   )
-import Contract.Test.Assert (checkTokenGainAtAddress', label, runChecks)
+import Contract.Test.Assert (ContractCheck, checkTokenGainAtAddress', label, runChecks)
 import Contract.Test.Mote (TestPlanM)
 import Contract.Test.Plutip
   ( InitialUTxOs
@@ -98,6 +98,7 @@ import Racers (Racers, runRacers, withContract)
 import Test.CardanoRacers.Helpers
   ( createRacersParamsHelper
   , initRacersStateWithAdminAndTreasury
+  , fractionOfExUnitsCheck
   )
 import Test.Spec.Assertions (shouldSatisfy)
 
@@ -147,13 +148,15 @@ suite = group "Race Registry" do
             <$> mkRaceRegistryScript rgp
 
           let
-            assertions = checkTokenGainAtAddress'
-              (label registryScriptAddress "RaceRegistry Address")
-              (slotSymbol /\ slotTokenName /\ (BigInt.fromInt slots))
+            assertions = [ checkTokenGainAtAddress' 
+                            (label registryScriptAddress "RaceRegistry Address")
+                            (slotSymbol /\ slotTokenName /\ (BigInt.fromInt slots))
+                         , fractionOfExUnitsCheck 0.85
+                         ]
 
           _ <-
             withContract
-              (runChecks [ assertions ] <<< lift <<< withKeyWallet adminKey) $
+              (runChecks assertions <<< lift <<< withKeyWallet adminKey) $
               initRace raceHash nitroFee slots utxoCount
 
           pure unit
@@ -185,7 +188,11 @@ suite = group "Race Registry" do
               $ ownPubKeyHashes
               <#> Array.head
 
-            _ <- registerInRaceWithFirstAvailableSlot rgp firstPkh
+            let assertions = [ fractionOfExUnitsCheck 0.50 
+                             ]
+
+            _ <- withContract (runChecks assertions <<< lift) $ 
+                   registerInRaceWithFirstAvailableSlot rgp firstPkh
 
             -- Check if the user is registered with the correct assets
             us <- queryRegistryUtxos rgp
@@ -270,6 +277,9 @@ suite = group "Race Registry" do
                 c <- _.tokenName <$> find ((_ == CarType) <<< _.assetType)
                   mintedAssets
                 pure $ c /\ d
+            
+            let assertions = [ fractionOfExUnitsCheck 0.75 
+                             ]
 
             (slotTxi /\ _) <-
               withContract
@@ -277,13 +287,13 @@ suite = group "Race Registry" do
                 $
                   findUtxoWithAvailableSlotToken rgp
             -- Register in the race
-            _ <- registerPositionInRace rgp firstPkh slotTxi
+            _ <- withContract (runChecks assertions <<< lift) $ registerPositionInRace rgp firstPkh slotTxi
 
             let
               raceParticipant = wrap
                 { car: carTk, driver: driverTk, payoutAddress: firstAddr }
             -- Confirm participating assets
-            _ <- confirmAssetSelection rgp firstPkh raceParticipant
+            _ <- withContract (runChecks assertions  <<<  lift) $ confirmAssetSelection rgp firstPkh raceParticipant
 
             -- Check if the user is registered with the correct assets
             us <- queryRegistryUtxos rgp
@@ -654,10 +664,14 @@ suite = group "Race Registry" do
 
     counterRef <- liftEffect $ Ref.new 0
 
-    _ <- withContract (withKeyWallet userKey) do
+    let assertions :: forall a. Array (ContractCheck a)
+        assertions = [ fractionOfExUnitsCheck 0.85
+                     ]
+
+    _ <- withContract (runChecks assertions <<< lift <<< withKeyWallet userKey) do
       traverse_ requestAssetByRarity requests
 
-    assets <- withContract (withKeyWallet adminKey) $
+    assets <- withContract (runChecks assertions <<< lift <<< withKeyWallet adminKey) $
       consumeAndRedeemRequests
         5
         Nothing

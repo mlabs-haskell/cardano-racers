@@ -45,6 +45,7 @@ import Racers (Racers, runRacers, withContract)
 import Test.CardanoRacers.Helpers
   ( createRacersParamsHelper
   , initRacersStateWithAdminAndTreasury
+  , fractionOfExUnitsCheck
   )
 
 suite :: TestPlanM PlutipTest Unit
@@ -149,7 +150,8 @@ suite = group "Deposit" do
               pure $ checkTokenGainAtAddress' (label userAddress "User")
                 (gameAssetSymbol /\ tkName /\ BigInt.fromInt 1)
 
-            withContract (runChecks assertions <<< lift) $
+            withContract (runChecks (assertions <> [fractionOfExUnitsCheck 0.80]) <<< lift) $
+            -- withContract (runChecks (assertions <> []) <<< lift) $
               retryCount
                 ( consumeAndRedeemRequests 2 Nothing availableAssets
                     (const $ pure uniquenessNonce)

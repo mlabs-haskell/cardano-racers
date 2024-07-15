@@ -24,6 +24,7 @@ import Test.CardanoRacers.Nitro.Contract (suite) as Nitro
 import Test.CardanoRacers.RaceRegistry (suite) as RaceRegistry
 import Test.CardanoRacers.RacersState.Contract (suite) as RacersState
 import Test.Spec.Runner (defaultConfig)
+import Mote (only)
 
 -- Run with `npm run test`
 main :: Effect Unit

@@ -58,6 +58,7 @@ import Racers (runRacers, withContract)
 import Test.CardanoRacers.Helpers
   ( createRacersParamsHelper
   , initRacersStateWithAdminAndTreasury
+  , fractionOfExUnitsCheck
   )
 import Test.Spec.Assertions (shouldSatisfy)
 
@@ -84,6 +85,7 @@ suite = group "NitroToken script" do
                           ( nitroSymbol /\ nitroToken /\
                               amountToMint
                           )
+                      , fractionOfExUnitsCheck 0.75
                       ] <<< lift
                   )
               $ Nitro.adminMintsNitroContract amountToMint
@@ -113,6 +115,7 @@ suite = group "NitroToken script" do
                           ( nitroSymbol /\ nitroToken /\
                               amountToMint
                           )
+                      , fractionOfExUnitsCheck 0.75
                       ] <<< lift
                   )
               $ Nitro.botMintsNitroContract amountToMint
@@ -161,6 +164,7 @@ suite = group "NitroToken script" do
                 [ checkTokenLossAtAddress' (label userAddress "User")
                     ( nitroSymbol /\ nitroToken /\ BigInt.fromInt 50
                     )
+                , fractionOfExUnitsCheck 0.75
                 ]
             $ lift
             $ mintContract
@@ -205,6 +209,7 @@ suite = group "NitroToken script" do
                       amountToOperating
                   , checkTokenGainAtAddress' (label bobAddress "Bob")
                       (nitroSymbol /\ nitroToken /\ amountToBuy)
+                  , fractionOfExUnitsCheck 0.75
                   ]
 
               void $ withContract (runChecks assertions <<< lift) $
@@ -236,6 +241,7 @@ suite = group "NitroToken script" do
                 totalAmount = (unwrap ns).nitroPrice * nitroAmount
                 -- Bad treausry
                 treasuryAmt = BigInt.fromInt <<< ceil
+
                   $ BigInt.toNumber totalAmount
                   * 0.74
                 operatingAmt = BigInt.fromInt <<< ceil

@@ -50,6 +50,7 @@ import Racers (runRacers, withContract)
 import Test.CardanoRacers.Helpers
   ( createRacersParamsHelper
   , initRacersStateWithAdminAndTreasury
+  , fractionOfExUnitsCheck
   )
 import Test.Spec.Assertions (shouldSatisfy)
 
@@ -104,6 +105,7 @@ suite = group "AssetRequest" do
                       amountToOperating
                   , checkTokenGainAtAddress' (label depositAddress "Deposit")
                       (assetRequestCs /\ assetRequestTokenName /\ one)
+                  , fractionOfExUnitsCheck 0.75
                   ]
 
               withContract (runChecks assertions <<< lift) $
