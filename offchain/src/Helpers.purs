@@ -3,7 +3,6 @@ module CardanoRacers.Helpers
   , counterNonce
   , decodeWrappedAeson
   , paysToAddrConstraint
-  , getTxoWithRefScrpt
   , decodeAesonString
   ) where
 
@@ -35,22 +34,6 @@ import Foreign.Object (singleton)
 
 wrapEncodeAeson :: forall (a :: Type). EncodeAeson a => String -> a -> Aeson
 wrapEncodeAeson constr = encodeAeson <<< singleton constr <<< encodeAeson
-
-getTxoWithRefScrpt
-  :: TransactionInput -> Contract TransactionOutputWithRefScript
-getTxoWithRefScrpt scriptRefIn = do
-  -- Need to use internal functions here to get
-  -- a TransactionOutputWithRefScript
-  -- otherwise, getUtxo uses toPlutusTxOutput which drops the script ref
-  -- and attaches a script ref hash
-  queryHandle <- getQueryHandle
-  txo <- liftedM "could not get script ref from txin" $ liftedE $ liftAff
-    $ queryHandle.getUtxoByOref scriptRefIn
-  txoWithScriptRef <-
-    liftContractM
-      "could not convert TransactionOutput to TransactionOutputWithScriptRef"
-      $ toPlutusTxOutputWithRefScript txo
-  pure txoWithScriptRef
 
 counterNonce :: Ref Int -> Effect String
 counterNonce ref = do

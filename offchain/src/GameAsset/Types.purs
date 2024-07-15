@@ -53,15 +53,15 @@ import Contract.Value
   , mpsSymbol
   )
 import Control.Alt ((<|>))
-import Ctl.Internal.Metadata.Cip25.Cip25String
+import Ctl.Internal.Metadata.Cip25.Cip25String -- should be copy pasted
   ( fromMetadataString
   , toMetadataString
   )
-import Ctl.Internal.Metadata.FromMetadata (class FromMetadata, fromMetadata)
-import Ctl.Internal.Metadata.Helpers (lookupMetadata)
-import Ctl.Internal.Metadata.MetadataType (class MetadataType)
-import Ctl.Internal.Metadata.ToMetadata (class ToMetadata, toMetadata)
-import Ctl.Internal.Serialization.Hash (scriptHashFromBytes, scriptHashToBytes)
+import Cardano.FromMetadata (class FromMetadata, fromMetadata)
+import Ctl.Internal.Metadata.Helpers (lookupMetadata) -- pure function, copy paste
+import Ctl.Internal.Metadata.MetadataType (class MetadataType) -- no need to use this machinery
+import Cardano.ToMetadata (class ToMetadata, toMetadata)
+import Ctl.Internal.Serialization.Hash (scriptHashFromBytes, scriptHashToBytes) -- decodeCbor...
 import Data.Array (catMaybes, concat)
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt

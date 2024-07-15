@@ -65,7 +65,7 @@ import Contract.Wallet.Key
 import Control.Alt ((<|>))
 import Control.Monad.Error.Class (liftMaybe)
 import Control.Monad.Except.Trans (ExceptT, mapExceptT, runExceptT)
-import Ctl.Internal.Serialization.Types (PrivateKey)
+import Cardano.Types (PrivateKey)
 import Data.ArrayBuffer.Types (Uint8Array)
 import Data.Bifunctor (lmap)
 import Data.BigInt (BigInt)

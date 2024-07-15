@@ -17,8 +17,8 @@ import Contract.Credential (Credential(PubKeyCredential))
 import Contract.Prim.ByteArray (hexToByteArrayUnsafe)
 import Contract.Test.Mote (TestPlanM)
 import Contract.Value (mkCurrencySymbol, mkTokenName)
-import Ctl.Internal.Plutus.Types.Address (Address(Address))
-import Ctl.Internal.Serialization.Hash (ed25519KeyHashFromBech32)
+import Cardano.Types.Address (Address)
+import Cardano.Types.Ed25519KeyHash as Ed25519KeyHash
 import Data.Bifunctor (lmap)
 import Data.BigInt (fromInt) as BigInt
 import Effect.Aff (error)
@@ -86,7 +86,7 @@ nitroStateFixture =
     treasuryAddress =
       Address
         { addressCredential: PubKeyCredential
-            ( PubKeyHash $ unsafePartial $ fromJust $ ed25519KeyHashFromBech32
+            ( PubKeyHash $ unsafePartial $ fromJust $ Ed25519KeyHash.fromBech32
                 "addr_vkh1zuctrdcq6ctd29242w8g84nlz0q38t2lnv3zzfcrfqktx0c9tzp"
             )
         , addressStakingCredential: Nothing

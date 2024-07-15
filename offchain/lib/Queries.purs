@@ -14,7 +14,7 @@ import CardanoRacers.RaceRegistry.Types
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Address (addressToBech32)
-import Contract.AssocMap as PlutusMap
+import Cardano.Plutus.Types.Map as PlutusMap
 import Contract.Config (ContractParams, WalletSpec)
 import Contract.Monad (liftContractM, liftedM, runContract)
 import Contract.Prim.ByteArray (rawBytesToHex)
