@@ -295,11 +295,23 @@ let
 
     "cardano-transaction-lib" = pkgs.stdenv.mkDerivation {
         name = "cardano-transaction-lib";
-        version = "c1ff6245fbb5a7ce835c0100b2fc2ee01a0024b6";
+        version = "2c8e8fb75c6820e51b955ce3f7e2f5ac2446822e";
         src = pkgs.fetchgit {
           url = "https://github.com/Plutonomicon/cardano-transaction-lib.git";
-          rev = "c1ff6245fbb5a7ce835c0100b2fc2ee01a0024b6";
-          sha256 = "1qzc4wwmci5q3ysqjjwfa0x2vxli5p67hvar6gpmiqlawk89mfmi";
+          rev = "2c8e8fb75c6820e51b955ce3f7e2f5ac2446822e";
+          sha256 = "1rbpqvk14mzhqg191klbn2fb7a3zk8nck0if9zlj4f952d7pvnhn";
+        };
+        phases = "installPhase";
+        installPhase = "ln -s $src $out";
+      };
+
+    "cardano-types" = pkgs.stdenv.mkDerivation {
+        name = "cardano-types";
+        version = "v1.0.1";
+        src = pkgs.fetchgit {
+          url = "https://github.com/mlabs-haskell/purescript-cardano-types";
+          rev = "715d4b2dcf8b29cb45001209ee562f758a513261";
+          sha256 = "1xcrdmpwd3qcdiyjfrj0z2dh56l4z1s97r25b6nhlqwmwz7qz19z";
         };
         phases = "installPhase";
         installPhase = "ln -s $src $out";

@@ -1,7 +1,7 @@
 {
   inputs = {
-    plutip.url = github:mlabs-haskell/plutip/8364c43ac6bc9ea140412af9a23c691adf67a18b;
-    cardano-transaction-lib.url = github:Plutonomicon/cardano-transaction-lib/c1ff6245fbb5a7ce835c0100b2fc2ee01a0024b6;
+    plutip.url = github:mlabs-haskell/plutip?ref=gergely/version-bump;
+    cardano-transaction-lib.url = github:Plutonomicon/cardano-transaction-lib/2c8e8fb75c6820e51b955ce3f7e2f5ac2446822e;
     nixpkgs.follows = "cardano-transaction-lib/nixpkgs";
     plutonomy = {
       url = github:well-typed/plutonomy/6c01302ba8cf3be4f71617e106cd5ef7ed10fc63;
