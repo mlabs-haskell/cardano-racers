@@ -28,6 +28,7 @@ import Contract.Config
       , ConnectToLode
       , ConnectToLace
       , ConnectToNuFi
+      , ConnectToVespr
       )
   , mkBlockfrostBackendParams
   , mkCtlBackendParams
@@ -53,6 +54,7 @@ import Contract.Wallet
       , GeroWallet
       , FlintWallet
       , LaceWallet
+      , VesprWallet
       )
   )
 import Contract.Wallet.Key
@@ -259,6 +261,7 @@ walletSpec =
       , "Eternl" /\ ConnectToEternl
       , "LodeWallet" /\ ConnectToLode
       , "Lace" /\ ConnectToLace
+      , "Vespr" /\ ConnectToVespr
       , "NuFi" /\ ConnectToNuFi
       ]
 
@@ -282,6 +285,7 @@ walletExtensionFromString name = case name of
   "LodeWallet" -> Just LodeWallet
   "nufi" -> Just NuFiWallet
   "lace" -> Just LaceWallet
+  "vespr" -> Just VesprWallet
   _ -> Nothing
 
 assetTypeFromString :: String -> Maybe GameAssetType

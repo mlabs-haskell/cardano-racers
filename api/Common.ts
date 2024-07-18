@@ -70,6 +70,7 @@ type MkWalletSpec = {
     connectToEternl: () => WalletSpec;
     connectToLodeWallet: () => WalletSpec;
     connectToLace: () => WalletSpec;
+    connectToVespr: () => WalletSpec;
     connectToNuFi: () => WalletSpec;
   };
 };
