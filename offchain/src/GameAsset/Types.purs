@@ -42,7 +42,7 @@ import Contract.PlutusData
   , genericFromData
   , genericToData
   )
-import Contract.Prim.ByteArray (byteArrayToHex, hexToByteArray, rawBytesToHex)
+import Contract.Prim.ByteArray (ByteArray)
 import Contract.Scripts (MintingPolicyHash)
 import Contract.Value
   ( CurrencySymbol
@@ -66,7 +66,8 @@ import Data.Array (catMaybes, concat)
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.Function (on)
-import Data.Map (toUnfoldable) as Map
+import Data.Map as Map
+import Data.Profunctor.Strong ((***))
 
 type AssetOption =
   { name :: Cip25String
@@ -413,18 +414,18 @@ newtype GameAssetNftMetadataEntry = GameAssetNftMetadataEntry
 derive instance Newtype GameAssetNftMetadataEntry _
 
 gameAssetMetadataEntryToKeyValue
-  :: GameAssetNftMetadataEntry -> Array (String /\ TransactionMetadatum)
+  :: GameAssetNftMetadataEntry -> Array (ByteArray /\ TransactionMetadatum)
 gameAssetMetadataEntryToKeyValue
   (GameAssetNftMetadataEntry { asset: GameAsset asset, assetClass }) =
   policyEntry
   where
   policyEntry =
-    [ ( rawBytesToHex $ scriptHashToBytes $ unwrap $ currencyMPSHash
+    [ ( unwrap $ scriptHashToBytes $ unwrap $ currencyMPSHash
           (fst assetClass)
       ) /\ toMetadata assetEntry
     ]
   assetEntry =
-    [ (byteArrayToHex $ getTokenName $ snd assetClass) /\ toMetadata dataEntry
+    [ (getTokenName $ snd assetClass) /\ toMetadata dataEntry
     ]
   dataEntry =
     [ "name" /\ toMetadata (asset.name)
@@ -512,7 +513,9 @@ instance ToMetadata GameAssetNftMetadata where
       policyEntries = concat $ gameAssetMetadataEntryToKeyValue <$> ganmes
       versionEntry = [ "version" /\ toMetadata (BigInt.fromInt 2) ]
     in
-      policyEntries <> versionEntry
+      MetadataMap $ Map.union
+        (Map.fromFoldable $ (toMetadata *** toMetadata) <$> policyEntries)
+        (Map.fromFoldable $ (toMetadata *** toMetadata) <$> versionEntry)
 
 instance FromMetadata GameAssetNftMetadata where
   fromMetadata (MetadataMap mp1) = do
@@ -530,12 +533,12 @@ instance FromMetadata GameAssetNftMetadata where
                      contents
                  ) -> join $ gameAssetMetadataEntryFromMetadata
                   <$>
-                    ( map wrap <<< scriptHashFromBytes <=< hexToByteArray
+                    ( map wrap <<< scriptHashFromBytes
                         <=< fromMetadata
                         $ policy
                     )
                   <*>
-                    ( map wrap <<< mkTokenName <=< hexToByteArray
+                    ( map wrap <<< mkTokenName
                         <=< fromMetadata
                         $ assetName
                     )
