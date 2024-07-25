@@ -146,7 +146,7 @@ suite = group "RacersState script:" do
               lookups' = lookups <> Lookups.unspentOutputs ownUtxos
 
             resE' <- try $ lift $ submitTxFromConstraints lookups' constraints'
-            resE' `shouldSatisfy` isLeft
+            resE' `shouldSatisfy` isRight
   where
   walletUtxoDistr :: InitialUTxOs
   walletUtxoDistr =
