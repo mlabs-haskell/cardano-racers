@@ -9,37 +9,33 @@ module CardanoRacers.RacersState.Contract
 
 import Contract.Prelude
 
+import Cardano.Plutus.ApplyArgs (applyArgs)
+import Cardano.Plutus.Types.Address (Address, scriptHashAddress, toCardano)
+import Cardano.Plutus.Types.TransactionOutputWithRefScript
+  ( TransactionOutputWithRefScript
+  )
+import Cardano.Plutus.Types.Validator (Validator(Validator))
 import CardanoRacers.RacersState.Types
   ( RacersState
   , RacersStateRedeemer(SetRacersState)
   )
 import CardanoRacers.ScriptsFFI (racersStateValidatorScript)
 import Common.ContractHelpers (findAnyAuthUtxo)
-import Contract.Address (scriptHashAddress)
 import Contract.Monad (liftContractM, liftedM)
 import Contract.PlutusData
-  ( Datum(Datum)
-  , OutputDatum(OutputDatum)
+  ( OutputDatum(OutputDatum)
   , PlutusData
-  , Redeemer(Redeemer)
   , fromData
   , toData
   , unitDatum
   )
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts
-  ( PlutusScript
-  , ScriptHash
-  , Validator(Validator)
-  , applyArgs
-  , validatorHash
-  )
-import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
+import Contract.Scripts (PlutusScript, ScriptHash, validatorHash)
+import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptFromEnvelope)
 import Contract.Transaction
   ( ScriptRef(PlutusScriptRef)
   , TransactionHash
   , TransactionInput
-  , TransactionOutputWithRefScript
   , awaitTxConfirmed
   , submitTxFromConstraints
   )
@@ -70,7 +66,7 @@ initRacersStateContract ns = do
   racersVal <- mkRacersStateValidator
   rp <- asks _.params
   let
-    datum = Datum $ toData ns
+    datum = toData ns
     stateVal = uncurry Value.singleton (unwrap rp).stateToken one
 
     constraints :: Constraints.TxConstraints Void Void
@@ -101,8 +97,8 @@ modifyRacersStateContract modifyState = do
   let
     newState = modifyState oldState
     vhash = validatorHash racersVal
-    datum = Datum $ toData $ newState
-    red = Redeemer $ toData $ SetRacersState newState
+    datum = toData $ newState
+    red = toData $ SetRacersState newState
     stateVal = uncurry Value.singleton (unwrap rp).stateToken one
 
   (adminTxi /\ adminTxo) <- findAnyAuthUtxo >>=
@@ -189,7 +185,10 @@ queryRacersRefScriptOutput
   -> Racers (Maybe (TransactionInput /\ TransactionOutputWithRefScript))
 queryRacersRefScriptOutput targetScriptHash = do
   stateValidator <- mkRacersStateValidator
-  let stateAddress = scriptHashAddress (validatorHash stateValidator) Nothing
+  let
+    (stateAddress :: Address) = scriptHashAddress (unwrap stateValidator)
+      Nothing
+  cardanoStateAddress <- toCardano stateAddress
   utxos <- lift $ utxosAt stateAddress
   pure $ findMatchingScriptHash utxos
   where
@@ -212,7 +211,7 @@ mkRacersStateValidator = do
   params <- asks _.params
   v2script <- lift $ liftContractM "Could not decode applied script" do
     envelope <- decodeTextEnvelope racersStateValidatorScript
-    plutusScriptV2FromEnvelope envelope
+    plutusScriptFromEnvelope envelope
   appliedScript <- liftEither $ left (error <<< show) $ applyArgs v2script
     $ Array.singleton
     $ toData params

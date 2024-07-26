@@ -3,6 +3,8 @@ module Lib.CardanoRacers.Queries where
 import Contract.Prelude
 
 import Aeson (Aeson, encodeAeson)
+import Cardano.Plutus.Types.Map as PlutusMap
+import Cardano.Types.Ed25519KeyHash as Ed25519KeyHash
 import CardanoRacers.Common.Types (RacersParams, nitroToken)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types (GameAssetType(CarType, DriverType))
@@ -14,7 +16,6 @@ import CardanoRacers.RaceRegistry.Types
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Address (addressToBech32)
-import Cardano.Plutus.Types.Map as PlutusMap
 import Contract.Config (ContractParams, WalletSpec)
 import Contract.Monad (liftContractM, liftedM, runContract)
 import Contract.Prim.ByteArray (rawBytesToHex)
@@ -28,7 +29,6 @@ import Contract.Wallet
   )
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff)
-import Ctl.Internal.Serialization.Hash (ed25519KeyHashToBytes)
 import Data.Array (concat, head) as Array
 import Data.Map (toUnfoldable) as Map
 import Data.Maybe (fromMaybe)
@@ -115,16 +115,16 @@ getOperatingAddress = queryRacersState
 
 registryEntryToAeson :: RegistryEntry -> Racers Aeson
 registryEntryToAeson (PendingSelection pkh) = pure $ encodeAeson
-    { "registered": rawBytesToHex $ ed25519KeyHashToBytes (unwrap pkh) }
+  { "registered": rawBytesToHex $ ed25519KeyHashToBytes (unwrap pkh) }
 registryEntryToAeson (AssetSelection par) =
-    lift (addressToBech32 (unwrap par).payoutAddress) <#> \addrStr ->
-      encodeAeson
-        { "assetSelection":
-            { "car": tokenNameToString (unwrap par).car
-            , "driver": tokenNameToString (unwrap par).driver
-            , "address": addrStr
-            }
-        }
+  lift (addressToBech32 (unwrap par).payoutAddress) <#> \addrStr ->
+    encodeAeson
+      { "assetSelection":
+          { "car": tokenNameToString (unwrap par).car
+          , "driver": tokenNameToString (unwrap par).driver
+          , "address": addrStr
+          }
+      }
 
 queryRaceRegistry :: Race -> Racers (Array Aeson)
 queryRaceRegistry race = do

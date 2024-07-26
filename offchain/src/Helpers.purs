@@ -18,16 +18,11 @@ import Aeson
   , encodeAeson
   , getField
   )
-import Contract.Address (Address)
-import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
-import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
-import Contract.PlutusData (unitDatum)
-import Contract.Transaction (TransactionInput, TransactionOutputWithRefScript)
+import Cardano.Plutus.Types.Credential (Credential(..))
+import Cardano.Types.PlutusData (unit) as PlutusData
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
 import Contract.Value (Value)
-import Ctl.Internal.Contract.Monad (getQueryHandle)
-import Ctl.Internal.Plutus.Conversion (toPlutusTxOutputWithRefScript)
 import Effect.Ref (Ref)
 import Effect.Ref (read, write) as Ref
 import Foreign.Object (singleton)
@@ -67,9 +62,9 @@ decodeAesonString str f aes = decodeAeson aes >>=
   )
 
 paysToAddrConstraint
-  :: Address -> Value -> Constraints.TxConstraints Void Void
-paysToAddrConstraint a v = case (unwrap a).addressCredential of
+  :: Credential -> Value -> Constraints.TxConstraints
+paysToAddrConstraint cred v = case cred of
   PubKeyCredential pkh ->
-    Constraints.mustPayToPubKey (wrap pkh) v
+    Constraints.mustPayToPubKey (wrap $ unwrap pkh) v
   ScriptCredential vh ->
-    Constraints.mustPayToScript vh unitDatum DatumWitness v
+    Constraints.mustPayToScript (unwrap vh) PlutusData.unit DatumWitness v

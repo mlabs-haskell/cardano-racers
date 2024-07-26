@@ -3,6 +3,9 @@ module CardanoRacers.Common.Types (RacersParams(RacersParams), nitroToken) where
 import Contract.Prelude
 
 import Aeson (class DecodeAeson, class EncodeAeson, (.:))
+import Cardano.Plutus.DataSchema (Z)
+import Cardano.Plutus.Types.CurrencySymbol (CurrencySymbol)
+import Cardano.Plutus.Types.TokenName (TokenName, mkTokenName)
 import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
 import Contract.PlutusData
   ( class FromData
@@ -13,12 +16,10 @@ import Contract.PlutusData
   , type (@@)
   , I
   , PNil
-  , Z
   , genericFromData
   , genericToData
   )
 import Contract.Prim.ByteArray (byteArrayFromAscii)
-import Contract.Value (CurrencySymbol, TokenName, mkTokenName)
 import Partial.Unsafe (unsafePartial)
 
 -- | Game parameters that uniquely identify an instance of the game.
