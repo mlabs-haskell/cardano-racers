@@ -1,4 +1,4 @@
 const bigInt = require('big-integer');
 
-exports.fromJsBigInt = (jsBigInt) => bigInt(jsBigInt);
-exports.toJsBigInt = (bigInt) => BigInt(bigInt.toString());
+export const fromJsBigInt = (jsBigInt) => bigInt(jsBigInt);
+export const toJsBigInt = (bigInt) => BigInt(bigInt.toString());

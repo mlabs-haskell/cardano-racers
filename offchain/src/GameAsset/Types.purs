@@ -29,7 +29,8 @@ import Cardano.Types.AssetName (unAssetName)
 import Cardano.Types.BigNum as BigNum
 import Cardano.Types.Int as Int
 import Cardano.Types.TransactionMetadatum
-  (TransactionMetadatum(Int, Map)) as TxMetadatum
+  ( TransactionMetadatum(Int, Map)
+  ) as TxMetadatum
 import CardanoRacers.Helpers
   ( decodeAesonString
   , decodeWrappedAeson

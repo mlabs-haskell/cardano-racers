@@ -18,7 +18,10 @@ import Aeson
   , encodeAeson
   , getField
   )
-import Cardano.Plutus.Types.Credential (Credential(..))
+import Cardano.Plutus.Types.Address (Address)
+import Cardano.Plutus.Types.Credential
+  ( Credential(PubKeyCredential, ScriptCredential)
+  )
 import Cardano.Types.PlutusData (unit) as PlutusData
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
@@ -62,8 +65,8 @@ decodeAesonString str f aes = decodeAeson aes >>=
   )
 
 paysToAddrConstraint
-  :: Credential -> Value -> Constraints.TxConstraints
-paysToAddrConstraint cred v = case cred of
+  :: Address -> Value -> Constraints.TxConstraints
+paysToAddrConstraint a v = case (unwrap a).addressCredential of
   PubKeyCredential pkh ->
     Constraints.mustPayToPubKey (wrap $ unwrap pkh) v
   ScriptCredential vh ->

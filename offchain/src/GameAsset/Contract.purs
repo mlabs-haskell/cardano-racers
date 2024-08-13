@@ -9,27 +9,21 @@ import Contract.Prelude
 
 import Aeson (decodeAeson, encodeAeson)
 import Cardano.Plutus.ApplyArgs (applyArgs)
-import Cardano.Plutus.Types.MintingPolicyHash
-  ( MintingPolicyHash(MintingPolicyHash)
-  )
+import Cardano.Plutus.Types.Address as Address
+import Cardano.Plutus.Types.MintingPolicyHash (MintingPolicyHash)
 import Cardano.Plutus.Types.TokenName (TokenName) as Plutus
 import Cardano.Plutus.Types.TokenName (mkTokenName)
-import Cardano.Plutus.Types.TransactionOutputWithRefScript
-  ( TransactionOutputWithRefScript(TransactionOutputWithRefScript)
-  )
 import Cardano.Plutus.Types.TransactionUnspentOutput
   ( TransactionUnspentOutput
   , mkTxUnspentOut
   ) as Plutus
-import Cardano.Types.AssetName (AssetName(AssetName))
+import Cardano.Types (TransactionOutput)
+import Cardano.Types.AssetName (AssetName)
 import Cardano.Types.BigNum as BigNum
 import Cardano.Types.Int as Int
 import Cardano.Types.Mint as Mint
-import Cardano.Types.MultiAsset as MultiAsset
 import Cardano.Types.PlutusScript as PlutusScript
-import Cardano.Types.TransactionUnspentOutput
-  ( TransactionUnspentOutput(TransactionUnspentOutput)
-  )
+import Cardano.Types.TransactionUnspentOutput (TransactionUnspentOutput)
 import CardanoRacers.GameAsset.Parameters (generateUniformParameters)
 import CardanoRacers.GameAsset.Types
   ( AssetOption
@@ -48,9 +42,9 @@ import CardanoRacers.ScriptsFFI (gameAssetPolicy)
 import Common.ContractHelpers (findAnyAuthUtxo)
 import Contract.Address (Address)
 import Contract.AuxiliaryData (setTxMetadata)
-import Contract.Monad (liftContractM, liftedE, liftedM)
+import Contract.Monad (liftContractM, liftedM)
 import Contract.PlutusData (toData)
-import Contract.ScriptLookups (ScriptLookups(..), plutusMintingPolicy)
+import Contract.ScriptLookups (ScriptLookups, plutusMintingPolicy)
 import Contract.ScriptLookups as Lookups
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptFromEnvelope)
 import Contract.Transaction
@@ -60,7 +54,7 @@ import Contract.Transaction
   , signTransaction
   , submit
   )
-import Contract.TxConstraints (InputWithScriptRef(RefInput), TxConstraints(..))
+import Contract.TxConstraints (InputWithScriptRef(RefInput), TxConstraints)
 import Contract.TxConstraints as Constraints
 import Contract.UnbalancedTx (mkUnbalancedTx)
 import Contract.Value (CurrencySymbol, TokenName)
@@ -69,13 +63,12 @@ import Control.Monad.Error.Class (liftMaybe, throwError)
 import Control.Monad.Reader.Trans (asks)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head)
-import Data.BigInt (fromInt) as BigInt
 import Data.Map (singleton) as Map
 import Data.Profunctor.Choice (left)
 import Data.Profunctor.Strong (first)
 import Data.TextEncoder (encodeUtf8)
 import Effect.Exception (error)
-import JS.BigInt (BigInt, fromInt) as JSBigInt
+import JS.BigInt (fromInt) as JSBigInt
 import Partial.Unsafe (unsafePartial)
 import Racers (Racers, withContract)
 import Racers.Metadata.Cip25.Cip25String (mkCip25String, unCip25String)
@@ -188,7 +181,7 @@ mintGameAsset aoo r nonce = do
     assetVal :: Mint.Mint
     assetVal = Mint.singleton gameAssetScriptHash tk Int.one
 
-    constraints :: Constraints.TxConstraints Void Void
+    constraints :: Constraints.TxConstraints
     constraints = Constraints.mustMintValue assetVal <>
       Constraints.mustSpendPubKeyOutput authTxi
 
@@ -200,20 +193,20 @@ mintGameAsset aoo r nonce = do
     metadata = wrap
       [ GameAssetNftMetadataEntry
           { asset: ga
-          , assetClass: gameAssetScriptHash /\ tk
+          , assetClass: gameAssetScriptHash /\ wrap tk
           }
       ]
 
-  lift do
-    unbalancedTx <- liftedE $ mkUnbalancedTx lookups constraints
-    unbalancedTxWithMetadata <- setTxMetadata unbalancedTx metadata
-    balTx <- liftedE $ balanceTx unbalancedTxWithMetadata
-    balSignedTx <- signTransaction balTx
-    submit balSignedTx
+  unbalancedTx <- lift $ mkUnbalancedTx lookups constraints
+  let
+    unbalancedTxWithMetadata = setTxMetadata unbalancedTx metadata
+  balTx <- lift $ balanceTx unbalancedTxWithMetadata
+  balSignedTx <- lift $ signTransaction balTx
+  lift $ submit balSignedTx
 
 mintAvailableAssetByRarity
   :: Maybe
-       (MintingPolicyHash /\ TransactionInput /\ TransactionOutputWithRefScript)
+       (MintingPolicyHash /\ TransactionInput /\ TransactionOutput)
   -> AssetOption
   -> CurrencySymbol
   -> String
@@ -228,10 +221,14 @@ mintAvailableAssetByRarity
   targetAddress
   rarity = do
   let
+
     buildRawAssetOption = build $ modify (Proxy :: Proxy "name") unCip25String
       <<< delete (Proxy :: Proxy "nitroAmount")
 
-  (ga /\ tk) <- generateAsset (buildRawAssetOption assetOption) nonce rarity
+  (ga /\ tk) <- generateAsset
+    (buildRawAssetOption assetOption)
+    nonce
+    rarity
 
   let
     assetMint = Mint.singleton assetSymbol tk Int.one
@@ -239,11 +236,15 @@ mintAvailableAssetByRarity
 
     (assetMintConstraints :: TxConstraints) = maybe
       (Constraints.mustMintValue assetMint)
-      ( \((mph :: MintingPolicyHash) /\ refTxi /\ refTxo) ->
+      ( \((mph :: MintingPolicyHash) /\ refTxi /\ (refTxo :: TransactionOutput)) ->
           let
             (plutusTxUO :: Plutus.TransactionUnspentOutput) =
               Plutus.mkTxUnspentOut refTxi
-                refTxo
+                -- TODO: Check if this is the best way to convert between types.
+                ( unsafePartial $ fromJust $ hush $ decodeAeson $ encodeAeson
+                    refTxo
+                )
+
             a = encodeAeson plutusTxUO
 
             (txUO :: TransactionUnspentOutput) = unsafePartial $ fromJust
@@ -257,8 +258,12 @@ mintAvailableAssetByRarity
               (RefInput txUO)
       )
       mAssetPolicyRef
+
+    addr = unsafePartial $ fromJust $
+      Address.fromCardano
+        targetAddress
     constraints = assetMintConstraints
-      <> paysToAddrConstraint (wrap targetAddress) assetVal
+      <> paysToAddrConstraint addr assetVal
     metadata = GameAssetNftMetadataEntry
       { asset: ga
       , assetClass: assetSymbol /\ wrap tk

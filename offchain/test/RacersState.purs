@@ -2,6 +2,14 @@ module Test.CardanoRacers.RacersState.Contract (suite) where
 
 import Contract.Prelude
 
+import Cardano.Plutus.Types.Address as PlutusAddress
+import Cardano.Plutus.Types.CurrencySymbol (fromScriptHash)
+import Cardano.Plutus.Types.CurrencySymbol as Plutus
+import Cardano.ToData (toData)
+import Cardano.Types.BigInt as JSBigInt
+import Cardano.Types.BigNum as BigNum
+import Cardano.Types.PlutusScript (hash)
+import Cardano.Types.Value (Value)
 import CardanoRacers.Common.Types (RacersParams(RacersParams))
 import CardanoRacers.Nitro.Helpers (mintBotNft) as NitroHelpers
 import CardanoRacers.RacersState.Contract
@@ -15,9 +23,9 @@ import CardanoRacers.RacersState.Types
   , RacersStateRedeemer(SetRacersState)
   )
 import Contract.Monad (Contract, liftContractM, liftedM)
-import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
+import Contract.PlutusData (RedeemerDatum(RedeemerDatum))
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (validatorHash)
+import Contract.Scripts (ScriptHash)
 import Contract.Test.Mote (TestPlanM)
 import Contract.Test.Plutip
   ( InitialUTxOs
@@ -34,8 +42,10 @@ import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
 import Data.BigInt (fromInt) as BigInt
+import Data.BigInt as DataBigInt
 import Data.Map (singleton, toUnfoldable) as Map
 import Mote (group, test)
+import Partial.Unsafe (unsafePartial)
 import Racers (runRacers, withContract)
 import Test.CardanoRacers.Helpers
   ( createRacersParamsHelper
@@ -49,7 +59,7 @@ suite = group "RacersState script:" do
     test "Admin initialises RacersState" do
       withWallets (walletUtxoDistr /\ walletUtxoDistr) \(admin /\ treasury) ->
         do
-          let nitroPrice = BigInt.fromInt 1000000
+          let nitroPrice = DataBigInt.fromInt 1000000
           adminAddr <- withKeyWallet admin
             $ liftedM "Could not get admin address"
             $ Array.head
@@ -64,11 +74,18 @@ suite = group "RacersState script:" do
               nitroPrice
               defaultAssetPrices
 
+            treasuryAddrPlutus <- lift
+              $ liftContractM "Could not convert treasury address to Plutus"
+              $ PlutusAddress.fromCardano treasuryAddr
+            adminAddrPlutus <- lift
+              $ liftContractM "Could not convert own address to Plutus"
+              $ PlutusAddress.fromCardano adminAddr
+
             let
               expectedRacersState = RacersState
-                { nitroPrice: nitroPrice
-                , treasuryAddress: treasuryAddr
-                , operatingAddress: adminAddr
+                { nitroPrice: toBI nitroPrice
+                , treasuryAddress: treasuryAddrPlutus
+                , operatingAddress: adminAddrPlutus
                 , assetPrices: defaultAssetPrices
                 }
 
@@ -86,7 +103,7 @@ suite = group "RacersState script:" do
             withContract (withKeyWallet admin) do
               let
                 newState = wrap $ (unwrap prevState)
-                  { nitroPrice = BigInt.fromInt 2000000 }
+                  { nitroPrice = JSBigInt.fromInt 2000000 }
               _ <- RacersState.modifyRacersStateContract $ const newState
               updatedRacersState /\ _ <- RacersState.queryRacersState
               newState `shouldEqual` updatedRacersState
@@ -96,31 +113,39 @@ suite = group "RacersState script:" do
         botTk <- withKeyWallet eve $ mintBotNftHelper
         let
           rp = RacersParams $ (unwrap rpBeforeUpdate)
-            { botToken = botTk }
+            { botToken = (fromScriptHash (fst botTk) /\ wrap (snd botTk)) }
         runRacers rp do
           prevState <-
             initRacersStateWithAdminAndTreasury (admin /\ admin)
               (BigInt.fromInt 1000000)
               defaultAssetPrices
+
+          (scriptHash :: ScriptHash) <- lift
+            $ liftContractM "Could get ScriptHash from Plutus' CurrencySymbol"
+            $ Plutus.toCardano
+            $ fst (unwrap rp).stateToken
           withContract (withKeyWallet eve) do
             nitroVal <- RacersState.mkRacersStateValidator
             let
               newState = wrap $ (unwrap prevState)
-                { nitroPrice = BigInt.fromInt 2000000 }
-              vhash = validatorHash nitroVal
-              datum = Datum $ toData newState
-              red = Redeemer $ toData $ SetRacersState newState
-              stateVal = uncurry Value.singleton (unwrap rp).stateToken one
+                { nitroPrice = JSBigInt.fromInt 2000000 }
+              vhash = hash $ unwrap nitroVal
+              datum = toData newState
+              red = RedeemerDatum $ toData $ SetRacersState newState
+              (stateVal :: Value) = Value.singleton scriptHash
+                (unwrap $ snd (unwrap rp).stateToken)
+                BigNum.one
+            -- stateVal = uncurry Value.singleton (unwrap rp).stateToken one
             (_ /\ stateTxi /\ stateTxo) <- RacersState.queryRacersState
             let
-              constraints :: Constraints.TxConstraints Void Void
+              constraints :: Constraints.TxConstraints
               constraints = Constraints.mustSpendScriptOutput stateTxi red
                 <> Constraints.mustPayToScript vhash datum
                   Constraints.DatumInline
                   stateVal
 
-              lookups :: Lookups.ScriptLookups Void
-              lookups = Lookups.validator nitroVal
+              lookups :: Lookups.ScriptLookups
+              lookups = Lookups.validator (unwrap nitroVal)
                 <> Lookups.unspentOutputs (Map.singleton stateTxi stateTxo)
 
             resE <- try $ lift $ submitTxFromConstraints lookups constraints
@@ -130,12 +155,13 @@ suite = group "RacersState script:" do
             ownUtxos <- lift $ liftedM "Could not get wallet utxos"
               getWalletUtxos
             let
-              botVal = uncurry Value.singleton (unwrap rp).botToken $
-                BigInt.fromInt 1
+              (botVal :: Value) = Value.singleton scriptHash
+                (unwrap $ snd (unwrap rp).botToken)
+                BigNum.one
             (botTxi /\ _) <- lift
               $ liftContractM "Could not find bot token in wallet"
               $ find
-                  ( \(_ /\ txo) -> (unwrap (unwrap txo).output).amount
+                  ( \(_ /\ txo) -> (unwrap txo).amount
                       `Value.geq`
                         botVal
                   )
@@ -150,15 +176,15 @@ suite = group "RacersState script:" do
   where
   walletUtxoDistr :: InitialUTxOs
   walletUtxoDistr =
-    [ BigInt.fromInt 5_000_000
-    , BigInt.fromInt 2_000_000_000
+    [ BigNum.fromInt 5_000_000
+    , BigNum.fromInt 2_000_000_000
     ]
 
   defaultAssetPrices :: AssetPrices
   defaultAssetPrices = AssetPrices
-    { common: BigInt.fromInt 1000000
-    , rare: BigInt.fromInt 2000000
-    , epic: BigInt.fromInt 3000000
+    { common: JSBigInt.fromInt 1000000
+    , rare: JSBigInt.fromInt 2000000
+    , epic: JSBigInt.fromInt 3000000
     }
 
   mintBotNftHelper :: Contract (CurrencySymbol /\ TokenName)
@@ -167,3 +193,6 @@ suite = group "RacersState script:" do
     (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
       Map.toUnfoldable utxos
     NitroHelpers.mintBotNft txi
+
+  toBI :: DataBigInt.BigInt -> JSBigInt.BigInt
+  toBI = unsafePartial fromJust <<< JSBigInt.fromString <<< DataBigInt.toString

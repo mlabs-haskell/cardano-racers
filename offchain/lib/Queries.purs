@@ -3,8 +3,34 @@ module Lib.CardanoRacers.Queries where
 import Contract.Prelude
 
 import Aeson (Aeson, encodeAeson)
-import Cardano.Plutus.Types.Map as PlutusMap
-import Cardano.Types.Ed25519KeyHash as Ed25519KeyHash
+import Cardano.AsCbor (encodeCbor)
+import Cardano.Plutus.Types.Address as PlutusAddress
+import Cardano.Serialization.Lib
+  ( address_toBech32
+  , assetName_name
+  , baseAddress_toAddress
+  , byronAddress_toAddress
+  , enterpriseAddress_toAddress
+  , pointerAddress_toAddress
+  , rewardAddress_toAddress
+  )
+import Cardano.Types (Asset(Asset), AssetName, Bech32String)
+import Cardano.Types.Address
+  ( Address
+      ( BaseAddress
+      , ByronAddress
+      , EnterpriseAddress
+      , RewardAddress
+      , PointerAddress
+      )
+  )
+import Cardano.Types.BaseAddress (toCsl) as BA
+import Cardano.Types.BigNum as BigNum
+import Cardano.Types.EnterpriseAddress as EA
+import Cardano.Types.Internal.Helpers (decodeUtf8)
+import Cardano.Types.PlutusScript as PlutusScript
+import Cardano.Types.RewardAddress as RA
+import Cardano.Types.Value (getMultiAsset)
 import CardanoRacers.Common.Types (RacersParams, nitroToken)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types (GameAssetType(CarType, DriverType))
@@ -15,13 +41,10 @@ import CardanoRacers.RaceRegistry.Types
   )
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
-import Contract.Address (addressToBech32)
+import Contract.Address (getNetworkId)
 import Contract.Config (ContractParams, WalletSpec)
 import Contract.Monad (liftContractM, liftedM, runContract)
-import Contract.Prim.ByteArray (rawBytesToHex)
-import Contract.Scripts (mintingPolicyHash)
-import Contract.Value (getValue, mpsSymbol, scriptCurrencySymbol, valueOf)
-import Contract.Value as Value
+import Contract.Value (valueOf)
 import Contract.Wallet
   ( getWalletAddresses
   , getWalletBalance
@@ -29,22 +52,29 @@ import Contract.Wallet
   )
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff)
-import Data.Array (concat, head) as Array
-import Data.Map (toUnfoldable) as Map
+import Data.Array (concat, fromFoldable, head) as Array
+import Data.Array (head)
+import Data.BigInt as DataBigInt
+import Data.ByteArray (byteArrayToHex)
+import Data.Map (empty, keys, lookup, toUnfoldable) as Map
 import Data.Maybe (fromMaybe)
 import Data.Newtype (unwrap)
-import Data.TextDecoder (decodeUtf8)
 import Effect.Aff.Compat (EffectFn1, mkEffectFn1)
+import JS.BigInt (BigInt, toString) as JSBigInt
 import Lib.CardanoRacers.Common
   ( AssetPricesFFI
   , Lovelace
   , Nitro
   , Race
   , createRegistryParams
+  , mintingPolicyHash
   , toJsBigInt
   , tokenNameToString
   )
+import Literals.Undefined (undefined)
+import Partial.Unsafe (unsafePartial)
 import Racers (Racers, runRacers, withContract)
+import Unsafe.Coerce (unsafeCoerce)
 
 type NFT =
   { name :: String
@@ -89,42 +119,77 @@ mkQueries cp walletSpec rp =
     }
 
 getNitroPrice :: Racers Lovelace
-getNitroPrice = queryRacersState <#> fst >>> unwrap >>> _.nitroPrice >>>
-  toJsBigInt
+getNitroPrice = do
+  (st /\ _ /\ _) <- queryRacersState
+  pure $ toJsBigInt $ unsafePartial $ fromJust $ DataBigInt.fromString $
+    JSBigInt.toString (unwrap st).nitroPrice
 
 getAssetPrices :: Racers AssetPricesFFI
 getAssetPrices = queryRacersState <#> fst >>> unwrap >>> _.assetPrices >>>
   assetPricesToObject
   where
   assetPricesToObject (AssetPrices x) =
-    { "common": toJsBigInt x.common
-    , "rare": toJsBigInt x.rare
-    , "epic": toJsBigInt x.epic
+    { "common": toJsBigInt $ toBI x.common
+    , "rare": toJsBigInt $ toBI x.rare
+    , "epic": toJsBigInt $ toBI x.epic
     }
 
+toBI :: JSBigInt.BigInt -> DataBigInt.BigInt
+toBI = unsafePartial fromJust <<< DataBigInt.fromString <<< JSBigInt.toString
+
 getTreasuryAddress :: Racers String
-getTreasuryAddress = queryRacersState <#> (fst >>> unwrap >>> _.treasuryAddress)
-  >>= lift
-  <<< addressToBech32
+getTreasuryAddress = do
+  networkId <- lift $ getNetworkId
+  plutusAddr <- queryRacersState <#>
+    (fst >>> unwrap >>> _.treasuryAddress)
+  addrStr <- lift $ liftContractM "Could not convert Plutus address to Cardano"
+    $ toBech32
+    <$> PlutusAddress.toCardano networkId plutusAddr
+  pure addrStr
 
 getOperatingAddress :: Racers String
-getOperatingAddress = queryRacersState
-  <#> (fst >>> unwrap >>> _.operatingAddress)
-  >>= lift
-  <<< addressToBech32
+getOperatingAddress = do
+  networkId <- lift $ getNetworkId
+  plutusAddr <- queryRacersState <#>
+    (fst >>> unwrap >>> _.operatingAddress)
+  addrStr <- lift $ liftContractM "Could not convert Plutus address to Cardano"
+    $ toBech32
+    <$> PlutusAddress.toCardano networkId plutusAddr
+  pure addrStr
 
 registryEntryToAeson :: RegistryEntry -> Racers Aeson
 registryEntryToAeson (PendingSelection pkh) = pure $ encodeAeson
-  { "registered": rawBytesToHex $ ed25519KeyHashToBytes (unwrap pkh) }
-registryEntryToAeson (AssetSelection par) =
-  lift (addressToBech32 (unwrap par).payoutAddress) <#> \addrStr ->
-    encodeAeson
-      { "assetSelection":
-          { "car": tokenNameToString (unwrap par).car
-          , "driver": tokenNameToString (unwrap par).driver
-          , "address": addrStr
-          }
-      }
+  { "registered": encodeAeson pkh }
+registryEntryToAeson (AssetSelection par) = do
+  networkId <- lift $ getNetworkId
+  addrStr <- lift $ liftContractM "Could not convert Plutus address to Cardano"
+    $ toBech32
+    <$>
+      PlutusAddress.toCardano networkId (unwrap par).payoutAddress
+
+  pure $ encodeAeson
+    { "assetSelection":
+        { "car": tokenNameToString (unwrap par).car
+        , "driver": tokenNameToString (unwrap par).driver
+        , "address": addrStr
+        }
+    }
+
+-- TODO: check this
+toBech32 :: Address -> Bech32String
+toBech32 = toCsl >>> flip address_toBech32 (unsafeCoerce undefined)
+  where
+  toCsl = case _ of
+    BaseAddress ba ->
+      baseAddress_toAddress $ BA.toCsl ba
+    ByronAddress ba ->
+      byronAddress_toAddress $ unwrap ba
+    EnterpriseAddress ea ->
+      enterpriseAddress_toAddress $ EA.toCsl ea
+    RewardAddress ra ->
+      rewardAddress_toAddress $ RA.toCsl ra
+    PointerAddress pc ->
+      pointerAddress_toAddress $ unwrap pc
 
 queryRaceRegistry :: Race -> Racers (Array Aeson)
 queryRaceRegistry race = do
@@ -137,51 +202,63 @@ getWalletAddress :: Racers String
 getWalletAddress = do
   ownAddr <- lift $ liftedM "could not get first wallet address"
     (Array.head <$> getWalletAddresses)
-  lift $ addressToBech32 ownAddr
+  pure $ toBech32 ownAddr
 
 getWalletPubKeyHash :: Racers String
 getWalletPubKeyHash = do
   pkh <- lift $ liftedM "could not get first wallet pubkeyhash"
     (Array.head <$> ownPaymentPubKeyHashes)
-  pure $ rawBytesToHex $ ed25519KeyHashToBytes (unwrap $ unwrap pkh)
+  pure $ byteArrayToHex $ unwrap $ encodeCbor $ unwrap pkh
 
 getWalletNitroBalance :: Racers Nitro
 getWalletNitroBalance = do
   bal <- lift $ liftedM "Could not get wallet balance" getWalletBalance
-  nitroSymbol <- withContract (liftedM "Could not get Nitro symbol") $ mpsSymbol
-    <<< mintingPolicyHash
+  nitroSymbol <- withContract (liftedM "Could not get Nitro symbol")
+    $ mintingPolicyHash
     <$> mkNitroPolicy
-  pure $ toJsBigInt $ valueOf bal nitroSymbol nitroToken
+  let
+    v = valueOf (Asset (unwrap nitroSymbol) (unwrap nitroToken)) bal
+  pure $ toJsBigInt $ unsafePartial $ fromJust $ DataBigInt.fromString $
+    BigNum.toString v
 
 getWalletNFTs :: Racers (Array NFT)
 getWalletNFTs = do
   bal <- lift $ liftedM "Could not get wallet balance" getWalletBalance
   carPolicy <- mkGameAssetPolicy CarType
-  carSymbol <- lift $ liftContractM "Could not get game asset symbol (car)" $
-    scriptCurrencySymbol carPolicy
+  carSymbol <- lift $ liftContractM "Could not get game asset symbol (car)"
+    $ head
+    $ map PlutusScript.hash
+    $ (unwrap carPolicy).plutusMintingPolicies
+
   driverPolicy <- mkGameAssetPolicy DriverType
   driverSymbol <- lift
     $ liftContractM "Could not get game asset symbol (driver)"
-    $ scriptCurrencySymbol driverPolicy
+    $ head
+    $ map PlutusScript.hash
+    $ (unwrap driverPolicy).plutusMintingPolicies
   let
-    cars =
-      PlutusMap.keys $ fromMaybe PlutusMap.empty $
-        PlutusMap.lookup carSymbol (getValue bal)
-    drivers =
-      PlutusMap.keys $ fromMaybe PlutusMap.empty $
-        PlutusMap.lookup driverSymbol (getValue bal)
+    (cars :: Array AssetName) = Array.fromFoldable
+      $ Map.keys
+      $ fromMaybe Map.empty
+      $ Map.lookup carSymbol (unwrap $ getMultiAsset bal)
+    (drivers :: Array AssetName) = Array.fromFoldable
+      $ Map.keys
+      $ fromMaybe Map.empty
+      $ Map.lookup driverSymbol (unwrap $ getMultiAsset bal)
   carArray <- for cars \car -> do
     name <- lift $ liftContractM "Could not make required token names"
       $ hush
       $ decodeUtf8
+      $ assetName_name
       $ unwrap
-      $ Value.getTokenName car
+      $ car
     pure { assetType: "car", name }
   driverArray <- for drivers \driver -> do
     name <- lift $ liftContractM "Could not make required token names"
       $ hush
       $ decodeUtf8
+      $ assetName_name
       $ unwrap
-      $ Value.getTokenName driver
+      $ driver
     pure { assetType: "driver", name }
   pure $ carArray <> driverArray

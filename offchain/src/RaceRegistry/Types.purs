@@ -14,8 +14,23 @@ import Cardano.Plutus.Types.Address (Address)
 import Cardano.Plutus.Types.MintingPolicyHash (MintingPolicyHash)
 import Cardano.Plutus.Types.PubKeyHash (PubKeyHash)
 import Cardano.Types (BigInt)
-import CardanoRacers.Helpers (decodeAesonString, decodeWrappedAeson, wrapEncodeAeson)
-import Contract.PlutusData (class FromData, class HasPlutusSchema, class ToData, type (:+), type (:=), type (@@), I, PNil, genericFromData, genericToData)
+import CardanoRacers.Helpers
+  ( decodeAesonString
+  , decodeWrappedAeson
+  , wrapEncodeAeson
+  )
+import Contract.PlutusData
+  ( class FromData
+  , class HasPlutusSchema
+  , class ToData
+  , type (:+)
+  , type (:=)
+  , type (@@)
+  , I
+  , PNil
+  , genericFromData
+  , genericToData
+  )
 import Contract.Value (CurrencySymbol, TokenName)
 import Control.Alt ((<|>))
 

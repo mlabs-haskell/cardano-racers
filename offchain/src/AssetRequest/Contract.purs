@@ -5,6 +5,14 @@ module CardanoRacers.AssetRequest.Contract
 
 import Contract.Prelude
 
+import Cardano.FromData (fromData)
+import Cardano.Plutus.ApplyArgs (applyArgs)
+import Cardano.Plutus.Types.Address as PlutusAddress
+import Cardano.Types (Address)
+import Cardano.Types.AssetName (mkAssetName)
+import Cardano.Types.BigNum as BigNum
+import Cardano.Types.Int as Int
+import Cardano.Types.PlutusScript (hash)
 import CardanoRacers.AssetRequest.Types
   ( AirdropAddressDatum(AirdropAddressDatum)
   , AssetRequestRedeemer(MintRequestToken)
@@ -19,19 +27,13 @@ import CardanoRacers.RacersState.Contract
 import CardanoRacers.RacersState.Types (getAssetPrice)
 import CardanoRacers.ScriptsFFI (assetRequestPolicy)
 import Contract.Monad (liftContractM, liftedM)
-import Contract.PlutusData (Datum(Datum), Redeemer(Redeemer), toData)
+import Contract.PlutusData (toData)
+import Contract.ScriptLookups (ScriptLookups, plutusMintingPolicy)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts
-  ( MintingPolicy(PlutusMintingPolicy)
-  , applyArgs
-  , mintingPolicyHash
-  , validatorHash
-  )
-import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
+import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptFromEnvelope)
 import Contract.Transaction
   ( TransactionHash
   , awaitTxConfirmed
-  , mkTxUnspentOut
   , submitTxFromConstraints
   )
 import Contract.TxConstraints
@@ -39,22 +41,17 @@ import Contract.TxConstraints
   , InputWithScriptRef(RefInput)
   )
 import Contract.TxConstraints as Constraints
-import Contract.Value
-  ( lovelaceValueOf
-  , mkTokenName
-  , scriptCurrencySymbol
-  , singleton
-  ) as Value
+import Contract.Value (lovelaceValueOf, singleton) as Value
 import Contract.Wallet (getWalletAddresses)
 import Control.Monad.Reader.Trans (asks)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
-import Data.BigInt (fromInt, toNumber) as BigInt
 import Data.Int (ceil)
 import Data.Map (singleton) as Map
 import Data.Profunctor.Choice (left)
 import Data.TextEncoder (encodeUtf8)
 import Effect.Exception (error)
+import JS.BigInt as JSBigInt
 import Racers (Racers)
 
 requestAssetByRarity
@@ -62,51 +59,63 @@ requestAssetByRarity
   -> Racers TransactionHash
 requestAssetByRarity rarity = do
   assetRequestPolicy <- mkAssetRequestPolicy
-  depositScript <- validatorHash <$> mkDepositValidator
-  ownAddr <- lift $ liftedM "could not get first address"
+  depositScript <- (hash <<< unwrap) <$> mkDepositValidator
+
+  (ownAddr :: Address) <- lift $ liftedM "Could not get first address"
     (Array.head <$> getWalletAddresses)
+  plutusAddr <- lift $ liftContractM "Could not convert Address to Plutus"
+    (PlutusAddress.fromCardano ownAddr)
+
   rs /\ stateTxi /\ stateTxo <- queryRacersState
-  cs <- lift $ liftContractM "Could not get currency symbol"
-    $ Value.scriptCurrencySymbol
-    $ assetRequestPolicy
 
   requestTokenName <- lift $ liftContractM "Could not make required token names"
     $
-      (Value.mkTokenName <<< wrap <<< encodeUtf8) (show rarity)
+      (mkAssetName <<< wrap <<< encodeUtf8) (show rarity)
 
-  mAssetRequestPolicyRef <- queryRacersRefScriptOutput
-    (unwrap $ mintingPolicyHash assetRequestPolicy)
+  mAssetRequestPolicyRef <- queryRacersRefScriptOutput depositScript
+
+  red <- lift
+    $ liftContractM "Could not get Redeemer data"
+    $ fromData
+    $ toData
+    $ MintRequestToken
 
   let
-    totalAdaDue = getAssetPrice rarity (unwrap rs).assetPrices
-    treasuryAmt = BigInt.fromInt <<< ceil $ BigInt.toNumber totalAdaDue * 0.75
-    operatingAmt = BigInt.fromInt <<< ceil $ BigInt.toNumber totalAdaDue * 0.25
+    (totalAdaDue :: JSBigInt.BigInt) = getAssetPrice rarity
+      (unwrap rs).assetPrices
+    (treasuryAmt :: BigNum.BigNum) = BigNum.fromInt <<< ceil
+      $ JSBigInt.toNumber totalAdaDue
+      * 0.75
+    (operatingAmt :: BigNum.BigNum) = BigNum.fromInt <<< ceil
+      $ JSBigInt.toNumber totalAdaDue
+      * 0.25
     treasuryVal = Value.lovelaceValueOf treasuryAmt
     operatingVal = Value.lovelaceValueOf operatingAmt
-    lockedVal = Value.singleton cs requestTokenName $ BigInt.fromInt 1
+    lockedVal = Value.singleton depositScript requestTokenName BigNum.one
 
-    dat = Datum $ toData $ AirdropAddressDatum { airdropAddress: ownAddr }
-    red = Redeemer $ toData $ MintRequestToken
+    dat = toData $ AirdropAddressDatum { airdropAddress: plutusAddr }
+    -- red = toData $ MintRequestToken
 
     mintRequestTokenConstraints = case mAssetRequestPolicyRef of
       Nothing -> Constraints.mustMintCurrencyWithRedeemer
-        (mintingPolicyHash assetRequestPolicy)
+        depositScript
         red
         requestTokenName
-        (BigInt.fromInt 1)
+        (Int.fromInt 1)
       Just (refTxi /\ refTxo) ->
         Constraints.mustMintCurrencyWithRedeemerUsingScriptRef
-          (mintingPolicyHash assetRequestPolicy)
+          depositScript
           red
           requestTokenName
-          (BigInt.fromInt 1)
-          (RefInput $ mkTxUnspentOut refTxi refTxo)
+          (Int.fromInt 1)
+          (RefInput $ wrap { input: refTxi, output: refTxo })
 
-    assetRequestPolicyLookups = maybe (Lookups.mintingPolicy assetRequestPolicy)
+    assetRequestPolicyLookups = maybe
+      assetRequestPolicy
       (const mempty)
       mAssetRequestPolicyRef
 
-    constraints :: Constraints.TxConstraints Void Void
+    constraints :: Constraints.TxConstraints
     constraints =
       Constraints.mustReferenceOutput stateTxi
         <> paysToAddrConstraint (unwrap rs).treasuryAddress treasuryVal
@@ -115,7 +124,7 @@ requestAssetByRarity rarity = do
         <> Constraints.mustPayToScript depositScript dat DatumInline
           lockedVal
 
-    lookups :: Lookups.ScriptLookups Void
+    lookups :: Lookups.ScriptLookups
     lookups = assetRequestPolicyLookups
       <> Lookups.unspentOutputs (Map.singleton stateTxi stateTxo)
 
@@ -124,13 +133,13 @@ requestAssetByRarity rarity = do
     awaitTxConfirmed txId
     pure txId
 
-mkAssetRequestPolicy :: Racers MintingPolicy
+mkAssetRequestPolicy :: Racers ScriptLookups
 mkAssetRequestPolicy = do
   params <- asks _.params
-  depositVHahs <- validatorHash <$> mkDepositValidator
+  depositVHash <- (hash <<< unwrap) <$> mkDepositValidator
   v2script <- lift $ liftContractM "Could not decode applied script" do
     envelope <- decodeTextEnvelope assetRequestPolicy
-    plutusScriptV2FromEnvelope envelope
+    plutusScriptFromEnvelope envelope
   appliedScript <- liftEither $ left (error <<< show) $ applyArgs v2script
-    $ [ toData params, toData depositVHahs ]
-  pure $ PlutusMintingPolicy $ appliedScript
+    $ [ toData params, toData depositVHash ]
+  pure $ plutusMintingPolicy $ appliedScript

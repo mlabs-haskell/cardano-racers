@@ -43,17 +43,11 @@ import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
 import CardanoRacers.RaceSlot.Types (RaceHash, slotTokenName)
 import CardanoRacers.RacersState.Contract (createRacersRefScriptOutputs)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
-import Contract.Address (PubKeyHash, scriptHashAddress)
-import Contract.Metadata (mkCip25String)
 import Contract.Monad (liftContractM, liftedM, throwContractError)
 import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts
-  ( MintingPolicy(PlutusMintingPolicy)
-  , mintingPolicyHash
-  , validatorHash
-  )
+import Contract.Scripts (validatorHash)
 import Contract.Test.Assert (checkTokenGainAtAddress', label, runChecks)
 import Contract.Test.Mote (TestPlanM)
 import Contract.Test.Plutip
@@ -70,7 +64,7 @@ import Contract.Transaction
   )
 import Contract.TxConstraints (DatumPresence(DatumInline))
 import Contract.TxConstraints as Constraints
-import Contract.Value (Value, geq, mkTokenName, negation, scriptCurrencySymbol)
+import Contract.Value (Value, geq)
 import Contract.Value as Value
 import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
 import Control.Apply (lift2)
@@ -78,6 +72,7 @@ import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Ctl.Internal.Contract.Wallet (ownPubKeyHashes)
 import Data.Array (concat, drop, filter, head, null, take) as Array
+import Data.Array (head)
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
 import Data.FoldableWithIndex (findWithIndex)
@@ -95,6 +90,7 @@ import Effect.Ref as Ref
 import Mote (group, test)
 import Partial.Unsafe (unsafePartial)
 import Racers (Racers, runRacers, withContract)
+import Racers.Metadata.Cip25.Cip25String (mkCip25String)
 import Test.CardanoRacers.Helpers
   ( createRacersParamsHelper
   , initRacersStateWithAdminAndTreasury
@@ -120,7 +116,7 @@ suite = group "Race Registry" do
             $ liftContractM "could not convert hex string to bytearray"
             $ byteArrayFromAscii "TestRaceHash"
 
-          -- Registry Params 
+          -- Registry Params
           slotSymbol <-
             withContract (liftedM "could not get currency symbol from policy")
               $ scriptCurrencySymbol
@@ -618,18 +614,25 @@ suite = group "Race Registry" do
         carAssetPolicy <- mkGameAssetPolicy CarType
         nitroPolicy <- mkNitroPolicy
 
-        nitroScriptRef <- lift $ case nitroPolicy of
-          PlutusMintingPolicy s -> pure s
-          _ -> throwContractError "Not plutus script"
-        assetRequestScriptRef <- lift $ case assetRequestPolicy of
-          PlutusMintingPolicy s -> pure s
-          _ -> throwContractError "Not plutus script"
-        driverPolicyRef <- lift $ case driverAssetPolicy of
-          PlutusMintingPolicy s -> pure s
-          _ -> throwContractError "Not plutus script"
-        carPolicyRef <- lift $ case carAssetPolicy of
-          PlutusMintingPolicy s -> pure s
-          _ -> throwContractError "Not plutus script"
+        nitroScriptRef <- lift $
+          case head (unwrap nitroPolicy).plutusMintingPolicies of
+            Just s -> pure s
+            Nothing -> throwContractError "Not plutus script"
+
+        assetRequestScriptRef <- lift $
+          case head (unwrap assetRequestPolicy).plutusMintingPolicies of
+            Just s -> pure s
+            Nothing -> throwContractError "Not plutus script"
+
+        driverPolicyRef <- lift $
+          case head (unwrap driverAssetPolicy).plutusMintingPolicies of
+            Just s -> pure s
+            Nothing -> throwContractError "Not plutus script"
+
+        carPolicyRef <- lift $
+          case head (unwrap carAssetPolicy).plutusMintingPolicies of
+            Just s -> pure s
+            Nothing -> throwContractError "Not plutus script"
 
         depositAssetScriptRef <- unwrap <$> mkDepositValidator
 

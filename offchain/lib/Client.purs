@@ -2,16 +2,25 @@ module Lib.CardanoRacers.Client where
 
 import Contract.Prelude
 
+import Cardano.Serialization.Lib (fromBytes, toBytes)
+import Cardano.Types.AssetName (mkAssetName)
 import CardanoRacers.AssetRequest.Contract (requestAssetByRarity)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
 import CardanoRacers.Nitro.Contract (buyNitroContract)
-import CardanoRacers.RaceRegistry.Contract (confirmAssetSelection, registerPositionInRace)
+import CardanoRacers.RaceRegistry.Contract
+  ( confirmAssetSelection
+  , registerPositionInRace
+  )
 import Contract.Config (ContractParams, WalletSpec)
 import Contract.Monad (liftContractM, liftedM, runContract, throwContractError)
-import Contract.Prim.ByteArray (byteArrayFromAscii, byteArrayToHex, byteLength, hexToByteArray)
+import Contract.Prim.ByteArray
+  ( byteArrayFromAscii
+  , byteArrayToHex
+  , byteLength
+  , hexToByteArray
+  )
 import Contract.Transaction (TransactionHash(..), TransactionInput(..))
-import Contract.Value (mkTokenName)
 import Contract.Wallet (getWalletAddresses)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff)
@@ -21,8 +30,21 @@ import Data.Int (fromString) as Int
 import Data.String (Pattern(..))
 import Data.String as String
 import Data.UInt (fromInt) as UInt
-import Effect.Aff.Compat (EffectFn1, EffectFn2, EffectFn3, mkEffectFn1, mkEffectFn2, mkEffectFn3)
-import Lib.CardanoRacers.Common (Nitro, Race, TransactionHashFFI, createRegistryParams, fromJsBigInt)
+import Effect.Aff.Compat
+  ( EffectFn1
+  , EffectFn2
+  , EffectFn3
+  , mkEffectFn1
+  , mkEffectFn2
+  , mkEffectFn3
+  )
+import Lib.CardanoRacers.Common
+  ( Nitro
+  , Race
+  , TransactionHashFFI
+  , createRegistryParams
+  , fromJsBigInt
+  )
 import Lib.CardanoRacers.Queries (Queries, mkQueries)
 import Racers (Racers, runRacers)
 import Record (merge)
@@ -69,19 +91,28 @@ requestAsset rarityStr = do
     "epic" -> pure Epic
     x -> throwContractError ("Invalid rarity: " <> x)
   txh <- requestAssetByRarity rarity
-  pure $ byteArrayToHex (unwrap txh)
+  pure $ byteArrayToHex $ toBytes (unwrap txh)
 
 registerInRace :: Race -> String -> Racers TransactionHashFFI
 registerInRace race txInStr = do
   rgp <- createRegistryParams race
-  
+
   slotTxIn <- lift $ case String.split (Pattern "#") txInStr of
-    [txHashStr, txIndexStr] -> do
-      txHashBytes <- maybe (throwContractError "Could not decode transaction hash hex string") pure $ hexToByteArray txHashStr
-      txHash <- if byteLength txHashBytes == 32 then pure $ TransactionHash txHashBytes else throwContractError "Invalid transaction hash"
-      txIndex <- maybe (throwContractError "Could not parse transaction index") pure $ Int.fromString txIndexStr <#> UInt.fromInt
-      pure $ TransactionInput {index: txIndex, transactionId: txHash }
-    _ -> throwContractError "Invalid transaction input" 
+    [ txHashStr, txIndexStr ] -> do
+      txHashBytes <-
+        maybe
+          (throwContractError "Could not decode transaction hash hex string")
+          pure $ hexToByteArray txHashStr
+      txHash <-
+        if byteLength txHashBytes == 32 then pure $ TransactionHash
+          (fromBytes txHashBytes)
+        else throwContractError "Invalid transaction hash"
+      txIndex <-
+        maybe (throwContractError "Could not parse transaction index") pure
+          $ Int.fromString txIndexStr
+          <#> UInt.fromInt
+      pure $ TransactionInput { index: txIndex, transactionId: txHash }
+    _ -> throwContractError "Invalid transaction input"
 
   firstPkh <- lift $ liftedM "Could not get first own public key hash"
     $ ownPubKeyHashes
@@ -95,10 +126,10 @@ joinRace race carTokenStr driverTokenStr = do
   rgp <- createRegistryParams race
   carToken <- lift
     $ liftContractM ("Could not create token name from" <> carTokenStr)
-    $ (mkTokenName <=< byteArrayFromAscii) carTokenStr
+    $ (mkAssetName <=< byteArrayFromAscii) carTokenStr
   driverToken <- lift
     $ liftContractM ("Could not create token name from" <> driverTokenStr)
-    $ (mkTokenName <=< byteArrayFromAscii) driverTokenStr
+    $ (mkAssetName <=< byteArrayFromAscii) driverTokenStr
 
   firstPkh <- lift $ liftedM "Could not get first own public key hash"
     $ ownPubKeyHashes
