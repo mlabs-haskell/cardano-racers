@@ -4,6 +4,14 @@ module CardanoRacers.Helpers
   , decodeWrappedAeson
   , paysToAddrConstraint
   , decodeAesonString
+  , fromBIToJSBI
+  , fromJSBIToBI
+  , fromBIToBigNum
+  , fromBIToInt
+  , fromBIToDataBI
+  , fromBigNumToJSBI
+  , fromBigNumToBI
+  , mkMint
   ) where
 
 import Contract.Prelude
@@ -22,13 +30,27 @@ import Cardano.Plutus.Types.Address (Address)
 import Cardano.Plutus.Types.Credential
   ( Credential(PubKeyCredential, ScriptCredential)
   )
+import Cardano.Plutus.Types.CurrencySymbol as CurrencySymbol
+import Cardano.Plutus.Types.Value as PlutusValue
+import Cardano.Types (Mint)
+import Cardano.Types.BigInt as CTBigInt
+import Cardano.Types.BigNum (BigNum)
+import Cardano.Types.BigNum as BigNum
+import Cardano.Types.Int as CT
+import Cardano.Types.Int as CTInt
+import Cardano.Types.Int as Int
+import Cardano.Types.Mint as Mint
 import Cardano.Types.PlutusData (unit) as PlutusData
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
 import Contract.Value (Value)
+import Data.BigInt as Data
+import Data.BigInt as DataBigInt
 import Effect.Ref (Ref)
 import Effect.Ref (read, write) as Ref
 import Foreign.Object (singleton)
+import JS.BigInt as JSBigInt
+import Partial.Unsafe (unsafePartial)
 
 wrapEncodeAeson :: forall (a :: Type). EncodeAeson a => String -> a -> Aeson
 wrapEncodeAeson constr = encodeAeson <<< singleton constr <<< encodeAeson
@@ -71,3 +93,44 @@ paysToAddrConstraint a v = case (unwrap a).addressCredential of
     Constraints.mustPayToPubKey (wrap $ unwrap pkh) v
   ScriptCredential vh ->
     Constraints.mustPayToScript (unwrap vh) PlutusData.unit DatumWitness v
+
+fromBIToJSBI :: Data.BigInt -> JSBigInt.BigInt
+fromBIToJSBI = unsafePartial fromJust <<< JSBigInt.fromString <<<
+  DataBigInt.toString
+
+fromBigNumToJSBI :: BigNum -> JSBigInt.BigInt
+fromBigNumToJSBI = unsafePartial fromJust <<< JSBigInt.fromString <<<
+  BigNum.toString
+
+fromBigNumToBI :: BigNum -> Data.BigInt
+fromBigNumToBI = unsafePartial fromJust <<< DataBigInt.fromString <<<
+  BigNum.toString
+
+fromJSBIToBI :: JSBigInt.BigInt -> Data.BigInt
+fromJSBIToBI = unsafePartial fromJust <<< Data.fromString <<<
+  JSBigInt.toString
+
+fromBIToBigNum :: Data.BigInt -> BigNum
+fromBIToBigNum = unsafePartial fromJust <<< BigNum.fromString <<<
+  DataBigInt.toString
+
+fromBIToInt :: Data.BigInt -> CT.Int
+fromBIToInt = unsafePartial fromJust <<< CTInt.fromString <<<
+  DataBigInt.toString
+
+mkMint :: PlutusValue.Value -> Mint
+mkMint v = unsafePartial $ fromJust
+  $ Mint.unflatten
+  $ map
+      ( \(cs /\ tk /\ amt) ->
+          unsafePartial (fromJust $ CurrencySymbol.toCardano cs) /\ unwrap tk /\
+            mkInt amt
+      )
+  $ PlutusValue.flattenValue v
+
+fromBIToDataBI :: CTBigInt.BigInt -> Data.BigInt
+fromBIToDataBI = unsafePartial fromJust <<< DataBigInt.fromString <<<
+  CTBigInt.toString
+
+mkInt :: JSBigInt.BigInt -> Int.Int
+mkInt a = unsafePartial $ fromJust $ Int.fromBigInt a

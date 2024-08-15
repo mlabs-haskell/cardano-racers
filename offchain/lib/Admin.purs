@@ -2,11 +2,15 @@ module Lib.CardanoRacers.Admin where
 
 import Contract.Prelude
 
+import Cardano.AsCbor (encodeCbor)
+import Cardano.Plutus.Types.Address as PlutusAddress
+import Cardano.Types.Address as Address
 import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Deposit.Validator (mkDepositValidator)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types (GameAssetType(DriverType, CarType))
+import CardanoRacers.Helpers (fromBIToJSBI)
 import CardanoRacers.Nitro.Contract (mkNitroPolicy)
 import CardanoRacers.Nitro.Helpers (createRacersParams) as NitroHelpers
 import CardanoRacers.RacersState.Contract
@@ -18,15 +22,15 @@ import CardanoRacers.RacersState.Types
   ( AssetPrices(AssetPrices)
   , RacersState(RacersState)
   )
-import Contract.Address (addressFromBech32, addressToBech32)
+import Contract.Address (addressFromBech32)
+import Contract.CborBytes (cborBytesToHex)
 import Contract.Config (ContractParams, WalletSpec)
 import Contract.Log (logInfo')
 import Contract.Monad (liftContractM, liftedM, runContract, throwContractError)
-import Contract.Prim.ByteArray (byteArrayToHex)
-import Contract.Scripts (MintingPolicy(PlutusMintingPolicy))
 import Contract.Wallet (getWalletAddresses, getWalletUtxos)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff)
+import Data.Array (head)
 import Data.Array (head) as Array
 import Data.Map (toUnfoldable) as Map
 import Effect.Aff.Compat (EffectFn1, mkEffectFn1)
@@ -64,22 +68,29 @@ initRacers cp walletSpec initialState =
   in
     runContract cfg do
       addrs <- getWalletAddresses
-      traverse_ (logInfo' <=< addressToBech32) addrs
+      traverse_ (logInfo' <<< Address.toBech32) addrs
       utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
       (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
         Map.toUnfoldable utxos
       rp <- NitroHelpers.createRacersParams txi
+
       treasuryAddress <- addressFromBech32 initialState.treasuryAddress
+      treasuryAddrPlutus <-  liftContractM "Could not convert treasury address to Plutus"
+        $ PlutusAddress.fromCardano treasuryAddress
+
       operatingAddress <- addressFromBech32 initialState.operatingAddress
+      operatingAddrPlutus <-  liftContractM "Could not convert treasury address to Plutus"
+        $ PlutusAddress.fromCardano operatingAddress
+
       let
         rs = RacersState
-          { treasuryAddress: treasuryAddress
-          , operatingAddress: operatingAddress
-          , nitroPrice: fromJsBigInt initialState.nitroPrice
+          { treasuryAddress: treasuryAddrPlutus
+          , operatingAddress: operatingAddrPlutus
+          , nitroPrice: fromBIToJSBI $ fromJsBigInt initialState.nitroPrice
           , assetPrices: AssetPrices
-              { common: fromJsBigInt initialState.assetPrices.common
-              , rare: fromJsBigInt initialState.assetPrices.rare
-              , epic: fromJsBigInt initialState.assetPrices.epic
+              { common: fromBIToJSBI $ fromJsBigInt initialState.assetPrices.common
+              , rare: fromBIToJSBI $ fromJsBigInt initialState.assetPrices.rare
+              , epic: fromBIToJSBI $ fromJsBigInt initialState.assetPrices.epic
               }
           }
       _ <- runRacers rp do
@@ -88,18 +99,25 @@ initRacers cp walletSpec initialState =
         carAssetPolicy <- mkGameAssetPolicy CarType
         nitroPolicy <- mkNitroPolicy
 
-        nitroScriptRef <- lift $ case nitroPolicy of
-          PlutusMintingPolicy s -> pure s
-          _ -> throwContractError "Not plutus script"
-        assetRequestScriptRef <- lift $ case assetRequestPolicy of
-          PlutusMintingPolicy s -> pure s
-          _ -> throwContractError "Not plutus script"
-        driverPolicyRef <- lift $ case driverAssetPolicy of
-          PlutusMintingPolicy s -> pure s
-          _ -> throwContractError "Not plutus script"
-        carPolicyRef <- lift $ case carAssetPolicy of
-          PlutusMintingPolicy s -> pure s
-          _ -> throwContractError "Not plutus script"
+        nitroScriptRef <- lift $
+          case head (unwrap nitroPolicy).plutusMintingPolicies of
+            Just s -> pure s
+            Nothing -> throwContractError "Not plutus script"
+
+        assetRequestScriptRef <- lift $
+          case head (unwrap assetRequestPolicy).plutusMintingPolicies of
+            Just s -> pure s
+            Nothing -> throwContractError "Not plutus script"
+
+        driverPolicyRef <- lift $
+          case head (unwrap driverAssetPolicy).plutusMintingPolicies of
+            Just s -> pure s
+            Nothing -> throwContractError "Not plutus script"
+
+        carPolicyRef <- lift $
+          case head (unwrap carAssetPolicy).plutusMintingPolicies of
+            Just s -> pure s
+            Nothing -> throwContractError "Not plutus script"
 
         depositAssetScriptRef <- unwrap <$> mkDepositValidator
 
@@ -137,20 +155,28 @@ mkAdmin cp walletSpec rp =
     } `merge` queries `merge` bot
 
 setNitroPrice :: Lovelace -> Racers TransactionHashFFI
-setNitroPrice nitroPrice = (byteArrayToHex <<< unwrap) <$>
+setNitroPrice nitroPrice = (cborBytesToHex <<< encodeCbor) <$>
   modifyRacersStateContract
-    (\cur -> wrap $ (unwrap cur) { nitroPrice = fromJsBigInt nitroPrice })
+    ( \cur -> wrap $ (unwrap cur)
+        { nitroPrice = fromBIToJSBI $ fromJsBigInt nitroPrice }
+    )
 
 setTreasuryAddress :: String -> Racers TransactionHashFFI
 setTreasuryAddress addrStr = do
   treasuryAddr <- lift $ addressFromBech32 addrStr
+  treasuryAddrPlutus <- lift
+    $ liftContractM "Could not convert treasury address to Plutus"
+    $ PlutusAddress.fromCardano treasuryAddr
   txh <- modifyRacersStateContract
-    (\cur -> wrap $ (unwrap cur) { treasuryAddress = treasuryAddr })
-  pure $ byteArrayToHex (unwrap txh)
+    (\cur -> wrap $ (unwrap cur) { treasuryAddress = treasuryAddrPlutus })
+  pure $ cborBytesToHex (encodeCbor txh)
 
 setOperatingAddress :: String -> Racers TransactionHashFFI
 setOperatingAddress addrStr = do
   operatingAddr <- lift $ addressFromBech32 addrStr
+  operatingAddrPlutus <- lift
+    $ liftContractM "Could not convert operating address to Plutus"
+    $ PlutusAddress.fromCardano operatingAddr
   txh <- modifyRacersStateContract
-    (\cur -> wrap $ (unwrap cur) { operatingAddress = operatingAddr })
-  pure $ byteArrayToHex (unwrap txh)
+    (\cur -> wrap $ (unwrap cur) { operatingAddress = operatingAddrPlutus })
+  pure $ cborBytesToHex (encodeCbor txh)

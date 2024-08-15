@@ -1,7 +1,15 @@
 module Test.CardanoRacers.RaceRegistry (suite) where
 
-import Contract.Prelude
+import Contract.Prelude hiding (join)
 
+import Cardano.Plutus.Types.Address (scriptHashAddress)
+import Cardano.Plutus.Types.Address as PlutusAddress
+import Cardano.Plutus.Types.PubKeyHash (PubKeyHash)
+import Cardano.Types.AssetName (mkAssetName)
+import Cardano.Types.BigInt as JSBigInt
+import Cardano.Types.BigNum as BigNum
+import Cardano.Types.PlutusScript (hash)
+import Cardano.Types.PlutusScript as PlutusScript
 import CardanoRacers.AssetRequest.Contract
   ( mkAssetRequestPolicy
   , requestAssetByRarity
@@ -15,7 +23,7 @@ import CardanoRacers.GameAsset.Types
   , GameAssetType(CarType, DriverType)
   , Rarity(Common, Rare, Epic)
   )
-import CardanoRacers.Helpers (counterNonce)
+import CardanoRacers.Helpers (counterNonce, fromBIToDataBI)
 import CardanoRacers.Nitro.Contract
   ( adminMintsNitroContract
   , burnNitroConstraints
@@ -43,6 +51,7 @@ import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
 import CardanoRacers.RaceSlot.Types (RaceHash, slotTokenName)
 import CardanoRacers.RacersState.Contract (createRacersRefScriptOutputs)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
+import Contract.Address (getNetworkId)
 import Contract.Monad (liftContractM, liftedM, throwContractError)
 import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
@@ -65,7 +74,7 @@ import Contract.Transaction
 import Contract.TxConstraints (DatumPresence(DatumInline))
 import Contract.TxConstraints as Constraints
 import Contract.Value (Value, geq)
-import Contract.Value as Value
+import Contract.Value (add, singleton) as Value
 import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
 import Control.Apply (lift2)
 import Control.Monad.Error.Class (try)
@@ -75,6 +84,7 @@ import Data.Array (concat, drop, filter, head, null, take) as Array
 import Data.Array (head)
 import Data.BigInt (BigInt)
 import Data.BigInt (fromInt) as BigInt
+import Data.BigInt as DataBigInt
 import Data.FoldableWithIndex (findWithIndex)
 import Data.Map
   ( Map
@@ -87,6 +97,7 @@ import Data.Map
   , unions
   ) as Map
 import Effect.Ref as Ref
+import Lib.CardanoRacers.Common (mintingPolicyHash, negation)
 import Mote (group, test)
 import Partial.Unsafe (unsafePartial)
 import Racers (Racers, runRacers, withContract)
@@ -112,45 +123,64 @@ suite = group "Race Registry" do
             (BigInt.fromInt 1_000_000)
             assetPrices
 
+          networkId <- lift $ getNetworkId
+
           raceHash <- lift
             $ liftContractM "could not convert hex string to bytearray"
             $ byteArrayFromAscii "TestRaceHash"
 
           -- Registry Params
+          slotPolicy <- mkRaceSlotPolicy raceHash
           slotSymbol <-
-            withContract (liftedM "could not get currency symbol from policy")
-              $ scriptCurrencySymbol
-              <$> mkRaceSlotPolicy raceHash
-          nitroPolicyHash <- mintingPolicyHash <$> mkNitroPolicy
-          driverAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy
-            DriverType
-          carAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy CarType
+            lift $ liftContractM "could not get currency symbol from policy"
+              $ head
+              $ map PlutusScript.hash
+              $ (unwrap slotPolicy).plutusMintingPolicies
+
+          nitroPolicy <- mkNitroPolicy
+          nitroPolicyHash <- lift
+            $ liftContractM "could not get nitro hash from policy"
+            $ mintingPolicyHash nitroPolicy
+
+          driverAssetPolicy <- mkGameAssetPolicy DriverType
+          driverAssetPolicyHash <- lift
+            $ liftContractM "could not get driver hash from policy"
+            $ mintingPolicyHash driverAssetPolicy
+
+          carAssetPolicy <- mkGameAssetPolicy CarType
+          carAssetPolicyHash <- lift
+            $ liftContractM "could not get car hash from policy"
+            $ mintingPolicyHash carAssetPolicy
 
           let
-            nitroFee = BigInt.fromInt 100
+            nitroFee = 100
             slots = 10
             utxoCount = 3
             rgp = wrap
-              { slotAssetClass: slotSymbol /\ slotTokenName
+              { slotAssetClass: slotSymbol /\ (unwrap slotTokenName)
               , nitroPolicyHash
               , driverAssetPolicyHash
               , carAssetPolicyHash
-              , nitroFee
+              , nitroFee: JSBigInt.fromInt nitroFee
               }
 
-          registryScriptAddress <- flip scriptHashAddress Nothing
-            <<< validatorHash
+          registryScriptAddressPlutus <- flip scriptHashAddress Nothing
+            <<< (wrap <<< hash <<< unwrap)
             <$> mkRaceRegistryScript rgp
+
+          registryScriptAddress <- lift
+            $ liftContractM "Could not convert Plutus address to Cardano"
+            $ PlutusAddress.toCardano networkId registryScriptAddressPlutus
 
           let
             assertions = checkTokenGainAtAddress'
               (label registryScriptAddress "RaceRegistry Address")
-              (slotSymbol /\ slotTokenName /\ (BigInt.fromInt slots))
+              (slotSymbol /\ unwrap slotTokenName /\ (JSBigInt.fromInt slots))
 
           _ <-
             withContract
               (runChecks [ assertions ] <<< lift <<< withKeyWallet adminKey) $
-              initRace raceHash nitroFee slots utxoCount
+              initRace raceHash (DataBigInt.fromInt nitroFee) slots utxoCount
 
           pure unit
   test "Valid user race registration" do
@@ -181,14 +211,15 @@ suite = group "Race Registry" do
               $ ownPubKeyHashes
               <#> Array.head
 
-            _ <- registerInRaceWithFirstAvailableSlot rgp firstPkh
+            _ <- registerInRaceWithFirstAvailableSlot rgp (wrap firstPkh)
 
             -- Check if the user is registered with the correct assets
             us <- queryRegistryUtxos rgp
             let
               registeredEntries = Array.concat $ (snd <<< snd) <$>
                 (Map.toUnfoldable us :: Array _)
-            registeredEntries `shouldSatisfy` (elem $ PendingSelection firstPkh)
+            registeredEntries `shouldSatisfy`
+              (elem $ PendingSelection $ wrap firstPkh)
   test
     "Registration contract throws when not enough slots available at registry"
     do
@@ -221,8 +252,9 @@ suite = group "Race Registry" do
                 $ ownPubKeyHashes
                 <#> Array.head
 
-              _ <- registerInRaceWithFirstAvailableSlot rgp firstPkh
-              failure <- try $ registerInRaceWithFirstAvailableSlot rgp firstPkh
+              _ <- registerInRaceWithFirstAvailableSlot rgp $ wrap firstPkh
+              failure <- try $ registerInRaceWithFirstAvailableSlot rgp $ wrap
+                firstPkh
 
               failure `shouldSatisfy` isLeft
 
@@ -273,13 +305,22 @@ suite = group "Race Registry" do
                 $
                   findUtxoWithAvailableSlotToken rgp
             -- Register in the race
-            _ <- registerPositionInRace rgp firstPkh slotTxi
+
+            _ <- registerPositionInRace rgp (wrap firstPkh) slotTxi
+
+            firstAddrPlutus <- lift
+              $ liftContractM "Could not convert Plutus address to Cardano"
+              $ PlutusAddress.fromCardano firstAddr
 
             let
               raceParticipant = wrap
-                { car: carTk, driver: driverTk, payoutAddress: firstAddr }
+                { car: unwrap carTk
+                , driver: unwrap driverTk
+                , payoutAddress: firstAddrPlutus
+                }
+
             -- Confirm participating assets
-            _ <- confirmAssetSelection rgp firstPkh raceParticipant
+            _ <- confirmAssetSelection rgp (wrap firstPkh) raceParticipant
 
             -- Check if the user is registered with the correct assets
             us <- queryRegistryUtxos rgp
@@ -324,17 +365,25 @@ suite = group "Race Registry" do
             (carTk /\ driverTk) <- lift $ liftContractM
               "Could not get driver and car token names"
               do
-                d <- mkTokenName <=< byteArrayFromAscii $ "BadDriverAsset"
-                c <- mkTokenName <=< byteArrayFromAscii $ "BadCarAsset"
+                d <- mkAssetName <=< byteArrayFromAscii $ "BadDriverAsset"
+                c <- mkAssetName <=< byteArrayFromAscii $ "BadCarAsset"
                 pure $ c /\ d
 
-            _ <- registerInRaceWithFirstAvailableSlot rgp firstPkh
+            _ <- registerInRaceWithFirstAvailableSlot rgp $ wrap firstPkh
+
+            firstAddrPlutus <- lift
+              $ liftContractM "Could not convert Plutus address to Cardano"
+              $ PlutusAddress.fromCardano firstAddr
 
             let
               raceParticipant = wrap
-                { car: carTk, driver: driverTk, payoutAddress: firstAddr }
+                { car: carTk
+                , driver: driverTk
+                , payoutAddress: firstAddrPlutus
+                }
             -- Confirm participating assets
-            failure <- try $ confirmAssetSelection rgp firstPkh raceParticipant
+            failure <- try $ confirmAssetSelection rgp (wrap firstPkh)
+              raceParticipant
 
             failure `shouldSatisfy` isLeft
   test "Altering existing entries fails" do
@@ -380,7 +429,7 @@ suite = group "Race Registry" do
               $ ownPubKeyHashes
               <#> Array.head
 
-            _ <- registerInRaceWithFirstAvailableSlot rgp firstPkh
+            _ <- registerInRaceWithFirstAvailableSlot rgp $ wrap firstPkh
             pure unit
 
           res <- try $ withContract (withKeyWallet treasuryKey) $
@@ -430,8 +479,8 @@ suite = group "Race Registry" do
             firstPkh <- lift $ liftedM "Could not get first own public key hash"
               $ ownPubKeyHashes
               <#> Array.head
-            _ <- registerInRaceWithFirstAvailableSlot rgp firstPkh
-            _ <- registerInRaceWithFirstAvailableSlot rgp firstPkh
+            _ <- registerInRaceWithFirstAvailableSlot rgp $ wrap firstPkh
+            _ <- registerInRaceWithFirstAvailableSlot rgp $ wrap firstPkh
             pure unit
 
           _ <- withContract (withKeyWallet attackerKey) $
@@ -540,13 +589,17 @@ suite = group "Race Registry" do
                   mintedAssets
                 pure $ c /\ d
 
-            _ <- registerInRaceWithFirstAvailableSlot rgp firstPkh
+            _ <- registerInRaceWithFirstAvailableSlot rgp $ wrap firstPkh
+
+            firstAddrPlutus <- lift
+              $ liftContractM "Could not convert Plutus address to Cardano"
+              $ PlutusAddress.fromCardano firstAddr
 
             res <- try $ doesNotSignAssetSelection rgp
               ( wrap
-                  { car: carTk
-                  , driver: driverTk
-                  , payoutAddress: firstAddr
+                  { car: unwrap carTk
+                  , driver: unwrap driverTk
+                  , payoutAddress: firstAddrPlutus
                   }
               )
 
@@ -558,15 +611,15 @@ suite = group "Race Registry" do
   where
   walletUtxoDistr :: InitialUTxOs
   walletUtxoDistr =
-    [ BigInt.fromInt 5_000_000
-    , BigInt.fromInt 2_000_000_000
+    [ BigNum.fromInt 5_000_000
+    , BigNum.fromInt 2_000_000_000
     ]
 
   assetPrices :: AssetPrices
   assetPrices = AssetPrices
-    { common: BigInt.fromInt 5000000
-    , rare: BigInt.fromInt 1000000
-    , epic: BigInt.fromInt 20000000
+    { common: JSBigInt.fromInt 5000000
+    , rare: JSBigInt.fromInt 1000000
+    , epic: JSBigInt.fromInt 20000000
     }
 
   availableAssets :: Map.Map Rarity AssetOption
@@ -689,27 +742,27 @@ enrollsAlteringExistingEntries rgp = do
 
   let
     newRegistry :: Array RegistryEntry
-    newRegistry = map PendingSelection [ firstPkh ]
+    newRegistry = map PendingSelection [ wrap firstPkh ]
 
     previousValueAtRegistry :: Value
-    previousValueAtRegistry = (unwrap (unwrap slotTxo).output).amount
+    previousValueAtRegistry = (unwrap slotTxo).amount
 
-    registryDatum = wrap $ toData (wrap newRegistry :: RegistryDatum)
-    enrollRedeemer = wrap $ toData $ Enroll [ firstPkh ]
+    registryDatum = toData (wrap newRegistry :: RegistryDatum)
+    enrollRedeemer = wrap $ toData $ Enroll [ wrap firstPkh ]
 
-    constraints :: Constraints.TxConstraints Void Void
+    constraints :: Constraints.TxConstraints
     constraints = Constraints.mustSpendScriptOutput slotTxi enrollRedeemer
-      <> Constraints.mustPayToScript (validatorHash registryScript)
+      <> Constraints.mustPayToScript (validatorHash $ unwrap registryScript)
         registryDatum
         DatumInline
         previousValueAtRegistry
 
-    lookups :: Lookups.ScriptLookups Void
+    lookups :: Lookups.ScriptLookups
     lookups = Lookups.unspentOutputs (Map.singleton slotTxi slotTxo)
-      <> Lookups.validator registryScript
+      <> Lookups.validator (unwrap registryScript)
 
   (nitroConstraints /\ nitroLookups) <- burnNitroConstraints
-    $ (unwrap rgp).nitroFee
+    $ fromBIToDataBI (unwrap rgp).nitroFee
 
   lift do
     txId <- submitTxFromConstraints (nitroLookups <> lookups)
@@ -743,29 +796,29 @@ userSpendsSlotTokens rgp = do
 
   let
     newRegistry :: Array RegistryEntry
-    newRegistry = map PendingSelection [ firstPkh ] <> registryEntries
+    newRegistry = map PendingSelection [ wrap firstPkh ] <> registryEntries
 
     previousValueAtRegistry :: Value
     previousValueAtRegistry = uncurry Value.singleton
       (unwrap rgp).slotAssetClass
-      (BigInt.fromInt 1)
+      (BigNum.fromInt 1)
 
-    registryDatum = wrap $ toData (wrap newRegistry :: RegistryDatum)
-    enrollRedeemer = wrap $ toData $ Enroll [ firstPkh ]
+    registryDatum = toData (wrap newRegistry :: RegistryDatum)
+    enrollRedeemer = wrap $ toData $ Enroll [ wrap firstPkh ]
 
-    constraints :: Constraints.TxConstraints Void Void
+    constraints :: Constraints.TxConstraints
     constraints = Constraints.mustSpendScriptOutput slotTxi enrollRedeemer
-      <> Constraints.mustPayToScript (validatorHash registryScript)
+      <> Constraints.mustPayToScript (validatorHash $ unwrap registryScript)
         registryDatum
         DatumInline
         previousValueAtRegistry
 
-    lookups :: Lookups.ScriptLookups Void
+    lookups :: Lookups.ScriptLookups
     lookups = Lookups.unspentOutputs (Map.singleton slotTxi slotTxo)
-      <> Lookups.validator registryScript
+      <> Lookups.validator (unwrap registryScript)
 
   (nitroConstraints /\ nitroLookups) <- burnNitroConstraints
-    $ (unwrap rgp).nitroFee
+    $ fromBIToDataBI (unwrap rgp).nitroFee
 
   lift do
     txId <- submitTxFromConstraints (nitroLookups <> lookups)
@@ -789,39 +842,41 @@ userSplitsRegistryDatum rgp = do
 
   let
     newRegistry :: Array RegistryEntry
-    newRegistry = map PendingSelection [ firstPkh ]
+    newRegistry = map PendingSelection [ wrap firstPkh ]
 
     singleSlotValue :: Value
     singleSlotValue = uncurry Value.singleton (unwrap rgp).slotAssetClass
-      (BigInt.fromInt 1)
+      (BigNum.fromInt 1)
 
-    existingEntriesSlotValue :: Value
-    existingEntriesSlotValue = (unwrap (unwrap slotTxo).output).amount <>
-      (negation singleSlotValue)
+  existingEntriesSlotValue <- lift
+    $ liftContractM "Couldn't join values"
+    $ Value.add (unwrap slotTxo).amount
+        (negation singleSlotValue)
 
-    existingRegistryDatum = wrap $ toData
+  let
+    existingRegistryDatum = toData
       (wrap registryEntries :: RegistryDatum)
-    singleRegistryDatum = wrap $ toData (wrap newRegistry :: RegistryDatum)
+    singleRegistryDatum = toData (wrap newRegistry :: RegistryDatum)
 
-    enrollRedeemer = wrap $ toData $ Enroll [ firstPkh ]
+    enrollRedeemer = wrap $ toData $ Enroll [ wrap firstPkh ]
 
-    constraints :: Constraints.TxConstraints Void Void
+    constraints :: Constraints.TxConstraints
     constraints = Constraints.mustSpendScriptOutput slotTxi enrollRedeemer
-      <> Constraints.mustPayToScript (validatorHash registryScript)
+      <> Constraints.mustPayToScript (validatorHash (unwrap registryScript))
         existingRegistryDatum
         DatumInline
         existingEntriesSlotValue
-      <> Constraints.mustPayToScript (validatorHash registryScript)
+      <> Constraints.mustPayToScript (validatorHash (unwrap registryScript))
         singleRegistryDatum
         DatumInline
         singleSlotValue
 
-    lookups :: Lookups.ScriptLookups Void
+    lookups :: Lookups.ScriptLookups
     lookups = Lookups.unspentOutputs (Map.singleton slotTxi slotTxo)
-      <> Lookups.validator registryScript
+      <> Lookups.validator (unwrap registryScript)
 
   (nitroConstraints /\ nitroLookups) <- burnNitroConstraints
-    $ (unwrap rgp).nitroFee
+    $ fromBIToDataBI (unwrap rgp).nitroFee
 
   lift do
     txId <- submitTxFromConstraints (nitroLookups <> lookups)
@@ -835,13 +890,20 @@ doesNotSignAssetSelection rgp participant = do
   let selections = [ participant ]
   utxos <- lift $ liftedM "Could not get wallet utxos" getWalletUtxos
   registryVal <- mkRaceRegistryScript rgp
-  driverAssetSymbol <-
-    withContract (liftedM "Could not get driver asset symbol")
-      $ scriptCurrencySymbol
-      <$> mkGameAssetPolicy DriverType
-  carAssetSymbol <- withContract (liftedM "Could not get car asset symbol")
-    $ scriptCurrencySymbol
-    <$> mkGameAssetPolicy CarType
+
+  driverAssetPolicy <- mkGameAssetPolicy DriverType
+  driverAssetSymbol <- lift
+    $ liftContractM "Could not get driver asset symbol"
+    $ head
+    $ map PlutusScript.hash
+    $ (unwrap driverAssetPolicy).plutusMintingPolicies
+
+  carAssetPolicy <- mkGameAssetPolicy CarType
+  carAssetSymbol <- lift $ liftContractM "Could not get car asset symbol"
+    $ head
+    $ map PlutusScript.hash
+    $ (unwrap carAssetPolicy).plutusMintingPolicies
+
   registryUtxos <- queryRegistryUtxos rgp
 
   firstPkh <- lift $ liftedM "Could not get first own public key hash"
@@ -874,8 +936,10 @@ doesNotSignAssetSelection rgp participant = do
            )
       folder (remainingSels /\ updatedTxis) (txi /\ entries) =
         let
-          slotsWithPkh = Array.filter (_ == (PendingSelection firstPkh)) entries
-          otherSlots = Array.filter (_ /= (PendingSelection firstPkh)) entries
+          slotsWithPkh = Array.filter (_ == (PendingSelection (wrap firstPkh)))
+            entries
+          otherSlots = Array.filter (_ /= (PendingSelection $ wrap firstPkh))
+            entries
           allocatedSlots = map AssetSelection $ Array.take (length slotsWithPkh)
             remainingSels
           newRemainingSels = Array.drop (length slotsWithPkh) remainingSels
@@ -911,9 +975,9 @@ doesNotSignAssetSelection rgp participant = do
         where
         hasAsset _ txo =
           let
-            amount = (unwrap (unwrap txo).output).amount
-            driverVal = Value.singleton driverAssetSymbol tk one
-            carVal = Value.singleton carAssetSymbol tk one
+            amount = (unwrap txo).amount
+            driverVal = Value.singleton driverAssetSymbol tk BigNum.one
+            carVal = Value.singleton carAssetSymbol tk BigNum.one
           in
             amount `geq` driverVal || amount `geq` carVal
 
@@ -922,7 +986,7 @@ doesNotSignAssetSelection rgp participant = do
       <$> traverse findAssetForSelection selections
 
   let
-    constraints :: Constraints.TxConstraints Void Void
+    constraints :: Constraints.TxConstraints
     constraints =
       foldMap Constraints.mustSpendPubKeyOutput (Map.keys assetUtxoMap)
         <> foldMap
@@ -930,14 +994,14 @@ doesNotSignAssetSelection rgp participant = do
               Constraints.mustSpendScriptOutput txi
                 (wrap $ toData $ SelectAssets)
                 <> Constraints.mustPayToScript
-                  (validatorHash registryVal)
-                  (wrap $ toData (wrap entries :: RegistryDatum))
+                  (validatorHash (unwrap registryVal))
+                  (toData (wrap entries :: RegistryDatum))
                   DatumInline
-                  (unwrap (unwrap txo).output).amount
+                  (unwrap txo).amount
           )
           allocationsWithOutputs
 
-    lookups :: Lookups.ScriptLookups Void
+    lookups :: Lookups.ScriptLookups
     lookups =
       Lookups.unspentOutputs
         ( assetUtxoMap `Map.union` Map.unions
@@ -945,7 +1009,7 @@ doesNotSignAssetSelection rgp participant = do
                 allocationsWithOutputs
             )
         )
-        <> Lookups.validator registryVal
+        <> Lookups.validator (unwrap registryVal)
 
   lift do
     txId <- submitTxFromConstraints lookups constraints

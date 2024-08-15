@@ -7,9 +7,10 @@ import Cardano.Plutus.Types.MintingPolicyHash
   ( MintingPolicyHash(MintingPolicyHash)
   )
 import Cardano.Serialization.Lib (toBytes)
-import Cardano.Types (NetworkId(MainnetId, TestnetId), PrivateKey)
+import Cardano.Types (NetworkId(MainnetId, TestnetId), PrivateKey, Value(Value))
 import Cardano.Types.AssetName (unAssetName)
 import Cardano.Types.BigInt as JSBigInt
+import Cardano.Types.BigNum as BigNum
 import Cardano.Types.NativeScript as NativeScript
 import Cardano.Types.PlutusScript as PlutusScript
 import CardanoRacers.Common.Types (RacersParams)
@@ -351,3 +352,13 @@ mintingPolicyHash sl = case head (unwrap sl).plutusMintingPolicies of
   Nothing -> do
     (MintingPolicyHash <<< NativeScript.hash) <$> head
       (unwrap sl).nativeMintingPolicies
+
+negation :: Value -> Value
+negation (Value c ma) =
+  Value c $ wrap $ map
+    ( map
+        ( \b ->
+            unsafePartial fromJust $ BigNum.fromInt (-1) `BigNum.mul` b
+        )
+    )
+    (unwrap ma)

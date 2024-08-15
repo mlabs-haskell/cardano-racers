@@ -2,6 +2,10 @@ module Test.CardanoRacers.Deposit (suite) where
 
 import Contract.Prelude
 
+import Cardano.Types.AssetName (mkAssetName)
+import Cardano.Types.BigInt as JSBigInt
+import Cardano.Types.BigNum as BigNum
+import Cardano.Types.PlutusScript as PlutusScript
 import CardanoRacers.AssetRequest.Contract
   ( mkAssetRequestPolicy
   , requestAssetByRarity
@@ -18,10 +22,8 @@ import CardanoRacers.Nitro.Contract (adminMintsNitroContract, mkNitroPolicy)
 import CardanoRacers.RacersState.Contract (createRacersRefScriptOutputs)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Log (logInfo')
-import Contract.Metadata (mkCip25String, unCip25String)
 import Contract.Monad (liftContractM, liftedM, throwContractError)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
-import Contract.Scripts (MintingPolicy(PlutusMintingPolicy))
 import Contract.Test.Assert (checkTokenGainAtAddress', label, runChecks)
 import Contract.Test.Mote (TestPlanM)
 import Contract.Test.Plutip
@@ -30,11 +32,10 @@ import Contract.Test.Plutip
   , withKeyWallet
   , withWallets
   )
-import Contract.Value (mkTokenName)
-import Contract.Value as Value
 import Contract.Wallet (getWalletAddresses)
 import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
+import Data.Array (head)
 import Data.Array (head) as Array
 import Data.BigInt (fromInt) as BigInt
 import Data.Map (Map, fromFoldable, lookup) as Map
@@ -42,6 +43,7 @@ import Effect.Aff (delay)
 import Mote (group, test)
 import Partial.Unsafe (unsafePartial)
 import Racers (Racers, runRacers, withContract)
+import Racers.Metadata.Cip25.Cip25String (mkCip25String, unCip25String)
 import Test.CardanoRacers.Helpers
   ( createRacersParamsHelper
   , initRacersStateWithAdminAndTreasury
@@ -68,18 +70,25 @@ suite = group "Deposit" do
               carAssetPolicy <- mkGameAssetPolicy CarType
               nitroPolicy <- mkNitroPolicy
 
-              nitroScriptRef <- lift $ case nitroPolicy of
-                PlutusMintingPolicy s -> pure s
-                _ -> throwContractError "Not plutus script"
-              assetRequestScriptRef <- lift $ case assetRequestPolicy of
-                PlutusMintingPolicy s -> pure s
-                _ -> throwContractError "Not plutus script"
-              driverPolicyRef <- lift $ case driverAssetPolicy of
-                PlutusMintingPolicy s -> pure s
-                _ -> throwContractError "Not plutus script"
-              carPolicyRef <- lift $ case carAssetPolicy of
-                PlutusMintingPolicy s -> pure s
-                _ -> throwContractError "Not plutus script"
+              nitroScriptRef <- lift $
+                case head (unwrap nitroPolicy).plutusMintingPolicies of
+                  Just s -> pure s
+                  Nothing -> throwContractError "Not plutus script"
+
+              assetRequestScriptRef <- lift $
+                case head (unwrap assetRequestPolicy).plutusMintingPolicies of
+                  Just s -> pure s
+                  Nothing -> throwContractError "Not plutus script"
+
+              driverPolicyRef <- lift $
+                case head (unwrap driverAssetPolicy).plutusMintingPolicies of
+                  Just s -> pure s
+                  Nothing -> throwContractError "Not plutus script"
+
+              carPolicyRef <- lift $
+                case head (unwrap carAssetPolicy).plutusMintingPolicies of
+                  Just s -> pure s
+                  Nothing -> throwContractError "Not plutus script"
 
               depositAssetScriptRef <- unwrap <$> mkDepositValidator
 
@@ -93,21 +102,18 @@ suite = group "Deposit" do
                   ]
                 ]
 
-              driverSymbol <- lift
-                $ liftContractM "could not get currency symbol"
-                $
-                  Value.scriptCurrencySymbol driverAssetPolicy
-              carSymbol <- lift $ liftContractM "could not get currency symbol"
-                $
-                  Value.scriptCurrencySymbol carAssetPolicy
+              let
+                driverSymbol = PlutusScript.hash driverPolicyRef
+                carSymbol = PlutusScript.hash carPolicyRef
+
               pure $ driverSymbol /\ carSymbol
 
           let
             assetPrices :: AssetPrices
             assetPrices = AssetPrices
-              { common: BigInt.fromInt 5000000
-              , rare: BigInt.fromInt 1000000
-              , epic: BigInt.fromInt 20000000
+              { common: JSBigInt.fromInt 5000000
+              , rare: JSBigInt.fromInt 1000000
+              , epic: JSBigInt.fromInt 20000000
               }
 
           _ <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
@@ -140,14 +146,14 @@ suite = group "Deposit" do
             assertions <- lift $ for assetsAndNames $ \(assetType /\ name) -> do
               tkName <-
                 liftContractM ("could not create token name from " <> name) $
-                  (mkTokenName <=< byteArrayFromAscii) name
+                  (mkAssetName <=< byteArrayFromAscii) name
               let
                 gameAssetSymbol = case assetType of
                   DriverType -> driverAssetSymbol
                   CarType -> carAssetSymbol
 
               pure $ checkTokenGainAtAddress' (label userAddress "User")
-                (gameAssetSymbol /\ tkName /\ BigInt.fromInt 1)
+                (gameAssetSymbol /\ tkName /\ JSBigInt.fromInt 1)
 
             withContract (runChecks assertions <<< lift) $
               retryCount
@@ -173,10 +179,10 @@ suite = group "Deposit" do
 
   walletUtxoDistr :: InitialUTxOs
   walletUtxoDistr =
-    [ BigInt.fromInt 5_000_000
-    , BigInt.fromInt 5_000_000
-    , BigInt.fromInt 5_000_000
-    , BigInt.fromInt 2_000_000_000
+    [ BigNum.fromInt 5_000_000
+    , BigNum.fromInt 5_000_000
+    , BigNum.fromInt 5_000_000
+    , BigNum.fromInt 2_000_000_000
     ]
 
   availableAssets :: Map.Map Rarity AssetOption
