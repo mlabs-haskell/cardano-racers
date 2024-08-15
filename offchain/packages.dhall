@@ -224,7 +224,7 @@ let additions =
           , "untagged-union"
           ]
         , repo = "https://github.com/mlabs-haskell/purescript-cip30"
-        , version = "8f1b34b48825fcec5e9c67f33e255770b1e0bc45"
+        , version = "v1.0.0"
         }
       , cip30-typesafe =
         { dependencies =
@@ -242,7 +242,7 @@ let additions =
           , "variant"
           ]
         , repo = "https://github.com/mlabs-haskell/purescript-cip30-typesafe"
-        , version = "d72e51fbc0255eb3246c9132d295de7f65e16a99"
+        , version = "v1.0.0"
         }
       , bytearrays =
         { dependencies =
@@ -266,21 +266,27 @@ let additions =
       , cardano-serialization-lib =
         { dependencies =
           [ "aeson"
+          , "aff"
           , "argonaut"
           , "bifunctors"
           , "bytearrays"
           , "effect"
           , "either"
+          , "enums"
           , "maybe"
           , "nullable"
           , "ordered-collections"
+          , "partial"
           , "prelude"
           , "profunctor"
+          , "spec"
+          , "transformers"
           , "tuples"
+          , "unsafe-coerce"
           ]
         , repo =
             "https://github.com/mlabs-haskell/purescript-cardano-serialization-lib"
-        , version = "26d437c3f398172c839b93b57c30eb43a7fa7ca0"
+        , version = "v1.0.0"
         }
       , cardano-plutus-data-schema =
         { dependencies = [ "prelude" ]
@@ -322,7 +328,7 @@ let additions =
         { dependencies =
           [ "aff-promise", "console", "effect", "functions", "prelude" ]
         , repo = "https://github.com/mlabs-haskell/purescript-cip30-mock"
-        , version = "v1.0.0"
+        , version = "v1.1.0"
         }
       , cardano-collateral-select =
         { dependencies =
@@ -364,7 +370,7 @@ let additions =
           ]
         , repo =
             "https://github.com/mlabs-haskell/purescript-cardano-key-wallet"
-        , version = "v1.0.0"
+        , version = "v2.0.0"
         }
       , uplc-apply-args =
         { dependencies =
@@ -394,14 +400,15 @@ let additions =
       , cardano-types =
         { dependencies =
           [ "aeson"
+          , "aff"
           , "arraybuffer-types"
           , "arrays"
           , "bifunctors"
           , "bytearrays"
           , "cardano-plutus-data-schema"
           , "cardano-serialization-lib"
-          , "console"
           , "control"
+          , "datetime"
           , "effect"
           , "either"
           , "encoding"
@@ -415,6 +422,8 @@ let additions =
           , "literals"
           , "maybe"
           , "monad-logger"
+          , "mote"
+          , "mote-testplan"
           , "newtype"
           , "nonempty"
           , "nullable"
@@ -422,11 +431,12 @@ let additions =
           , "partial"
           , "prelude"
           , "profunctor"
+          , "profunctor-lenses"
           , "quickcheck"
           , "rationals"
           , "record"
           , "safe-coerce"
-          , "strings"
+          , "spec"
           , "these"
           , "tuples"
           , "typelevel-prelude"
@@ -435,7 +445,7 @@ let additions =
           , "unsafe-coerce"
           ]
         , repo = "https://github.com/mlabs-haskell/purescript-cardano-types"
-        , version = "v1.0.1"
+        , version = "v2.0.1"
         }
       , cardano-message-signing =
         { dependencies =
@@ -461,7 +471,7 @@ let additions =
           , "uint"
           ]
         , repo = "https://github.com/mlabs-haskell/purescript-cardano-hd-wallet"
-        , version = "v1.0.0"
+        , version = "cc1073ddf8bce72407ef6671e3decb59f422e304"
         }
       , mote-testplan =
         { dependencies =
@@ -498,15 +508,18 @@ let additions =
           , "bignumber"
           , "bytearrays"
           , "cardano-hd-wallet"
-          , "uplc-apply-args"
+          , "cardano-key-wallet"
+          , "cardano-message-signing"
           , "cardano-plutus-data-schema"
           , "cardano-serialization-lib"
-          , "cardano-key-wallet"
+          , "cardano-transaction-builder"
           , "cardano-types"
           , "checked-exceptions"
           , "cip30"
           , "cip30-mock"
           , "cip30-typesafe"
+          , "cip95"
+          , "cip95-typesafe"
           , "console"
           , "control"
           , "crypto"
@@ -545,6 +558,7 @@ let additions =
           , "node-process"
           , "node-readline"
           , "node-streams"
+          , "node-streams-aff"
           , "nonempty"
           , "now"
           , "nullable"
@@ -553,8 +567,8 @@ let additions =
           , "ordered-collections"
           , "orders"
           , "parallel"
-          , "partial"
           , "parsing"
+          , "partial"
           , "plutus-types"
           , "posix-types"
           , "prelude"
@@ -567,6 +581,7 @@ let additions =
           , "record"
           , "refs"
           , "safe-coerce"
+          , "safely"
           , "spec"
           , "spec-quickcheck"
           , "strings"
@@ -581,12 +596,102 @@ let additions =
           , "unfoldable"
           , "unsafe-coerce"
           , "untagged-union"
+          , "uplc-apply-args"
           , "variant"
           , "web-html"
           , "web-storage"
           ]
         , repo = "https://github.com/Plutonomicon/cardano-transaction-lib.git"
-        , version = "2c8e8fb75c6820e51b955ce3f7e2f5ac2446822e"
+        , version = "v9.2.0"
+        }
+      , cardano-transaction-builder =
+        { dependencies =
+          [ "aeson"
+          , "aff"
+          , "arraybuffer-types"
+          , "arrays"
+          , "bifunctors"
+          , "bytearrays"
+          , "cardano-plutus-data-schema"
+          , "cardano-serialization-lib"
+          , "cardano-types"
+          , "console"
+          , "control"
+          , "datetime"
+          , "effect"
+          , "either"
+          , "encoding"
+          , "exceptions"
+          , "foldable-traversable"
+          , "foreign-object"
+          , "integers"
+          , "js-bigints"
+          , "lattice"
+          , "lists"
+          , "literals"
+          , "maybe"
+          , "monad-logger"
+          , "mote"
+          , "mote-testplan"
+          , "newtype"
+          , "nonempty"
+          , "nullable"
+          , "ordered-collections"
+          , "partial"
+          , "prelude"
+          , "profunctor"
+          , "profunctor-lenses"
+          , "quickcheck"
+          , "rationals"
+          , "record"
+          , "safe-coerce"
+          , "spec"
+          , "strings"
+          , "these"
+          , "transformers"
+          , "tuples"
+          , "typelevel-prelude"
+          , "uint"
+          , "unfoldable"
+          , "unsafe-coerce"
+          ]
+        , repo =
+            "https://github.com/mlabs-haskell/purescript-cardano-transaction-builder"
+        , version = "a9c033b9a2bb78b134ae5309209f73e47f3d5791"
+        }
+      , cip95 =
+        { dependencies =
+          [ "aff"
+          , "aff-promise"
+          , "cip30"
+          , "console"
+          , "effect"
+          , "newtype"
+          , "prelude"
+          ]
+        , repo = "https://github.com/mlabs-haskell/purescript-cip95"
+        , version = "v1.0.0"
+        }
+      , cip95-typesafe =
+        { dependencies =
+          [ "aff"
+          , "bifunctors"
+          , "cip30"
+          , "cip30-typesafe"
+          , "cip95"
+          , "console"
+          , "control"
+          , "effect"
+          , "either"
+          , "exceptions"
+          , "maybe"
+          , "prelude"
+          , "spec"
+          , "transformers"
+          , "variant"
+          ]
+        , repo = "https://github.com/mlabs-haskell/purescript-cip95-typesafe"
+        , version = "v1.0.0"
         }
       }
 
