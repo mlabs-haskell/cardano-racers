@@ -75,12 +75,14 @@ initRacers cp walletSpec initialState =
       rp <- NitroHelpers.createRacersParams txi
 
       treasuryAddress <- addressFromBech32 initialState.treasuryAddress
-      treasuryAddrPlutus <-  liftContractM "Could not convert treasury address to Plutus"
-        $ PlutusAddress.fromCardano treasuryAddress
+      treasuryAddrPlutus <-
+        liftContractM "Could not convert treasury address to Plutus"
+          $ PlutusAddress.fromCardano treasuryAddress
 
       operatingAddress <- addressFromBech32 initialState.operatingAddress
-      operatingAddrPlutus <-  liftContractM "Could not convert treasury address to Plutus"
-        $ PlutusAddress.fromCardano operatingAddress
+      operatingAddrPlutus <-
+        liftContractM "Could not convert treasury address to Plutus"
+          $ PlutusAddress.fromCardano operatingAddress
 
       let
         rs = RacersState
@@ -88,7 +90,8 @@ initRacers cp walletSpec initialState =
           , operatingAddress: operatingAddrPlutus
           , nitroPrice: fromBIToJSBI $ fromJsBigInt initialState.nitroPrice
           , assetPrices: AssetPrices
-              { common: fromBIToJSBI $ fromJsBigInt initialState.assetPrices.common
+              { common: fromBIToJSBI $ fromJsBigInt
+                  initialState.assetPrices.common
               , rare: fromBIToJSBI $ fromJsBigInt initialState.assetPrices.rare
               , epic: fromBIToJSBI $ fromJsBigInt initialState.assetPrices.epic
               }
