@@ -14,12 +14,21 @@ import Cardano.Plutus.ApplyArgs (applyArgs)
 import Cardano.Plutus.Types.CurrencySymbol (toCardano) as Plutus
 import Cardano.Plutus.Types.OutputDatum as PlutusOutputDatum
 import Cardano.Plutus.Types.Validator (Validator(Validator))
-import Cardano.Types (Address, RedeemerDatum(..), TransactionHash, TransactionOutput, Value)
+import Cardano.Types
+  ( Address
+  , RedeemerDatum(RedeemerDatum)
+  , TransactionHash
+  , TransactionOutput
+  , Value
+  )
 import Cardano.Types.BigNum as BigNum
 import Cardano.Types.Credential (Credential(ScriptHashCredential))
 import Cardano.Types.PlutusScript (hash)
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.RacersState.Types (RacersState, RacersStateRedeemer(SetRacersState))
+import CardanoRacers.RacersState.Types
+  ( RacersState
+  , RacersStateRedeemer(SetRacersState)
+  )
 import CardanoRacers.ScriptsFFI (racersStateValidatorScript)
 import Common.ContractHelpers (findAnyAuthUtxo)
 import Contract.Address (mkAddress)
@@ -28,7 +37,12 @@ import Contract.PlutusData (toData, unitDatum)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (PlutusScript, ScriptHash)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptFromEnvelope)
-import Contract.Transaction (ScriptRef(NativeScriptRef, PlutusScriptRef), TransactionInput, awaitTxConfirmed, submitTxFromConstraints)
+import Contract.Transaction
+  ( ScriptRef(NativeScriptRef, PlutusScriptRef)
+  , TransactionInput
+  , awaitTxConfirmed
+  , submitTxFromConstraints
+  )
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (utxosAt)
