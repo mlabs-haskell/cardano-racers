@@ -5,10 +5,9 @@ module CardanoRacers.AssetRequest.Contract
 
 import Contract.Prelude
 
-import Cardano.FromData (fromData)
 import Cardano.Plutus.ApplyArgs (applyArgs)
 import Cardano.Plutus.Types.Address as PlutusAddress
-import Cardano.Types (Address)
+import Cardano.Types (Address, RedeemerDatum(RedeemerDatum))
 import Cardano.Types.AssetName (mkAssetName)
 import Cardano.Types.BigNum as BigNum
 import Cardano.Types.Int as Int
@@ -74,11 +73,8 @@ requestAssetByRarity rarity = do
 
   mAssetRequestPolicyRef <- queryRacersRefScriptOutput depositScript
 
-  red <- lift
-    $ liftContractM "Could not get Redeemer data"
-    $ fromData
-    $ toData
-    $ MintRequestToken
+  let
+    red = RedeemerDatum $ toData $ MintRequestToken
 
   let
     (totalAdaDue :: JSBigInt.BigInt) = getAssetPrice rarity

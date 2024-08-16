@@ -13,7 +13,6 @@ module CardanoRacers.Nitro.Contract
 
 import Contract.Prelude
 
-import Cardano.FromData (fromData)
 import Cardano.Plutus.ApplyArgs (applyArgs)
 import Cardano.Plutus.Types.Address as Address
 import Cardano.ToData (toData)
@@ -236,11 +235,8 @@ buyNitroContract nitroAmount = do
     $ Int.fromString
     $ BigInt.toString nitroAmount
 
-  red <- lift
-    $ liftContractM "Could not get Redeemer data"
-    $ fromData
-    $ toData
-    $ BuyNitroToken nitroAmountBG
+  let
+    red = RedeemerDatum $ toData $ BuyNitroToken nitroAmountBG
 
   ns /\ stateTxi /\ stateTxo <- queryRacersState
 

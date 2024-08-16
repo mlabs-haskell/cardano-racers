@@ -21,6 +21,7 @@ import Contract.Monad (liftContractM, liftedE, liftedM)
 import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups (ScriptLookups, unspentOutputs) as Lookups
+import Contract.Test (ContractTest)
 import Contract.Test.Assert
   ( ContractAssertion
   , ContractAssertionFailure(UnexpectedTokenDelta)
@@ -33,12 +34,7 @@ import Contract.Test.Assert
   , runChecks
   )
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip
-  ( InitialUTxOs
-  , PlutipTest
-  , withKeyWallet
-  , withWallets
-  )
+import Contract.Test.Testnet (InitialUTxOs, withKeyWallet, withWallets)
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptFromEnvelope)
 import Contract.Transaction (balanceTxE)
 import Contract.TxConstraints as Constraints
@@ -47,11 +43,12 @@ import Contract.Wallet (getWalletAddresses, getWalletUtxos)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head)
 import Data.Array (head) as Array
+import Data.Map (empty) as Map
 import Data.Map (toUnfoldable)
 import Mote (group, test)
 import Test.Spec.Assertions (shouldSatisfy)
 
-suite :: TestPlanM PlutipTest Unit
+suite :: TestPlanM ContractTest Unit
 suite = group "AdminNft" do
   test "Apply TxOutRef to script" do
     withWallets singleWalletDistribution \w ->
@@ -131,7 +128,7 @@ suite = group "AdminNft" do
           lookups = policy <> Lookups.unspentOutputs utxos
 
         unBalTx <- liftedE $ Contract.mkUnbalancedTxE lookups constraints
-        res <- balanceTxE unBalTx
+        res <- balanceTxE (fst unBalTx) Map.empty mempty
         res `shouldSatisfy` isLeft
   where
   singleWalletDistribution :: InitialUTxOs

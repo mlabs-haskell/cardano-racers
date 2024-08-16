@@ -44,9 +44,9 @@ import Contract.Test.Assert
   , runChecks
   )
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip
+import Contract.Test.Testnet
   ( InitialUTxOs
-  , PlutipTest
+  , TestnetTest
   , withKeyWallet
   , withWallets
   )
@@ -73,7 +73,7 @@ import Test.CardanoRacers.Helpers
   )
 import Test.Spec.Assertions (shouldSatisfy)
 
-suite :: TestPlanM PlutipTest Unit
+suite :: TestPlanM TestnetTest Unit
 suite = group "NitroToken script" do
   group "Nitro minting:" do
     test "Admin can mint Nitro" do

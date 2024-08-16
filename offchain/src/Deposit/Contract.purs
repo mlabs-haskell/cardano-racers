@@ -58,7 +58,6 @@ import Contract.BalanceTxConstraints as BalanceTxConstraints
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
 import Contract.PlutusData (RedeemerDatum(..), fromData, toData, unitRedeemer)
 import Contract.Prim.ByteArray (byteArrayToIntArray)
-import Contract.ScriptLookups (UnbalancedTx)
 import Contract.ScriptLookups as Lookups
 import Contract.Transaction
   ( TransactionInput
@@ -66,7 +65,6 @@ import Contract.Transaction
   , createAdditionalUtxos
   , signTransaction
   , submit
-  , withBalancedTxWithConstraints
   )
 import Contract.TxConstraints (InputWithScriptRef(RefInput))
 import Contract.TxConstraints as Constraints

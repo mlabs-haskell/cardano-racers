@@ -5,20 +5,8 @@ import Contract.Prelude
 
 import Contract.Config
   ( ContractParams
-  , mainnetFlintConfig
-  , mainnetGeroConfig
-  , mainnetLodeConfig
-  , mainnetNamiConfig
-  , testnetEternlConfig
-  , testnetFlintConfig
-  , testnetGeroConfig
-  , testnetLodeConfig
-  , testnetNamiConfig
   )
 import Contract.Monad (Contract)
-import Contract.Test.Cip30Mock
-  ( WalletMock(MockFlint, MockGero, MockNami, MockLode)
-  )
 import Contract.Test.E2E (E2EConfigName, E2ETestName, addLinks, route)
 import Data.Map (Map)
 import Data.Map as Map
@@ -39,7 +27,7 @@ configs = Map.fromFoldable
   , "gero-mock" /\ testnetGeroConfig /\ Just MockGero
   , "flint-mock" /\ testnetFlintConfig /\ Just MockFlint
   , "lode-mock" /\ testnetLodeConfig /\ Just MockLode
-  -- Plutip cluster's network ID is set to mainnet:
+  -- Testnet cluster's network ID is set to mainnet:
   , "plutip-nami-mock" /\ mainnetNamiConfig /\ Just MockNami
   , "plutip-gero-mock" /\ mainnetGeroConfig /\ Just MockGero
   , "plutip-flint-mock" /\ mainnetFlintConfig /\ Just MockFlint

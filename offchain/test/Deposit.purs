@@ -26,9 +26,9 @@ import Contract.Monad (liftContractM, liftedM, throwContractError)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.Test.Assert (checkTokenGainAtAddress', label, runChecks)
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip
+import Contract.Test.Testnet
   ( InitialUTxOs
-  , PlutipTest
+  , TestnetTest
   , withKeyWallet
   , withWallets
   )
@@ -49,7 +49,7 @@ import Test.CardanoRacers.Helpers
   , initRacersStateWithAdminAndTreasury
   )
 
-suite :: TestPlanM PlutipTest Unit
+suite :: TestPlanM TestnetTest Unit
 suite = group "Deposit" do
   test "admin redeems user asset requests" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)

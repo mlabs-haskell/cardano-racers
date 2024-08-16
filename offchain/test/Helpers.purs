@@ -11,7 +11,7 @@ import CardanoRacers.Nitro.Helpers as NitroHelpers
 import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
 import CardanoRacers.RacersState.Types (AssetPrices, RacersState(RacersState))
 import Contract.Monad (Contract, liftContractM, liftedM)
-import Contract.Test.Plutip (withKeyWallet)
+import Contract.Test.Testnet (withKeyWallet)
 import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array

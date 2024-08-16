@@ -59,9 +59,9 @@ import Contract.ScriptLookups as Lookups
 import Contract.Scripts (validatorHash)
 import Contract.Test.Assert (checkTokenGainAtAddress', label, runChecks)
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip
+import Contract.Test.Testnet
   ( InitialUTxOs
-  , PlutipTest
+  , TestnetTest
   , withKeyWallet
   , withWallets
   )
@@ -108,7 +108,7 @@ import Test.CardanoRacers.Helpers
   )
 import Test.Spec.Assertions (shouldSatisfy)
 
-suite :: TestPlanM PlutipTest Unit
+suite :: TestPlanM TestnetTest Unit
 suite = group "Race Registry" do
   test "Initializes Race" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr)

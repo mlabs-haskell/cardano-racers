@@ -63,7 +63,7 @@ import Control.Monad.Error.Class (liftMaybe, throwError)
 import Control.Monad.Reader.Trans (asks)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head)
-import Data.Map (singleton) as Map
+import Data.Map (empty, singleton) as Map
 import Data.Profunctor.Choice (left)
 import Data.Profunctor.Strong (first)
 import Data.TextEncoder (encodeUtf8)
@@ -199,8 +199,8 @@ mintGameAsset aoo r nonce = do
 
   unbalancedTx <- lift $ mkUnbalancedTx lookups constraints
   let
-    unbalancedTxWithMetadata = setTxMetadata unbalancedTx metadata
-  balTx <- lift $ balanceTx unbalancedTxWithMetadata
+    unbalancedTxWithMetadata = setTxMetadata (fst unbalancedTx) metadata
+  balTx <- lift $ balanceTx unbalancedTxWithMetadata Map.empty mempty
   balSignedTx <- lift $ signTransaction balTx
   lift $ submit balSignedTx
 

@@ -31,7 +31,7 @@ import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices), getAssetPrice)
 import Contract.Address (getNetworkId)
 import Contract.Monad (liftContractM, liftedM)
-import Contract.PlutusData (RedeemerDatum(..), toData)
+import Contract.PlutusData (RedeemerDatum(RedeemerDatum), toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (validatorHash)
@@ -42,9 +42,9 @@ import Contract.Test.Assert
   , runChecks
   )
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip
-  ( InitialUTxOs
-  , PlutipTest
+import Contract.Test.Testnet
+  ( ContractTest
+  , InitialUTxOs
   , withKeyWallet
   , withWallets
   )
@@ -70,7 +70,7 @@ import Test.CardanoRacers.Helpers
   )
 import Test.Spec.Assertions (shouldSatisfy)
 
-suite :: TestPlanM PlutipTest Unit
+suite :: TestPlanM ContractTest Unit
 suite = group "AssetRequest" do
   test "User requests asset by rarity" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)

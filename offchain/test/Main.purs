@@ -1,4 +1,4 @@
--- | This module implements a test suite that uses Plutip to automate running
+-- | This module implements a test suite that uses Testnet to automate running
 -- | contracts in temporary, private networks.
 module Test.CardanoRacers.Main (main) where
 
@@ -6,7 +6,7 @@ import Contract.Prelude
 
 import Contract.Config (emptyHooks)
 import Contract.Test.Mote (TestPlanM, interpretWithConfig)
-import Contract.Test.Plutip (PlutipConfig, PlutipTest, testPlutipContracts)
+import Contract.Test.Testnet (TestnetConfig, TestnetTest, testTestnetContracts)
 import Contract.Test.Utils (exitCode, interruptOnSignal)
 import Data.Posix.Signal (Signal(SIGINT))
 import Data.Time.Duration (Seconds(Seconds))
@@ -31,9 +31,9 @@ main = interruptOnSignal SIGINT =<< launchAff do
   flip cancelWith (effectCanceler (exitCode 1)) do
     interpretWithConfig defaultConfig
       { timeout = Just $ Milliseconds 300_000.0, exit = true } $
-      testPlutipContracts config suite
+      testTestnetContracts config suite
 
-suite :: TestPlanM PlutipTest Unit
+suite :: TestPlanM TestnetTest Unit
 suite = do
   Nft.suite
   Nitro.suite
@@ -42,7 +42,7 @@ suite = do
   Deposit.suite
   RaceRegistry.suite
 
-config :: PlutipConfig
+config :: TestnetConfig
 config =
   { host: "127.0.0.1"
   , port: UInt.fromInt 8082

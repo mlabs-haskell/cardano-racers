@@ -27,9 +27,9 @@ import Contract.PlutusData (RedeemerDatum(RedeemerDatum))
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (ScriptHash)
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Plutip
-  ( InitialUTxOs
-  , PlutipTest
+import Contract.Test.Testnet
+  ( ContractTest
+  , InitialUTxOs
   , withKeyWallet
   , withWallets
   )
@@ -53,7 +53,7 @@ import Test.CardanoRacers.Helpers
   )
 import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
 
-suite :: TestPlanM PlutipTest Unit
+suite :: TestPlanM ContractTest Unit
 suite = group "RacersState script:" do
   group "Racers state:" do
     test "Admin initialises RacersState" do
