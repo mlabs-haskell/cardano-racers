@@ -42,15 +42,6 @@ import Contract.ScriptLookups (ScriptLookups)
 import Contract.Value (TokenName)
 import Contract.Wallet
   ( WalletExtension
-      ( GenericCip30Wallet
-      , LaceWallet
-      , NuFiWallet
-      , LodeWallet
-      , EternlWallet
-      , FlintWallet
-      , GeroWallet
-      , NamiWallet
-      )
   , WalletSpec
   )
 import Control.Alt ((<|>))
@@ -270,15 +261,17 @@ mkRacersParams = mkEffectFn1 $ \rpStr -> liftEither $ lmap (error <<< show) $
 
 walletExtensionFromString :: String -> Maybe WalletExtension
 walletExtensionFromString name = case name of
-  "nami" -> Just NamiWallet
-  "gerowallet" -> Just GeroWallet
-  "flint" -> Just FlintWallet
-  "eternl" -> Just EternlWallet
-  "LodeWallet" -> Just LodeWallet
-  "nufi" -> Just NuFiWallet
-  "lace" -> Just LaceWallet
-  "vespr" -> Just (GenericCip30Wallet "vespr")
+  "nami" -> Just { name: "nami", exts }
+  "gerowallet" -> Just { name: "gerowallet", exts }
+  "flint" -> Just { name: "flint", exts }
+  "eternl" -> Just { name: "eternl", exts }
+  "LodeWallet" -> Just { name: "LodeWallet", exts }
+  "nufi" -> Just { name: "nufi", exts }
+  "lace" -> Just { name: "lace", exts }
+  "vespr" -> Just { name: "vespr", exts }
   _ -> Nothing
+  where
+  exts = { cip95: false }
 
 assetTypeFromString :: String -> Maybe GameAssetType
 assetTypeFromString "driver" = pure DriverType

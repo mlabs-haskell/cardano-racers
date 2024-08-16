@@ -54,6 +54,7 @@ import CardanoRacers.RacersState.Contract (queryRacersRefScriptOutput)
 import Common.ContractHelpers (findAuthInUtxosMap)
 import Contract.Address (Address, getNetworkId, mkAddress)
 import Contract.AuxiliaryData (setTxMetadata)
+import Contract.BalanceTxConstraints (BalancerConstraints)
 import Contract.BalanceTxConstraints as BalanceTxConstraints
 import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
 import Contract.PlutusData (RedeemerDatum(..), fromData, toData, unitRedeemer)
@@ -65,6 +66,7 @@ import Contract.Transaction
   , createAdditionalUtxos
   , signTransaction
   , submit
+  , withBalancedTx
   )
 import Contract.TxConstraints (InputWithScriptRef(RefInput))
 import Contract.TxConstraints as Constraints
@@ -94,7 +96,7 @@ import Data.Char (fromCharCode)
 import Data.List.Lazy (replicateM)
 import Data.List.Lazy as List
 import Data.Map (Map)
-import Data.Map (fromFoldable, lookup, singleton, toUnfoldable) as Map
+import Data.Map (empty, fromFoldable, lookup, singleton, toUnfoldable) as Map
 import Data.String.CodeUnits (fromCharArray)
 import Data.TextEncoder (encodeUtf8)
 import Effect.Aff (try)
@@ -189,7 +191,7 @@ redeemGameAsset
   -> Maybe (TransactionInput /\ TransactionOutput)
   -> (TransactionInput /\ UtxoMap)
   -> (TransactionInput /\ PendingAssetRequest)
-  -> Racers (UnbalancedTx /\ Array GameAssetObject)
+  -> Racers (Transaction /\ Array GameAssetObject)
 redeemGameAsset
   availableAssets
   generateNonce
@@ -370,7 +372,7 @@ redeemGameAsset
   lift do
     unbalancedTx <- liftedE $ mkUnbalancedTxE lookups constraints
     let
-      unbalancedTxWithMetadata = setTxMetadata unbalancedTx allMetadata
+      unbalancedTxWithMetadata = setTxMetadata (fst unbalancedTx) allMetadata
     pure
       ( unbalancedTxWithMetadata /\ map (unGameAsset <<< _.asset <<< unwrap)
           (unwrap allMetadata)
@@ -445,8 +447,8 @@ consumeAndRedeemRequests chunkSize mMaxRequests availableAssets generateNonce =
   -- | an UnbalancedTx and returning the result in CPS.
   withChainedTx
     :: forall r
-     . UnbalancedTx
-    -> BalanceTxConstraints.BalanceTxConstraintsBuilder
+     . Transaction
+    -> BalancerConstraints
     -> ( Transaction
          -> UtxoMap
          -> Contract r
@@ -454,7 +456,7 @@ consumeAndRedeemRequests chunkSize mMaxRequests availableAssets generateNonce =
     -> Contract r
   withChainedTx unbalancedTx balanceTxConstraintsBuilder k =
     do
-      withBalancedTxWithConstraints unbalancedTx balanceTxConstraintsBuilder
+      withBalancedTx unbalancedTx Map.empty balanceTxConstraintsBuilder
         ( \balancedTx -> do
             balSignedTx <- signTransaction balancedTx
             additionalUtxos <- createAdditionalUtxos balSignedTx
@@ -465,7 +467,7 @@ consumeAndRedeemRequests chunkSize mMaxRequests availableAssets generateNonce =
   consumeAndRedeemChained
     :: ( (TransactionInput /\ UtxoMap)
          -> (TransactionInput /\ PendingAssetRequest)
-         -> Racers (UnbalancedTx /\ Array GameAssetObject)
+         -> Racers (Transaction /\ Array GameAssetObject)
        )
     -> Array (TransactionInput /\ PendingAssetRequest)
     -> Racers (Array (Transaction /\ Array GameAssetObject))

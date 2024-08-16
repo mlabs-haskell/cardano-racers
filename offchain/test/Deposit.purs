@@ -27,8 +27,8 @@ import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.Test.Assert (checkTokenGainAtAddress', label, runChecks)
 import Contract.Test.Mote (TestPlanM)
 import Contract.Test.Testnet
-  ( InitialUTxOs
-  , TestnetTest
+  ( ContractTest
+  , InitialUTxOs
   , withKeyWallet
   , withWallets
   )
@@ -49,7 +49,7 @@ import Test.CardanoRacers.Helpers
   , initRacersStateWithAdminAndTreasury
   )
 
-suite :: TestPlanM TestnetTest Unit
+suite :: TestPlanM ContractTest Unit
 suite = group "Deposit" do
   test "admin redeems user asset requests" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)

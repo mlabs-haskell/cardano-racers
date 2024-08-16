@@ -5,8 +5,9 @@ module Test.CardanoRacers.Main (main) where
 import Contract.Prelude
 
 import Contract.Config (emptyHooks)
+import Contract.Test (ContractTest)
 import Contract.Test.Mote (TestPlanM, interpretWithConfig)
-import Contract.Test.Testnet (TestnetConfig, TestnetTest, testTestnetContracts)
+import Contract.Test.Testnet (Era(..), TestnetConfig, testTestnetContracts)
 import Contract.Test.Utils (exitCode, interruptOnSignal)
 import Data.Posix.Signal (Signal(SIGINT))
 import Data.Time.Duration (Seconds(Seconds))
@@ -33,7 +34,7 @@ main = interruptOnSignal SIGINT =<< launchAff do
       { timeout = Just $ Milliseconds 300_000.0, exit = true } $
       testTestnetContracts config suite
 
-suite :: TestPlanM TestnetTest Unit
+suite :: TestPlanM ContractTest Unit
 suite = do
   Nft.suite
   Nitro.suite
@@ -44,9 +45,8 @@ suite = do
 
 config :: TestnetConfig
 config =
-  { host: "127.0.0.1"
-  , port: UInt.fromInt 8082
-  , logLevel: Info
+  { logLevel: Info
+  -- Server configs are used to deploy the corresponding services:
   , ogmiosConfig:
       { port: UInt.fromInt 1338
       , host: "127.0.0.1"
@@ -65,7 +65,8 @@ config =
   , clusterConfig:
       { slotLength: Seconds 0.05
       , epochSize: Nothing
-      , maxTxSize: Nothing
-      , raiseExUnitsToMax: false
+      , era: Babbage
+      , testnetMagic: 2
       }
   }
+

@@ -57,14 +57,10 @@ import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (validatorHash)
+import Contract.Test (ContractTest(..))
 import Contract.Test.Assert (checkTokenGainAtAddress', label, runChecks)
 import Contract.Test.Mote (TestPlanM)
-import Contract.Test.Testnet
-  ( InitialUTxOs
-  , TestnetTest
-  , withKeyWallet
-  , withWallets
-  )
+import Contract.Test.Testnet (InitialUTxOs, withKeyWallet, withWallets)
 import Contract.Transaction
   ( TransactionHash
   , TransactionInput
@@ -108,7 +104,7 @@ import Test.CardanoRacers.Helpers
   )
 import Test.Spec.Assertions (shouldSatisfy)
 
-suite :: TestPlanM TestnetTest Unit
+suite :: TestPlanM ContractTest Unit
 suite = group "Race Registry" do
   test "Initializes Race" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr)
