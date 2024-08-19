@@ -12,7 +12,6 @@ import Contract.Prelude
 import Cardano.FromData (fromData)
 import Cardano.Plutus.ApplyArgs (applyArgs)
 import Cardano.Plutus.Types.CurrencySymbol (toCardano) as Plutus
-import Cardano.Plutus.Types.OutputDatum as PlutusOutputDatum
 import Cardano.Plutus.Types.Validator (Validator(Validator))
 import Cardano.Types
   ( Address
@@ -23,6 +22,7 @@ import Cardano.Types
   )
 import Cardano.Types.BigNum as BigNum
 import Cardano.Types.Credential (Credential(ScriptHashCredential))
+import Cardano.Types.OutputDatum (outputDatumDatum)
 import Cardano.Types.PlutusScript (hash)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.RacersState.Types
@@ -178,9 +178,14 @@ queryRacersState = do
       liftContractM "State UTxO does not contain datum or datum is not inline" $
         (unwrap stateTxo).datum
 
-    rs <- liftContractM "Could not deserialise into RacersState" $ fromData
-      $ toData
-      $ PlutusOutputDatum.fromCardano dat
+    datum <-
+      liftContractM "Could not get PlutusData from OutputDatum" $
+        outputDatumDatum dat
+
+    rs <- liftContractM "Could not deserialise into RacersState" $
+      ( (fromData $ datum) :: Maybe RacersState
+      )
+
     pure (stateTxi /\ stateTxo /\ rs)
   pure $ rs /\ stateTxi /\ stateTxo
 

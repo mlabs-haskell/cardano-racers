@@ -51,6 +51,7 @@ import Data.Profunctor.Choice (left)
 import Data.TextEncoder (encodeUtf8)
 import Effect.Exception (error)
 import JS.BigInt as JSBigInt
+import Lib.CardanoRacers.Common (mintingPolicyHash)
 import Racers (Racers)
 
 requestAssetByRarity
@@ -58,6 +59,10 @@ requestAssetByRarity
   -> Racers TransactionHash
 requestAssetByRarity rarity = do
   assetRequestPolicy <- mkAssetRequestPolicy
+  assetRequestScript <- lift
+    $ liftContractM "Could not get asset request script hash"
+    $ mintingPolicyHash assetRequestPolicy
+
   depositScript <- (hash <<< unwrap) <$> mkDepositValidator
 
   (ownAddr :: Address) <- lift $ liftedM "Could not get first address"
@@ -67,14 +72,12 @@ requestAssetByRarity rarity = do
 
   rs /\ stateTxi /\ stateTxo <- queryRacersState
 
-  requestTokenName <- lift $ liftContractM "Could not make required token names"
+  requestTokenName <- lift $ liftContractM "Could not make required token name"
     $
       (mkAssetName <<< wrap <<< encodeUtf8) (show rarity)
 
-  mAssetRequestPolicyRef <- queryRacersRefScriptOutput depositScript
-
-  let
-    red = RedeemerDatum $ toData $ MintRequestToken
+  mAssetRequestPolicyRef <- queryRacersRefScriptOutput
+    (unwrap assetRequestScript)
 
   let
     (totalAdaDue :: JSBigInt.BigInt) = getAssetPrice rarity
@@ -87,20 +90,21 @@ requestAssetByRarity rarity = do
       * 0.25
     treasuryVal = Value.lovelaceValueOf treasuryAmt
     operatingVal = Value.lovelaceValueOf operatingAmt
-    lockedVal = Value.singleton depositScript requestTokenName BigNum.one
+    lockedVal = Value.singleton (unwrap assetRequestScript) requestTokenName
+      BigNum.one
 
     dat = toData $ AirdropAddressDatum { airdropAddress: plutusAddr }
-    -- red = toData $ MintRequestToken
+    red = RedeemerDatum $ toData $ MintRequestToken
 
     mintRequestTokenConstraints = case mAssetRequestPolicyRef of
       Nothing -> Constraints.mustMintCurrencyWithRedeemer
-        depositScript
+        (unwrap assetRequestScript)
         red
         requestTokenName
         (Int.fromInt 1)
       Just (refTxi /\ refTxo) ->
         Constraints.mustMintCurrencyWithRedeemerUsingScriptRef
-          depositScript
+          (unwrap assetRequestScript)
           red
           requestTokenName
           (Int.fromInt 1)

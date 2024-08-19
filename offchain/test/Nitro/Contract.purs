@@ -34,7 +34,7 @@ import CardanoRacers.Nitro.Types
 import CardanoRacers.RacersState.Contract (queryRacersState) as RacersState
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Monad (Contract, liftContractM, liftedM)
-import Contract.PlutusData (RedeemerDatum(..), unitDatum)
+import Contract.PlutusData (RedeemerDatum(RedeemerDatum), unitDatum)
 import Contract.ScriptLookups as Lookups
 import Contract.Test.Assert
   ( checkGainAtAddress'
@@ -343,9 +343,9 @@ suite = group "NitroToken script" do
 
   defaultAssetPrices :: AssetPrices
   defaultAssetPrices = AssetPrices
-    { common: JSBigInt.fromInt 1000000
-    , rare: JSBigInt.fromInt 2000000
-    , epic: JSBigInt.fromInt 3000000
+    { common: JSBigInt.fromInt 1_000_000
+    , rare: JSBigInt.fromInt 2_000_000
+    , epic: JSBigInt.fromInt 3_000_000
     }
 
   mintBotNftHelper :: Contract (CurrencySymbol /\ TokenName)

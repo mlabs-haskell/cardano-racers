@@ -7,23 +7,17 @@ module CardanoRacers.GameAsset.Contract
 
 import Contract.Prelude
 
-import Aeson (decodeAeson, encodeAeson)
 import Cardano.Plutus.ApplyArgs (applyArgs)
 import Cardano.Plutus.Types.Address as Address
 import Cardano.Plutus.Types.MintingPolicyHash (MintingPolicyHash)
 import Cardano.Plutus.Types.TokenName (TokenName) as Plutus
 import Cardano.Plutus.Types.TokenName (mkTokenName)
-import Cardano.Plutus.Types.TransactionUnspentOutput
-  ( TransactionUnspentOutput
-  , mkTxUnspentOut
-  ) as Plutus
 import Cardano.Types (TransactionOutput)
 import Cardano.Types.AssetName (AssetName)
 import Cardano.Types.BigNum as BigNum
 import Cardano.Types.Int as Int
 import Cardano.Types.Mint as Mint
 import Cardano.Types.PlutusScript as PlutusScript
-import Cardano.Types.TransactionUnspentOutput (TransactionUnspentOutput)
 import CardanoRacers.GameAsset.Parameters (generateUniformParameters)
 import CardanoRacers.GameAsset.Types
   ( AssetOption
@@ -237,25 +231,11 @@ mintAvailableAssetByRarity
     (assetMintConstraints :: TxConstraints) = maybe
       (Constraints.mustMintValue assetMint)
       ( \((mph :: MintingPolicyHash) /\ refTxi /\ (refTxo :: TransactionOutput)) ->
-          let
-            (plutusTxUO :: Plutus.TransactionUnspentOutput) =
-              Plutus.mkTxUnspentOut refTxi
-                -- TODO: Check if this is the best way to convert between types.
-                ( unsafePartial $ fromJust $ hush $ decodeAeson $ encodeAeson
-                    refTxo
-                )
-
-            a = encodeAeson plutusTxUO
-
-            (txUO :: TransactionUnspentOutput) = unsafePartial $ fromJust
-              $ hush
-              $ decodeAeson a
-          in
-            Constraints.mustMintCurrencyUsingScriptRef
-              (unwrap mph)
-              tk
-              Int.one
-              (RefInput txUO)
+          Constraints.mustMintCurrencyUsingScriptRef
+            (unwrap mph)
+            tk
+            Int.one
+            (RefInput $ wrap { input: refTxi, output: refTxo })
       )
       mAssetPolicyRef
 

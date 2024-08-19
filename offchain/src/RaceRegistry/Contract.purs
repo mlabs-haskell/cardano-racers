@@ -280,7 +280,7 @@ initRace raceHash entryNitroFee totalSlots utxoCount = do
     remainderSlots = totalSlots `mod` utxoCount
 
     slotValue :: BigNum -> Value
-    slotValue i = Value.singleton slotPolicyHash (unwrap slotTokenName) i
+    slotValue = Value.singleton slotPolicyHash (unwrap slotTokenName)
 
     emptyRegistryDatum = toData (wrap [] :: RegistryDatum)
 
@@ -298,7 +298,6 @@ initRace raceHash entryNitroFee totalSlots utxoCount = do
           baseSlotPerUtxo
         rems = Array.replicate remainderSlots (slotValue $ BigNum.fromInt 1) <>
           Array.replicate (utxoCount - remainderSlots) (unsafePartial mempty)
-
       in
         Array.zipWith (unsafePartial (<>)) base rems
 

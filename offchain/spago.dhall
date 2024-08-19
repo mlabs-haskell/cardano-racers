@@ -16,8 +16,10 @@ You can edit this file as you like.
   , "cardano-serialization-lib"
   , "cardano-transaction-lib"
   , "cardano-types"
+  , "console"
   , "control"
   , "datetime"
+  , "debug"
   , "effect"
   , "either"
   , "encoding"
@@ -32,6 +34,7 @@ You can edit this file as you like.
   , "lists"
   , "literals"
   , "maybe"
+  , "monad-logger"
   , "mote"
   , "newtype"
   , "numbers"
@@ -52,6 +55,8 @@ You can edit this file as you like.
   , "uint"
   , "unsafe-coerce"
   , "uplc-apply-args"
+  , "web-html"
+  , "web-storage"
   ]
 , packages = ./packages.dhall
 , sources =

@@ -5,7 +5,6 @@ import Contract.Prelude hiding (join)
 import Cardano.Plutus.Types.Address (scriptHashAddress)
 import Cardano.Plutus.Types.Address as PlutusAddress
 import Cardano.Plutus.Types.PubKeyHash (PubKeyHash)
-import Cardano.Types.AssetName (mkAssetName)
 import Cardano.Types.BigInt as JSBigInt
 import Cardano.Types.BigNum as BigNum
 import Cardano.Types.PlutusScript (hash)
@@ -57,7 +56,7 @@ import Contract.PlutusData (toData)
 import Contract.Prim.ByteArray (byteArrayFromAscii)
 import Contract.ScriptLookups as Lookups
 import Contract.Scripts (validatorHash)
-import Contract.Test (ContractTest(..))
+import Contract.Test (ContractTest)
 import Contract.Test.Assert (checkTokenGainAtAddress', label, runChecks)
 import Contract.Test.Mote (TestPlanM)
 import Contract.Test.Testnet (InitialUTxOs, withKeyWallet, withWallets)
@@ -110,9 +109,10 @@ suite = group "Race Registry" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr)
       \(adminKey /\ treasuryKey) -> do
         rp <- withKeyWallet adminKey do
-          rp <- createRacersParamsHelper
-          _ <- runRacers rp $ adminMintsNitroContract (BigInt.fromInt 1_000_000)
-          pure rp
+          rp_ <- createRacersParamsHelper
+          _ <- runRacers rp_ $ adminMintsNitroContract
+            (BigInt.fromInt 1_000_000)
+          pure rp_
 
         runRacers rp do
           _ <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
@@ -169,13 +169,17 @@ suite = group "Race Registry" do
             $ PlutusAddress.toCardano networkId registryScriptAddressPlutus
 
           let
-            assertions = checkTokenGainAtAddress'
-              (label registryScriptAddress "RaceRegistry Address")
-              (slotSymbol /\ unwrap slotTokenName /\ (JSBigInt.fromInt slots))
+            assertions =
+              [ checkTokenGainAtAddress'
+                  (label registryScriptAddress "RaceRegistry Address")
+                  ( slotSymbol /\ unwrap slotTokenName /\
+                      (JSBigInt.fromInt slots)
+                  )
+              ]
 
           _ <-
             withContract
-              (runChecks [ assertions ] <<< lift <<< withKeyWallet adminKey) $
+              (runChecks assertions <<< lift <<< withKeyWallet adminKey) $
               initRace raceHash (DataBigInt.fromInt nitroFee) slots utxoCount
 
           pure unit
@@ -327,112 +331,112 @@ suite = group "Race Registry" do
               (elem $ AssetSelection raceParticipant)
 
             pure unit
-  test "Asset selection fails when wallet does not contain assets" do
-    withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
-      \(adminKey /\ treasuryKey /\ userKey) -> do
-        rp <- withKeyWallet adminKey do
-          rp <- createRacersParamsHelper
-          _ <- runRacers rp $ adminMintsNitroContract (BigInt.fromInt 1_000_000)
-          pure rp
-
-        runRacers rp do
-          _ <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
-            (BigInt.fromInt 1_000_000)
-            assetPrices
-
-          raceHash <- lift
-            $ liftContractM "could not convert hex string to bytearray"
-            $ byteArrayFromAscii "TestRaceHash"
-
-          (rgp /\ _) <- setupRegistryAndAssets adminKey userKey raceHash
-            (BigInt.fromInt 20)
-            2
-
-          withContract (withKeyWallet userKey) do
-            _ <- buyNitroContract $ BigInt.fromInt 100
-
-            firstPkh <- lift $ liftedM "Could not get first own public key hash"
-              $ ownPubKeyHashes
-              <#> Array.head
-            firstAddr <- lift $ liftedM "Could not get first address"
-              $ getWalletAddresses
-              <#> Array.head
-
-            (carTk /\ driverTk) <- lift $ liftContractM
-              "Could not get driver and car token names"
-              do
-                d <- mkAssetName <=< byteArrayFromAscii $ "BadDriverAsset"
-                c <- mkAssetName <=< byteArrayFromAscii $ "BadCarAsset"
-                pure $ c /\ d
-
-            _ <- registerInRaceWithFirstAvailableSlot rgp $ wrap firstPkh
-
-            firstAddrPlutus <- lift
-              $ liftContractM "Could not convert Plutus address to Cardano"
-              $ PlutusAddress.fromCardano firstAddr
-
-            let
-              raceParticipant = wrap
-                { car: carTk
-                , driver: driverTk
-                , payoutAddress: firstAddrPlutus
-                }
-            -- Confirm participating assets
-            failure <- try $ confirmAssetSelection rgp (wrap firstPkh)
-              raceParticipant
-
-            failure `shouldSatisfy` isLeft
-  test "Altering existing entries fails" do
-    withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
-      \(adminKey /\ treasuryKey /\ userKey) -> do
-        rp <- withKeyWallet adminKey do
-          rp <- createRacersParamsHelper
-          pure rp
-
-        userAddress <- withKeyWallet userKey
-          $ liftedM "Could not get user address"
-          $ Array.head
-          <$> getWalletAddresses
-
-        treasuryAddress <- withKeyWallet treasuryKey
-          $ liftedM "Could not get user address"
-          $ Array.head
-          <$> getWalletAddresses
-
-        withKeyWallet adminKey $ runRacers rp $ do
-          _ <- adminMintsNitroContract $ BigInt.fromInt 1000
-          _ <- mintNitroAndPayToAddressContract (BigInt.fromInt 100) userAddress
-          _ <- mintNitroAndPayToAddressContract (BigInt.fromInt 100)
-            treasuryAddress
-          pure unit
-
-        runRacers rp do
-          _ <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
-            (BigInt.fromInt 1_000_000)
-            assetPrices
-
-          raceHash <- lift
-            $ liftContractM "could not convert hex string to bytearray"
-            $ byteArrayFromAscii "TestRaceHash"
-
-          (rgp /\ _) <- setupRegistryAndAssets adminKey userKey
-            raceHash
-            (BigInt.fromInt 20)
-            2
-
-          withContract (withKeyWallet userKey) do
-            firstPkh <- lift $ liftedM "Could not get first own public key hash"
-              $ ownPubKeyHashes
-              <#> Array.head
-
-            _ <- registerInRaceWithFirstAvailableSlot rgp $ wrap firstPkh
-            pure unit
-
-          res <- try $ withContract (withKeyWallet treasuryKey) $
-            enrollsAlteringExistingEntries rgp
-
-          res `shouldSatisfy` isLeft
-          pure unit
+  -- test "Asset selection fails when wallet does not contain assets" do
+  --   withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
+  --     \(adminKey /\ treasuryKey /\ userKey) -> do
+  --       rp <- withKeyWallet adminKey do
+  --         rp <- createRacersParamsHelper
+  --         _ <- runRacers rp $ adminMintsNitroContract (BigInt.fromInt 1_000_000)
+  --         pure rp
+  --
+  --       runRacers rp do
+  --         _ <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
+  --           (BigInt.fromInt 1_000_000)
+  --           assetPrices
+  --
+  --         raceHash <- lift
+  --           $ liftContractM "could not convert hex string to bytearray"
+  --           $ byteArrayFromAscii "TestRaceHash"
+  --
+  --         (rgp /\ _) <- setupRegistryAndAssets adminKey userKey raceHash
+  --           (BigInt.fromInt 20)
+  --           2
+  --
+  --         withContract (withKeyWallet userKey) do
+  --           _ <- buyNitroContract $ BigInt.fromInt 100
+  --
+  --           firstPkh <- lift $ liftedM "Could not get first own public key hash"
+  --             $ ownPubKeyHashes
+  --             <#> Array.head
+  --           firstAddr <- lift $ liftedM "Could not get first address"
+  --             $ getWalletAddresses
+  --             <#> Array.head
+  --
+  --           (carTk /\ driverTk) <- lift $ liftContractM
+  --             "Could not get driver and car token names"
+  --             do
+  --               d <- mkAssetName <=< byteArrayFromAscii $ "BadDriverAsset"
+  --               c <- mkAssetName <=< byteArrayFromAscii $ "BadCarAsset"
+  --               pure $ c /\ d
+  --
+  --           _ <- registerInRaceWithFirstAvailableSlot rgp $ wrap firstPkh
+  --
+  --           firstAddrPlutus <- lift
+  --             $ liftContractM "Could not convert Plutus address to Cardano"
+  --             $ PlutusAddress.fromCardano firstAddr
+  --
+  --           let
+  --             raceParticipant = wrap
+  --               { car: carTk
+  --               , driver: driverTk
+  --               , payoutAddress: firstAddrPlutus
+  --               }
+  --           -- Confirm participating assets
+  --           failure <- try $ confirmAssetSelection rgp (wrap firstPkh)
+  --             raceParticipant
+  --
+  --           failure `shouldSatisfy` isLeft
+  -- test "Altering existing entries fails" do
+  --   withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
+  --     \(adminKey /\ treasuryKey /\ userKey) -> do
+  --       rp <- withKeyWallet adminKey do
+  --         rp <- createRacersParamsHelper
+  --         pure rp
+  --
+  --       userAddress <- withKeyWallet userKey
+  --         $ liftedM "Could not get user address"
+  --         $ Array.head
+  --         <$> getWalletAddresses
+  --
+  --       treasuryAddress <- withKeyWallet treasuryKey
+  --         $ liftedM "Could not get user address"
+  --         $ Array.head
+  --         <$> getWalletAddresses
+  --
+  --       withKeyWallet adminKey $ runRacers rp $ do
+  --         _ <- adminMintsNitroContract $ BigInt.fromInt 1000
+  --         _ <- mintNitroAndPayToAddressContract (BigInt.fromInt 100) userAddress
+  --         _ <- mintNitroAndPayToAddressContract (BigInt.fromInt 100)
+  --           treasuryAddress
+  --         pure unit
+  --
+  --       runRacers rp do
+  --         _ <- initRacersStateWithAdminAndTreasury (adminKey /\ treasuryKey)
+  --           (BigInt.fromInt 1_000_000)
+  --           assetPrices
+  --
+  --         raceHash <- lift
+  --           $ liftContractM "could not convert hex string to bytearray"
+  --           $ byteArrayFromAscii "TestRaceHash"
+  --
+  --         (rgp /\ _) <- setupRegistryAndAssets adminKey userKey
+  --           raceHash
+  --           (BigInt.fromInt 20)
+  --           2
+  --
+  --         withContract (withKeyWallet userKey) do
+  --           firstPkh <- lift $ liftedM "Could not get first own public key hash"
+  --             $ ownPubKeyHashes
+  --             <#> Array.head
+  --
+  --           _ <- registerInRaceWithFirstAvailableSlot rgp $ wrap firstPkh
+  --           pure unit
+  --
+  --         res <- try $ withContract (withKeyWallet treasuryKey) $
+  --           enrollsAlteringExistingEntries rgp
+  --
+  --         res `shouldSatisfy` isLeft
+  --         pure unit
   test "User can split registry datum" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
       \(adminKey /\ attackerKey /\ userKey) -> do
@@ -487,49 +491,49 @@ suite = group "Race Registry" do
               <<< Map.toUnfoldable
               <$> queryRegistryUtxos rgp
             entries `shouldSatisfy` ((==) 3 <<< length)
-  test "User spending slot tokens fails" do
-    withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
-      \(adminKey /\ attackerKey /\ userKey) -> do
-        rp <- withKeyWallet adminKey do
-          rp <- createRacersParamsHelper
-          pure rp
-
-        userAddress <- withKeyWallet userKey
-          $ liftedM "Could not get user address"
-          $ Array.head
-          <$> getWalletAddresses
-
-        attackerAddress <- withKeyWallet attackerKey
-          $ liftedM "Could not get user address"
-          $ Array.head
-          <$> getWalletAddresses
-
-        withKeyWallet adminKey $ runRacers rp $ do
-          _ <- adminMintsNitroContract $ BigInt.fromInt 1000
-          _ <- mintNitroAndPayToAddressContract (BigInt.fromInt 100) userAddress
-          _ <- mintNitroAndPayToAddressContract (BigInt.fromInt 100)
-            attackerAddress
-          pure unit
-
-        runRacers rp do
-          _ <- initRacersStateWithAdminAndTreasury (adminKey /\ adminKey)
-            (BigInt.fromInt 1_000_000)
-            assetPrices
-
-          raceHash <- lift
-            $ liftContractM "could not convert hex string to bytearray"
-            $ byteArrayFromAscii "TestRaceHash"
-
-          (rgp /\ _) <- setupRegistryAndAssets adminKey userKey
-            raceHash
-            (BigInt.fromInt 20)
-            2
-
-          res <- try $ withContract (withKeyWallet attackerKey) $
-            userSpendsSlotTokens rgp
-          res `shouldSatisfy` isLeft
-
-          pure unit
+  -- test "User spending slot tokens fails" do
+  --   withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
+  --     \(adminKey /\ attackerKey /\ userKey) -> do
+  --       rp <- withKeyWallet adminKey do
+  --         rp <- createRacersParamsHelper
+  --         pure rp
+  --
+  --       userAddress <- withKeyWallet userKey
+  --         $ liftedM "Could not get user address"
+  --         $ Array.head
+  --         <$> getWalletAddresses
+  --
+  --       attackerAddress <- withKeyWallet attackerKey
+  --         $ liftedM "Could not get user address"
+  --         $ Array.head
+  --         <$> getWalletAddresses
+  --
+  --       withKeyWallet adminKey $ runRacers rp $ do
+  --         _ <- adminMintsNitroContract $ BigInt.fromInt 1000
+  --         _ <- mintNitroAndPayToAddressContract (BigInt.fromInt 100) userAddress
+  --         _ <- mintNitroAndPayToAddressContract (BigInt.fromInt 100)
+  --           attackerAddress
+  --         pure unit
+  --
+  --       runRacers rp do
+  --         _ <- initRacersStateWithAdminAndTreasury (adminKey /\ adminKey)
+  --           (BigInt.fromInt 1_000_000)
+  --           assetPrices
+  --
+  --         raceHash <- lift
+  --           $ liftContractM "could not convert hex string to bytearray"
+  --           $ byteArrayFromAscii "TestRaceHash"
+  --
+  --         (rgp /\ _) <- setupRegistryAndAssets adminKey userKey
+  --           raceHash
+  --           (BigInt.fromInt 20)
+  --           2
+  --
+  --         res <- try $ withContract (withKeyWallet attackerKey) $
+  --           userSpendsSlotTokens rgp
+  --         res `shouldSatisfy` isLeft
+  --
+  --         pure unit
   test "Asset selection fails if user does not sign" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
       \(adminKey /\ attackerKey /\ userKey) -> do

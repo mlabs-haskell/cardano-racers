@@ -7,23 +7,17 @@ module CardanoRacers.Deposit.Contract
 
 import Contract.Prelude
 
-import Aeson (decodeAeson, encodeAeson)
 import Cardano.Plutus.Types.Address as PlutusAddress
 import Cardano.Plutus.Types.CurrencySymbol as CurrencySymbol
 import Cardano.Plutus.Types.MintingPolicyHash
   ( MintingPolicyHash(MintingPolicyHash)
   )
-import Cardano.Plutus.Types.TransactionUnspentOutput
-  ( TransactionUnspentOutput
-  , mkTxUnspentOut
-  ) as Plutus
 import Cardano.Plutus.Types.Value (flattenValue) as Value
 import Cardano.Plutus.Types.Value (fromCardano) as Plutus
 import Cardano.Types
-  ( Credential(..)
+  ( Credential(ScriptHashCredential)
   , Transaction
   , TransactionOutput
-  , TransactionUnspentOutput
   )
 import Cardano.Types.AssetName (mkAssetName, unAssetName)
 import Cardano.Types.Int as Int
@@ -102,6 +96,7 @@ import Data.TextEncoder (encodeUtf8)
 import Effect.Aff (try)
 import Effect.Exception (error)
 import JS.BigInt as JSBigInt
+import Lib.CardanoRacers.Common (mintingPolicyHash)
 import Partial.Unsafe (unsafePartial)
 import Racers (Racers)
 
@@ -115,7 +110,6 @@ type PendingAssetRequest =
 queryRequestsWithAirdropAddress
   :: Racers (Map TransactionInput PendingAssetRequest)
 queryRequestsWithAirdropAddress = do
-  networkId <- lift $ getNetworkId
 
   depositScript <- (hash <<< unwrap) <$> mkDepositValidator
 
@@ -125,8 +119,16 @@ queryRequestsWithAirdropAddress = do
 
   utxosAtDeposit <- lift $ utxosAt scriptAddress
 
+  assetRequestPolicy <- mkAssetRequestPolicy
+  assetRequestScript <- lift
+    $ liftContractM "Could not get asset request script hash"
+    $ unwrap
+    <$> mintingPolicyHash assetRequestPolicy
+
+  networkId <- lift $ getNetworkId
+
   let
-    assetRequestSymbol = CurrencySymbol.fromScriptHash depositScript
+    assetRequestSymbol = CurrencySymbol.fromScriptHash assetRequestScript
     (requestUtxos :: Array (TransactionInput /\ TransactionOutput)) =
       Array.filter
         ( Array.elem assetRequestSymbol <<< map fst
@@ -269,43 +271,23 @@ redeemGameAsset
           tokenNameStr = show rarity
           tkNameM = mkAssetName $ wrap $ encodeUtf8 $ tokenNameStr
           red = RedeemerDatum $ toData $ BurnRequestToken
+          countI = unsafePartial $ fromJust $ Int.fromString $
+            BigInt.toString
+              count
         in
           tkNameM <#> \tkName -> maybe
-            ( let
-                countI = unsafePartial $ fromJust $ Int.fromString $
-                  BigInt.toString
-                    count
-              in
-                Constraints.mustMintValueWithRedeemer red
-                  ( Mint.singleton assetRequestScriptHash tkName
-                      (Int.negate countI)
-                  )
+            ( Constraints.mustMintValueWithRedeemer red
+                ( Mint.singleton assetRequestScriptHash tkName
+                    (Int.negate countI)
+                )
             )
             ( \(refTxi /\ (refTxo :: TransactionOutput)) ->
-                let
-                  (plutusTxUO :: Plutus.TransactionUnspentOutput) =
-                    Plutus.mkTxUnspentOut refTxi
-                      -- TODO: Check if this is the best way to convert between types.
-                      ( unsafePartial $ fromJust $ hush $ decodeAeson $
-                          encodeAeson
-                            refTxo
-                      )
-                  a = encodeAeson plutusTxUO
-
-                  countI = unsafePartial $ fromJust $ Int.fromString $
-                    BigInt.toString
-                      count
-
-                  (txUO :: TransactionUnspentOutput) = unsafePartial $ fromJust
-                    $ hush
-                    $ decodeAeson a
-                in
-                  Constraints.mustMintCurrencyWithRedeemerUsingScriptRef
-                    assetRequestScriptHash
-                    red
-                    tkName
-                    (Int.negate countI)
-                    (RefInput txUO)
+                Constraints.mustMintCurrencyWithRedeemerUsingScriptRef
+                  assetRequestScriptHash
+                  red
+                  tkName
+                  (Int.negate countI)
+                  (RefInput $ wrap { input: refTxi, output: refTxo })
             )
             mAssetRequestPolicyRef
 
@@ -324,26 +306,12 @@ redeemGameAsset
           /\ Lookups.validator (unwrap depositValidator)
     )
     ( \(refTxi /\ refTxo) ->
-        let
-          (plutusTxUO :: Plutus.TransactionUnspentOutput) =
-            Plutus.mkTxUnspentOut refTxi
-              ( unsafePartial $ fromJust $ hush $ decodeAeson $
-                  encodeAeson
-                    refTxo
-              )
-
-          a = encodeAeson plutusTxUO
-
-          (txUO :: TransactionUnspentOutput) = unsafePartial $ fromJust
-            $ hush
-            $ decodeAeson a
-        in
-          pure
-            $ Constraints.mustSpendScriptOutputUsingScriptRef
-                requestTxi
-                unitRedeemer
-                (RefInput txUO)
-            /\ mempty
+        pure
+          $ Constraints.mustSpendScriptOutputUsingScriptRef
+              requestTxi
+              unitRedeemer
+              (RefInput $ wrap { input: refTxi, output: refTxo })
+          /\ mempty
     )
     mDepositRef
 

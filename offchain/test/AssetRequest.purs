@@ -62,7 +62,6 @@ import Data.BigInt (fromInt, toNumber) as BigInt
 import Data.Int (ceil)
 import Data.Map (singleton) as Map
 import Mote (group, test)
-import Partial.Unsafe (unsafePartial)
 import Racers (runRacers, withContract)
 import Test.CardanoRacers.Helpers
   ( createRacersParamsHelper
@@ -75,14 +74,17 @@ suite = group "AssetRequest" do
   test "User requests asset by rarity" do
     withWallets (walletUtxoDistr /\ walletUtxoDistr /\ walletUtxoDistr)
       \(admin /\ treasury /\ user) -> do
+
         treasuryAddr <- withKeyWallet treasury
           $ liftedM "Could not get treasury address"
           $ Array.head
           <$> getWalletAddresses
+
         operatingAddress <- withKeyWallet admin
-          $ liftedM "Could not get treasury address"
+          $ liftedM "Could not get admin address"
           $ Array.head
           <$> getWalletAddresses
+
         rp <- withKeyWallet admin createRacersParamsHelper
         runRacers rp do
           rs <- initRacersStateWithAdminAndTreasury (admin /\ treasury)
@@ -98,15 +100,16 @@ suite = group "AssetRequest" do
 
           let rarities = [ Common ] -- , Rare, Epic ]
 
-          networkId <- lift $ getNetworkId
           depositScript <- (PlutusScript.hash <<< unwrap) <$> mkDepositValidator
 
           let
             depositAddressPlutus = scriptHashAddress (wrap depositScript)
               Nothing
 
+          networkId <- lift $ getNetworkId
           depositAddress <- lift
-            $ liftContractM "Could not convert Plutus address to Cardano"
+            $ liftContractM
+                "Could not convert deposit Plutus address to Cardano"
             $ PlutusAddress.toCardano networkId depositAddressPlutus
 
           for_ rarities $ \rarity -> do
@@ -175,12 +178,11 @@ suite = group "AssetRequest" do
 
               let
                 assetPrice = getAssetPrice rarity (unwrap rs).assetPrices
-                toBI = unsafePartial fromJust <<< JSBigInt.fromNumber
-                incorrectPayments =
-                  [ (toBI 0.74 /\ toBI 0.25)
-                  , (toBI 0.75 /\ toBI 0.24)
-                  , (toBI 0.76 /\ toBI 0.24)
-                  , (toBI 0.74 /\ toBI 0.26)
+                (incorrectPayments :: Array (Number /\ Number)) =
+                  [ (0.74 /\ 0.25)
+                  , (0.75 /\ 0.24)
+                  , (0.76 /\ 0.24)
+                  , (0.74 /\ 0.26)
                   ]
 
                 dat = toData $ AirdropAddressDatum
@@ -188,19 +190,19 @@ suite = group "AssetRequest" do
                 red = RedeemerDatum $ toData $ MintRequestToken
 
                 testIncorrectPayment
-                  :: (JSBigInt.BigInt /\ JSBigInt.BigInt) -> _
+                  :: (Number /\ Number) -> _
                 testIncorrectPayment (treasuryRatio /\ operatingRatio) = do
                   (_ /\ stateTxi /\ stateTxo) <- queryRacersState
                   let
                     (amountToTreasury :: BigNum) =
                       fromBIToBigNum $ BigInt.fromInt $ ceil
                         $ JSBigInt.toNumber
-                        $ assetPrice
+                            assetPrice
                         * treasuryRatio
                     (amountToOperating :: BigNum) =
                       fromBIToBigNum $ BigInt.fromInt $ ceil
                         $ JSBigInt.toNumber
-                        $ assetPrice
+                            assetPrice
                         * operatingRatio
                     treasuryVal = Value.lovelaceValueOf amountToTreasury
                     operatingVal = Value.lovelaceValueOf amountToOperating

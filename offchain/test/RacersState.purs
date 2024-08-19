@@ -120,10 +120,16 @@ suite = group "RacersState script:" do
               (BigInt.fromInt 1000000)
               defaultAssetPrices
 
-          (scriptHash :: ScriptHash) <- lift
-            $ liftContractM "Could get ScriptHash from Plutus' CurrencySymbol"
+          (stateScriptHash :: ScriptHash) <- lift
+            $ liftContractM "Could get ScriptHash from State CurrencySymbol"
             $ Plutus.toCardano
             $ fst (unwrap rp).stateToken
+
+          (botScriptHash :: ScriptHash) <- lift
+            $ liftContractM "Could get ScriptHash from Bot CurrencySymbol"
+            $ Plutus.toCardano
+            $ fst (unwrap rp).botToken
+
           withContract (withKeyWallet eve) do
             nitroVal <- RacersState.mkRacersStateValidator
             let
@@ -132,7 +138,7 @@ suite = group "RacersState script:" do
               vhash = hash $ unwrap nitroVal
               datum = toData newState
               red = RedeemerDatum $ toData $ SetRacersState newState
-              (stateVal :: Value) = Value.singleton scriptHash
+              (stateVal :: Value) = Value.singleton stateScriptHash
                 (unwrap $ snd (unwrap rp).stateToken)
                 BigNum.one
             -- stateVal = uncurry Value.singleton (unwrap rp).stateToken one
@@ -155,7 +161,7 @@ suite = group "RacersState script:" do
             ownUtxos <- lift $ liftedM "Could not get wallet utxos"
               getWalletUtxos
             let
-              (botVal :: Value) = Value.singleton scriptHash
+              (botVal :: Value) = Value.singleton botScriptHash
                 (unwrap $ snd (unwrap rp).botToken)
                 BigNum.one
             (botTxi /\ _) <- lift
@@ -182,9 +188,9 @@ suite = group "RacersState script:" do
 
   defaultAssetPrices :: AssetPrices
   defaultAssetPrices = AssetPrices
-    { common: JSBigInt.fromInt 1000000
-    , rare: JSBigInt.fromInt 2000000
-    , epic: JSBigInt.fromInt 3000000
+    { common: JSBigInt.fromInt 1_000_000
+    , rare: JSBigInt.fromInt 2_000_000
+    , epic: JSBigInt.fromInt 3_000_000
     }
 
   mintBotNftHelper :: Contract (CurrencySymbol /\ TokenName)

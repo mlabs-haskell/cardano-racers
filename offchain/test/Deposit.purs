@@ -159,7 +159,6 @@ suite = group "Deposit" do
               retryCount
                 ( consumeAndRedeemRequests 2 Nothing availableAssets
                     (const $ pure uniquenessNonce)
-
                 )
                 2
 

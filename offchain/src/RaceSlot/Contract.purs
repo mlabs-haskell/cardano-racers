@@ -24,6 +24,7 @@ import Control.Monad.Reader.Trans (asks)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head)
 import Data.BigInt (BigInt)
+import Data.BigInt as BigInt
 import Data.Map (singleton) as Map
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
@@ -44,7 +45,7 @@ mintRaceSlotTokenConstraints rch slotCount = do
   slotCountI <- lift
     $ liftContractM "Could not convert slotCount to integer"
     $ Int.fromString
-    $ show slotCount
+    $ BigInt.toString slotCount
 
   slotPolicyHash <- lift
     $ liftContractM "Could not get race slot token script hash"
