@@ -292,8 +292,7 @@
       };
 
       packages = perSystem (system:
-        self.onchain.flake.${system}.packages
-        // {
+        {
           script-exporter = onchain.script-exporter system;
           exported-scripts = onchain.exported-scripts system;
           bundles = bundlesFor system;

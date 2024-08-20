@@ -160,7 +160,11 @@
         in
         {
           ctl-scaffold-local-testnet-test = (psProjectFor pkgs).runLocalTestnetTest {
-            testMain = "Test.Scaffold.Main";
+            testMain = "Test.CardanoRacers.Main";
+            builtProject = (psProjectFor pkgs).buildPursProject {
+              main = "Test.CardanoRacers.Main";
+              strictComp = false;
+            };
           };
 
           formatting-check = pkgs.runCommand "formatting-check"
