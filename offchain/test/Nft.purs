@@ -43,7 +43,6 @@ import Contract.Wallet (getWalletAddresses, getWalletUtxos)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head)
 import Data.Array (head) as Array
-import Data.Map (empty) as Map
 import Data.Map (toUnfoldable)
 import Mote (group, test)
 import Test.Spec.Assertions (shouldSatisfy)
@@ -127,8 +126,9 @@ suite = group "AdminNft" do
           lookups :: Lookups.ScriptLookups
           lookups = policy <> Lookups.unspentOutputs utxos
 
-        unBalTx <- liftedE $ Contract.mkUnbalancedTxE lookups constraints
-        res <- balanceTxE (fst unBalTx) Map.empty mempty
+        (unBalTx /\ usedUtxos) <- liftedE $ Contract.mkUnbalancedTxE lookups
+          constraints
+        res <- balanceTxE unBalTx usedUtxos mempty
         res `shouldSatisfy` isLeft
   where
   singleWalletDistribution :: InitialUTxOs

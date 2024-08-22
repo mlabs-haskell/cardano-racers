@@ -43,6 +43,7 @@ import CardanoRacers.GameAsset.Types
   , Rarity(Epic, Rare, Common)
   , unGameAsset
   )
+import CardanoRacers.Helpers (fromBIToInt, fromJSBIToBI)
 import CardanoRacers.Nitro.Contract (paysNitroConstraints)
 import CardanoRacers.RacersState.Contract (queryRacersRefScriptOutput)
 import Common.ContractHelpers (findAuthInUtxosMap)
@@ -85,7 +86,7 @@ import Data.Array
   ) as Array
 import Data.Array (head)
 import Data.BigInt (BigInt)
-import Data.BigInt (fromString, toInt, toString) as BigInt
+import Data.BigInt (toInt) as BigInt
 import Data.Char (fromCharCode)
 import Data.List.Lazy (replicateM)
 import Data.List.Lazy as List
@@ -95,9 +96,7 @@ import Data.String.CodeUnits (fromCharArray)
 import Data.TextEncoder (encodeUtf8)
 import Effect.Aff (try)
 import Effect.Exception (error)
-import JS.BigInt as JSBigInt
 import Lib.CardanoRacers.Common (mintingPolicyHash)
-import Partial.Unsafe (unsafePartial)
 import Racers (Racers)
 
 -- | Represents a request for a game NFT
@@ -148,10 +147,7 @@ queryRequestsWithAirdropAddress = do
                 ( \(_ /\ tk /\ a) -> ado
                     r <- parseRequestToken (unwrap tk)
                     in
-                      r /\
-                        ( unsafePartial $ fromJust $ BigInt.fromString
-                            $ JSBigInt.toString a
-                        )
+                      r /\ fromJSBIToBI a
                 )
             $ Value.flattenValue
             $ Plutus.fromCardano (unwrap requestTxOut).amount
@@ -193,7 +189,7 @@ redeemGameAsset
   -> Maybe (TransactionInput /\ TransactionOutput)
   -> (TransactionInput /\ UtxoMap)
   -> (TransactionInput /\ PendingAssetRequest)
-  -> Racers (Transaction /\ Array GameAssetObject)
+  -> Racers (Transaction /\ UtxoMap /\ Array GameAssetObject)
 redeemGameAsset
   availableAssets
   generateNonce
@@ -271,9 +267,7 @@ redeemGameAsset
           tokenNameStr = show rarity
           tkNameM = mkAssetName $ wrap $ encodeUtf8 $ tokenNameStr
           red = RedeemerDatum $ toData $ BurnRequestToken
-          countI = unsafePartial $ fromJust $ Int.fromString $
-            BigInt.toString
-              count
+          countI = fromBIToInt count
         in
           tkNameM <#> \tkName -> maybe
             ( Constraints.mustMintValueWithRedeemer red
@@ -338,11 +332,12 @@ redeemGameAsset
       <> depositLookups
 
   lift do
-    unbalancedTx <- liftedE $ mkUnbalancedTxE lookups constraints
+    (unbalancedTx /\ usedUtxos) <- liftedE $ mkUnbalancedTxE lookups constraints
     let
-      unbalancedTxWithMetadata = setTxMetadata (fst unbalancedTx) allMetadata
+      unbalancedTxWithMetadata = setTxMetadata unbalancedTx allMetadata
     pure
-      ( unbalancedTxWithMetadata /\ map (unGameAsset <<< _.asset <<< unwrap)
+      ( unbalancedTxWithMetadata /\ usedUtxos /\ map
+          (unGameAsset <<< _.asset <<< unwrap)
           (unwrap allMetadata)
       )
 
@@ -411,31 +406,11 @@ consumeAndRedeemRequests chunkSize mMaxRequests availableAssets generateNonce =
     pure $ Array.concat mintedAssets
 
   where
-  -- | Allows chaining of transactions together by processing
-  -- | an UnbalancedTx and returning the result in CPS.
-  withChainedTx
-    :: forall r
-     . Transaction
-    -> BalancerConstraints
-    -> ( Transaction
-         -> UtxoMap
-         -> Contract r
-       )
-    -> Contract r
-  withChainedTx unbalancedTx balanceTxConstraintsBuilder k =
-    do
-      withBalancedTx unbalancedTx Map.empty balanceTxConstraintsBuilder
-        ( \balancedTx -> do
-            balSignedTx <- signTransaction balancedTx
-            additionalUtxos <- createAdditionalUtxos balSignedTx
-            k balSignedTx additionalUtxos
-        )
-
   -- | Process a series of PendingAssetRequests by chaining them together
   consumeAndRedeemChained
     :: ( (TransactionInput /\ UtxoMap)
          -> (TransactionInput /\ PendingAssetRequest)
-         -> Racers (Transaction /\ Array GameAssetObject)
+         -> Racers (Transaction /\ UtxoMap /\ Array GameAssetObject)
        )
     -> Array (TransactionInput /\ PendingAssetRequest)
     -> Racers (Array (Transaction /\ Array GameAssetObject))
@@ -451,7 +426,7 @@ consumeAndRedeemRequests chunkSize mMaxRequests availableAssets generateNonce =
               if null acc then mempty
               else BalanceTxConstraints.mustUseAdditionalUtxos additionalUtxos
           -- Create the unbalanced transaction by redeeming the current request.
-          (unbalancedTx /\ assets) <- do
+          (unbalancedTx /\ usedUtxos /\ assets) <- do
             (authTxi /\ authTxo) <-
               liftContractM
                 "could not get auth UTxO containing token (RacersAdminNFT/BotNFT) in current wallet UTxOs"
@@ -459,9 +434,12 @@ consumeAndRedeemRequests chunkSize mMaxRequests availableAssets generateNonce =
                   (findAuthInUtxosMap rp additionalUtxos)
             runReaderT (redeemTx (authTxi /\ Map.singleton authTxi authTxo) req)
               { params: rp }
-          withChainedTx unbalancedTx balanceTxConstraints $
-            \balSignedTx nextAdditionalUtxos -> do
-              loop nextAdditionalUtxos rest
+
+          withBalancedTx unbalancedTx usedUtxos balanceTxConstraints $ \balTx ->
+            do
+              balSignedTx <- signTransaction balTx
+              additionalUtxos_ <- createAdditionalUtxos balSignedTx
+              loop additionalUtxos_ rest
                 (acc `Array.snoc` (balSignedTx /\ assets))
 
     -- Get the initial wallet UTXOs
