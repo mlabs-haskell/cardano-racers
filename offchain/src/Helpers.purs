@@ -9,8 +9,9 @@ module CardanoRacers.Helpers
   , fromBIToBigNum
   , fromBIToInt
   , fromBIToDataBI
-  , fromBigNumToJSBI
   , fromBigNumToBI
+  , fromJSBIToInt
+  , fromJSBIToBigNum
   , mkMint
   ) where
 
@@ -98,10 +99,6 @@ fromBIToJSBI :: Data.BigInt -> JSBigInt.BigInt
 fromBIToJSBI = unsafePartial fromJust <<< JSBigInt.fromString <<<
   DataBigInt.toString
 
-fromBigNumToJSBI :: BigNum -> JSBigInt.BigInt
-fromBigNumToJSBI = unsafePartial fromJust <<< JSBigInt.fromString <<<
-  BigNum.toString
-
 fromBigNumToBI :: BigNum -> Data.BigInt
 fromBigNumToBI = unsafePartial fromJust <<< DataBigInt.fromString <<<
   BigNum.toString
@@ -113,6 +110,13 @@ fromJSBIToBI = unsafePartial fromJust <<< Data.fromString <<<
 fromBIToBigNum :: Data.BigInt -> BigNum
 fromBIToBigNum = unsafePartial fromJust <<< BigNum.fromString <<<
   DataBigInt.toString
+
+fromJSBIToBigNum :: JSBigInt.BigInt -> BigNum
+fromJSBIToBigNum = unsafePartial fromJust <<< BigNum.fromString <<<
+  JSBigInt.toString
+
+fromJSBIToInt :: JSBigInt.BigInt -> Int
+fromJSBIToInt = unsafePartial fromJust <<< JSBigInt.toInt
 
 fromBIToInt :: Data.BigInt -> CT.Int
 fromBIToInt = unsafePartial fromJust <<< CTInt.fromString <<<

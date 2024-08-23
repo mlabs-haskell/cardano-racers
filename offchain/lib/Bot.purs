@@ -8,7 +8,6 @@ import Cardano.Plutus.Types.Address (scriptHashAddress)
 import Cardano.Plutus.Types.Address as PlutusAddress
 import Cardano.Types.Address (toBech32)
 import Cardano.Types.Asset (Asset(Asset, AdaAsset))
-import Cardano.Types.BigInt as JSBigInt
 import Cardano.Types.BigNum as BigNum
 import Cardano.Types.PlutusScript (hash)
 import CardanoRacers.Common.Types (RacersParams)
@@ -29,6 +28,7 @@ import CardanoRacers.Helpers
   ( fromBIToBigNum
   , fromBIToJSBI
   , fromBigNumToBI
+  , fromJSBIToInt
   , paysToAddrConstraint
   )
 import CardanoRacers.Nitro.Contract (mintNitroContract)
@@ -95,7 +95,6 @@ import Lib.CardanoRacers.Common
   , tokenNameToString
   )
 import Lib.CardanoRacers.Queries (Queries, mkQueries, registryEntryToAeson)
-import Partial.Unsafe (unsafePartial)
 import Racers (Racers, runRacers)
 import Racers.Metadata.Cip25.Cip25String (mkCip25String, unCip25String)
 import Record (merge)
@@ -309,18 +308,16 @@ tryRedeemingPendingRequests
 
   attributesToObject :: GameAssetAttributes -> Object Int
   attributesToObject (DriverAttrs (DriverAttributes da)) = Object.fromFoldable
-    [ "experience" /\ unsafePartial (fromJust $ JSBigInt.toInt da.experience)
-    , "aggression" /\ unsafePartial (fromJust $ JSBigInt.toInt da.aggression)
-    , "reflexes" /\ unsafePartial (fromJust $ JSBigInt.toInt da.reflexes)
-    , "luck" /\ unsafePartial (fromJust $ JSBigInt.toInt da.luck)
+    [ "experience" /\ fromJSBIToInt da.experience
+    , "aggression" /\ fromJSBIToInt da.aggression
+    , "reflexes" /\ fromJSBIToInt da.reflexes
+    , "luck" /\ fromJSBIToInt da.luck
     ]
   attributesToObject (CarAttrs (CarAttributes ca)) = Object.fromFoldable
-    [ "topSpeed" /\ unsafePartial (fromJust $ JSBigInt.toInt ca.topSpeed)
-    , "acceleration" /\ unsafePartial
-        (fromJust $ JSBigInt.toInt ca.acceleration)
-    , "cornering" /\ unsafePartial (fromJust $ JSBigInt.toInt ca.cornering)
-    , "aerodynamics" /\ unsafePartial
-        (fromJust $ JSBigInt.toInt ca.aerodynamics)
+    [ "topSpeed" /\ fromJSBIToInt ca.topSpeed
+    , "acceleration" /\ fromJSBIToInt ca.acceleration
+    , "cornering" /\ fromJSBIToInt ca.cornering
+    , "aerodynamics" /\ fromJSBIToInt ca.aerodynamics
     ]
 
 createRace :: Race -> Int -> Int -> Racers Unit

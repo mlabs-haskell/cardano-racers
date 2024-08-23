@@ -7,6 +7,7 @@ import Contract.Prelude
 
 import Cardano.Plutus.Types.Address as PlutusAddress
 import CardanoRacers.Common.Types (RacersParams)
+import CardanoRacers.Helpers (fromBIToJSBI)
 import CardanoRacers.Nitro.Helpers as NitroHelpers
 import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
 import CardanoRacers.RacersState.Types (AssetPrices, RacersState(RacersState))
@@ -15,10 +16,8 @@ import Contract.Test.Testnet (withKeyWallet)
 import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
-import Data.BigInt (BigInt, toString)
+import Data.BigInt (BigInt)
 import Data.Map (toUnfoldable) as Map
-import JS.BigInt (fromString) as JSBigInt
-import Partial.Unsafe (unsafePartial)
 import Racers (Racers, withContract)
 
 createRacersParamsHelper :: Contract RacersParams
@@ -54,8 +53,7 @@ initRacersStateWithAdminAndTreasury
 
     let
       rs = RacersState
-        { nitroPrice: unsafePartial fromJust $ JSBigInt.fromString $ toString
-            nitroPrice
+        { nitroPrice: fromBIToJSBI nitroPrice
         , treasuryAddress: treasuryAddrPlutus
         , operatingAddress: ownAddrPlutus
         , assetPrices: assetPrices

@@ -15,6 +15,7 @@ import Cardano.Types.PlutusScript as PlutusScript
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types (GameAssetType(DriverType, CarType))
+import CardanoRacers.Helpers (fromBIToJSBI)
 import CardanoRacers.Nitro.Contract (mkNitroPolicy)
 import CardanoRacers.RaceRegistry.Types (RegistryParams)
 import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
@@ -47,7 +48,6 @@ import Data.Array (head)
 import Data.ArrayBuffer.Types (Uint8Array)
 import Data.Bifunctor (lmap)
 import Data.BigInt (BigInt)
-import Data.BigInt as DataBigInt
 import Data.Char (fromCharCode)
 import Data.List.NonEmpty (singleton) as NonEmpty
 import Data.Profunctor.Choice (left)
@@ -317,23 +317,23 @@ createRegistryParams race = do
     , nitroPolicyHash
     , driverAssetPolicyHash
     , carAssetPolicyHash
-    , nitroFee: toBI $ fromJsBigInt race.nitroFee
+    , nitroFee: toBI race.nitroFee
     }
 
 setAssetPrices :: AssetPricesFFI -> Racers TransactionHashFFI
 setAssetPrices assetPricesFFI = do
   let
     assetPrices = wrap $
-      { common: toBI $ fromJsBigInt assetPricesFFI.common
-      , rare: toBI $ fromJsBigInt assetPricesFFI.rare
-      , epic: toBI $ fromJsBigInt assetPricesFFI.epic
+      { common: toBI assetPricesFFI.common
+      , rare: toBI assetPricesFFI.rare
+      , epic: toBI assetPricesFFI.epic
       }
   txh <- modifyRacersStateContract
     (\cur -> wrap $ (unwrap cur) { assetPrices = assetPrices })
   pure $ byteArrayToHex (toBytes $ unwrap txh)
 
-toBI :: DataBigInt.BigInt -> JSBigInt.BigInt
-toBI = unsafePartial fromJust <<< JSBigInt.fromString <<< DataBigInt.toString
+toBI :: Lovelace -> JSBigInt.BigInt
+toBI = fromBIToJSBI <<< fromJsBigInt
 
 mintingPolicyHash :: ScriptLookups -> Maybe MintingPolicyHash
 mintingPolicyHash sl = case head (unwrap sl).plutusMintingPolicies of

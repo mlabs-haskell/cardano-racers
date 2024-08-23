@@ -25,7 +25,6 @@ import Cardano.Types.Address
       )
   )
 import Cardano.Types.BaseAddress (toCsl) as BA
-import Cardano.Types.BigNum as BigNum
 import Cardano.Types.EnterpriseAddress as EA
 import Cardano.Types.Internal.Helpers (decodeUtf8)
 import Cardano.Types.PlutusScript as PlutusScript
@@ -34,6 +33,7 @@ import Cardano.Types.Value (getMultiAsset)
 import CardanoRacers.Common.Types (RacersParams, nitroToken)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types (GameAssetType(CarType, DriverType))
+import CardanoRacers.Helpers (fromBigNumToBI, fromJSBIToBI)
 import CardanoRacers.Nitro.Contract (mkNitroPolicy)
 import CardanoRacers.RaceRegistry.Contract (queryRegistryUtxos)
 import CardanoRacers.RaceRegistry.Types
@@ -54,13 +54,12 @@ import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff)
 import Data.Array (concat, fromFoldable, head) as Array
 import Data.Array (head)
-import Data.BigInt as DataBigInt
 import Data.ByteArray (byteArrayToHex)
 import Data.Map (empty, keys, lookup, toUnfoldable) as Map
 import Data.Maybe (fromMaybe)
 import Data.Newtype (unwrap)
 import Effect.Aff.Compat (EffectFn1, mkEffectFn1)
-import JS.BigInt (BigInt, toString) as JSBigInt
+import JS.BigInt (BigInt) as JSBigInt
 import Lib.CardanoRacers.Common
   ( AssetPricesFFI
   , Lovelace
@@ -72,7 +71,6 @@ import Lib.CardanoRacers.Common
   , tokenNameToString
   )
 import Literals.Undefined (undefined)
-import Partial.Unsafe (unsafePartial)
 import Racers (Racers, runRacers, withContract)
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -121,21 +119,20 @@ mkQueries cp walletSpec rp =
 getNitroPrice :: Racers Lovelace
 getNitroPrice = do
   (st /\ _ /\ _) <- queryRacersState
-  pure $ toJsBigInt $ unsafePartial $ fromJust $ DataBigInt.fromString $
-    JSBigInt.toString (unwrap st).nitroPrice
+  pure $ toJsBigInt $ fromJSBIToBI $ (unwrap st).nitroPrice
 
 getAssetPrices :: Racers AssetPricesFFI
 getAssetPrices = queryRacersState <#> fst >>> unwrap >>> _.assetPrices >>>
   assetPricesToObject
   where
   assetPricesToObject (AssetPrices x) =
-    { "common": toJsBigInt $ toBI x.common
-    , "rare": toJsBigInt $ toBI x.rare
-    , "epic": toJsBigInt $ toBI x.epic
+    { "common": toJSBI x.common
+    , "rare": toJSBI x.rare
+    , "epic": toJSBI x.epic
     }
 
-toBI :: JSBigInt.BigInt -> DataBigInt.BigInt
-toBI = unsafePartial fromJust <<< DataBigInt.fromString <<< JSBigInt.toString
+toJSBI :: JSBigInt.BigInt -> Lovelace
+toJSBI = toJsBigInt <<< fromJSBIToBI
 
 getTreasuryAddress :: Racers String
 getTreasuryAddress = do
@@ -218,8 +215,7 @@ getWalletNitroBalance = do
     <$> mkNitroPolicy
   let
     v = valueOf (Asset (unwrap nitroSymbol) (unwrap nitroToken)) bal
-  pure $ toJsBigInt $ unsafePartial $ fromJust $ DataBigInt.fromString $
-    BigNum.toString v
+  pure $ toJsBigInt $ fromBigNumToBI v
 
 getWalletNFTs :: Racers (Array NFT)
 getWalletNFTs = do

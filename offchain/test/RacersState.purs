@@ -11,6 +11,7 @@ import Cardano.Types.BigNum as BigNum
 import Cardano.Types.PlutusScript (hash)
 import Cardano.Types.Value (Value)
 import CardanoRacers.Common.Types (RacersParams(RacersParams))
+import CardanoRacers.Helpers (fromBIToJSBI)
 import CardanoRacers.Nitro.Helpers (mintBotNft) as NitroHelpers
 import CardanoRacers.RacersState.Contract
   ( mkRacersStateValidator
@@ -45,7 +46,6 @@ import Data.BigInt (fromInt) as BigInt
 import Data.BigInt as DataBigInt
 import Data.Map (singleton, toUnfoldable) as Map
 import Mote (group, test)
-import Partial.Unsafe (unsafePartial)
 import Racers (runRacers, withContract)
 import Test.CardanoRacers.Helpers
   ( createRacersParamsHelper
@@ -83,7 +83,7 @@ suite = group "RacersState script:" do
 
             let
               expectedRacersState = RacersState
-                { nitroPrice: toBI nitroPrice
+                { nitroPrice: fromBIToJSBI nitroPrice
                 , treasuryAddress: treasuryAddrPlutus
                 , operatingAddress: adminAddrPlutus
                 , assetPrices: defaultAssetPrices
@@ -199,6 +199,3 @@ suite = group "RacersState script:" do
     (txi /\ _) <- liftContractM "Could not get first utxo" $ Array.head $
       Map.toUnfoldable utxos
     NitroHelpers.mintBotNft txi
-
-  toBI :: DataBigInt.BigInt -> JSBigInt.BigInt
-  toBI = unsafePartial fromJust <<< JSBigInt.fromString <<< DataBigInt.toString

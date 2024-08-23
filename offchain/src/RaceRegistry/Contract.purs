@@ -30,6 +30,7 @@ import Cardano.Types.PlutusScript (hash)
 import Cardano.Types.PlutusScript as PlutusScript
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types (GameAssetType(DriverType, CarType))
+import CardanoRacers.Helpers (fromBigNumToBI)
 import CardanoRacers.Nitro.Contract (burnNitroConstraints, mkNitroPolicy)
 import CardanoRacers.RaceRegistry.Types
   ( RaceParticipant
@@ -154,8 +155,8 @@ getRegistryEntriesFromOutput
 getRegistryEntriesFromOutput txo = case (unwrap txo).datum of
   Just d -> case outputDatumDatum d of
     Just od -> unwrap <$> ((fromData od) :: Maybe RegistryDatum)
-    Nothing -> Just []
-  Nothing -> Just []
+    Nothing -> Nothing
+  Nothing -> Nothing
 
 filterRegistryUtxos
   :: RegistryParams
@@ -184,8 +185,7 @@ filterRegistryUtxos rgp predicate = do
         let
           val = valueOf assetName (unwrap txo).amount
         in
-          (unsafePartial $ fromJust $ BigInt.fromString $ BigNum.toString val)
-            /\ arrRegEntry
+          fromBigNumToBI val /\ arrRegEntry
     )
 
 queryRegistryUtxos
