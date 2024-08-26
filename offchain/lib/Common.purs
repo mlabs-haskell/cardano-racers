@@ -23,11 +23,17 @@ import CardanoRacers.RaceSlot.Types (slotTokenName)
 import CardanoRacers.RacersState.Contract (modifyRacersStateContract)
 import Contract.Config
   ( ContractParams
+  , KnownWallet(Nami, Gero, Flint, Eternl, Lode, Lace, NuFi)
+  , PrivatePaymentKeySource(PrivatePaymentKeyValue)
+  , PrivateStakeKeySource(PrivateStakeKeyValue)
   , QueryBackendParams
   , ServerConfig
+  , StakeKeyPresence(WithStakeKey, WithoutStakeKey)
+  , WalletSpec(UseKeys, ConnectToGenericCip30)
   , mkBlockfrostBackendParams
   , mkCtlBackendParams
   , testnetConfig
+  , walletName
   )
 import Contract.Keys (privateKeyFromBytes)
 import Contract.Monad (liftContractM)
@@ -41,9 +47,13 @@ import Contract.Prim.ByteArray
 import Contract.ScriptLookups (ScriptLookups)
 import Contract.Value (TokenName)
 import Contract.Wallet (WalletExtension, WalletSpec)
+import Contract.Wallet.Key (mkKeyWalletFromMnemonic)
 import Control.Alt ((<|>))
+import Control.Monad.Error.Class (liftMaybe)
 import Control.Monad.Except.Trans (ExceptT, mapExceptT, runExceptT)
 import Control.Monad.Trans.Class (lift)
+import Control.Promise (Promise, fromAff)
+import Ctl.Internal.Wallet.Spec (PrivateDrepKeySource(PrivateDrepKeyValue))
 import Data.Array (head)
 import Data.ArrayBuffer.Types (Uint8Array)
 import Data.Bifunctor (lmap)
@@ -55,8 +65,16 @@ import Data.String (Pattern(Pattern), stripPrefix)
 import Data.String.CodeUnits (fromCharArray)
 import Data.Time.Duration (Seconds(Seconds))
 import Data.UInt (fromInt) as UInt
-import Effect.Aff.Compat (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2)
+import Effect.Aff.Compat
+  ( EffectFn1
+  , EffectFn2
+  , EffectFn3
+  , mkEffectFn1
+  , mkEffectFn2
+  , mkEffectFn3
+  )
 import Effect.Exception (error)
+import Effect.Uncurried (EffectFn4, mkEffectFn4)
 import Foreign
   ( Foreign
   , ForeignError(ForeignError)
@@ -68,6 +86,8 @@ import Foreign
   , renderForeignError
   )
 import Foreign.Index (readProp)
+import Foreign.Object (Object)
+import Foreign.Object (fromFoldable) as Object
 import Partial.Unsafe (unsafePartial)
 import Racers (Racers)
 
@@ -184,65 +204,91 @@ contractParams =
       , path: mPath
       }
 
--- walletSpec
---   :: { walletFromMnemonic :: EffectFn4 String Int Int Boolean CredentialProvider
---      , walletFromPrivateKey :: EffectFn1 String CredentialProvider
---      , walletFromPrivateKeyAndStakeKey ::
---          EffectFn2 String String CredentialProvider
---      , browserWallet :: Object (EffectFn1 Unit CredentialProvider)
---      }
--- walletSpec =
---   { walletFromMnemonic
---   , walletFromPrivateKey
---   , walletFromPrivateKeyAndStakeKey
---   , browserWallet
---   }
---   where
---   walletFromMnemonic = mkEffectFn4 $
---     \mnemonic accountIndex addressIndex hasStake -> do
---       (kw :: KeyWallet) <- liftEither $ left error $ mkKeyWalletFromMnemonic mnemonic
---         { accountIndex: UInt.fromInt accountIndex
---         , addressIndex: UInt.fromInt addressIndex
---         }
---         (if hasStake then WithStakeKey else WithoutStakeKey)
---       privPaymentKeyF <- lift $  launchAff (unwrap kw).paymentKey
---       privPaymentKey <- joinFiber privPaymentKeyF
---       privStakeKey <- (unwrap kw).stakeKey
---       pure $ UseKeys (PrivatePaymentKeyValue privPaymentKey)
---         (PrivateStakeKeyValue <$> privStakeKey)
---
---   walletFromPrivateKey = mkEffectFn1 $ \privateKeyStr -> do
---     privateKey <- liftMaybe (error "Could not deserialise private key") $
---       mkPrivateKey
---         privateKeyStr
---     pure $ UseKeys (PrivatePaymentKeyValue $ wrap privateKey) Nothing
---
---   walletFromPrivateKeyAndStakeKey = mkEffectFn2 $ \privateKeyStr stakeKeyStr ->
---     do
---       privateKey <- liftMaybe (error "Could not deserialise private key") $
---         mkPrivateKey
---           privateKeyStr
---       stakeKey <- liftMaybe (error "Could not deserialise stake key") $
---         mkPrivateKey
---           stakeKeyStr
---       pure $ UseKeys (PrivatePaymentKeyValue $ wrap privateKey)
---         (Just $ PrivateStakeKeyValue $ wrap stakeKey)
---
---   browserWallet = Object.fromFoldable
---     $ map
---         ( \(name /\ spec) -> ("connectTo" <> name) /\ mkEffectFn1
---             (const $ pure spec)
---         )
---     $
---       [ "Nami" /\ ConnectToNami
---       , "GeroWallet" /\ ConnectToGero
---       , "Flint" /\ ConnectToFlint
---       , "Eternl" /\ ConnectToEternl
---       , "LodeWallet" /\ ConnectToLode
---       , "Lace" /\ ConnectToLace
---       , "Vespr" /\ ConnectToGenericCip30 "vespr"
---       , "NuFi" /\ ConnectToNuFi
---       ]
+walletSpec
+  :: { walletFromMnemonic ::
+         EffectFn4 String Int Int Boolean (Promise CredentialProvider)
+     , walletFromPrivateKey :: EffectFn1 String CredentialProvider
+     , walletFromPrivateKeyAndStakeKey ::
+         EffectFn2 String String CredentialProvider
+     , walletFromPrivateKeyStakeKeyAndDRepKey ::
+         EffectFn3 String String String CredentialProvider
+     , browserWallet :: Object (EffectFn1 Unit CredentialProvider)
+     }
+walletSpec =
+  { walletFromMnemonic
+  , walletFromPrivateKey
+  , walletFromPrivateKeyAndStakeKey
+  , walletFromPrivateKeyStakeKeyAndDRepKey
+  , browserWallet
+  }
+  where
+  walletFromMnemonic = mkEffectFn4 $
+    \mnemonic accountIndex addressIndex hasStake -> fromAff $ do
+      kw <- liftEither $ left error $ mkKeyWalletFromMnemonic
+        mnemonic
+        { accountIndex: UInt.fromInt accountIndex
+        , addressIndex: UInt.fromInt addressIndex
+        }
+        (if hasStake then WithStakeKey else WithoutStakeKey)
+      privPaymentKey <- (unwrap kw).paymentKey
+      privStakeKey <- (unwrap kw).stakeKey
+      drepKey <- (unwrap kw).drepKey
+      pure $ UseKeys (PrivatePaymentKeyValue privPaymentKey)
+        (PrivateStakeKeyValue <$> privStakeKey)
+        (PrivateDrepKeyValue <$> drepKey)
+
+  walletFromPrivateKey = mkEffectFn1 $ \privateKeyStr -> do
+    privateKey <- liftMaybe (error "Could not deserialise private key") $
+      mkPrivateKey
+        privateKeyStr
+    pure $ UseKeys (PrivatePaymentKeyValue $ wrap privateKey) Nothing Nothing
+
+  walletFromPrivateKeyAndStakeKey = mkEffectFn2 $
+    \privateKeyStr stakeKeyStr ->
+      do
+        privateKey <- liftMaybe (error "Could not deserialise private key") $
+          mkPrivateKey
+            privateKeyStr
+        stakeKey <- liftMaybe (error "Could not deserialise stake key") $
+          mkPrivateKey
+            stakeKeyStr
+
+        pure $ UseKeys (PrivatePaymentKeyValue $ wrap privateKey)
+          (Just $ PrivateStakeKeyValue $ wrap stakeKey)
+          Nothing
+
+  walletFromPrivateKeyStakeKeyAndDRepKey = mkEffectFn3 $
+    \privateKeyStr stakeKeyStr drepKeyStr ->
+      do
+        privateKey <- liftMaybe (error "Could not deserialise private key") $
+          mkPrivateKey
+            privateKeyStr
+        stakeKey <- liftMaybe (error "Could not deserialise stake key") $
+          mkPrivateKey
+            stakeKeyStr
+        drepKey <- liftMaybe (error "Could not deserialise drep key") $
+          mkPrivateKey
+            drepKeyStr
+
+        pure $ UseKeys (PrivatePaymentKeyValue $ wrap privateKey)
+          (Just $ PrivateStakeKeyValue $ wrap stakeKey)
+          (Just $ PrivateDrepKeyValue $ wrap drepKey)
+
+  browserWallet = Object.fromFoldable
+    $ map
+        ( \(name /\ spec) -> ("connectTo" <> name) /\ mkEffectFn1
+            (const $ pure spec)
+        )
+    $
+      [ "Nami" /\ ConnectToGenericCip30 (walletName Nami) { cip95: false }
+      , "GeroWallet" /\ ConnectToGenericCip30 (walletName Gero) { cip95: false }
+      , "Flint" /\ ConnectToGenericCip30 (walletName Flint) { cip95: false }
+      , "Eternl" /\ ConnectToGenericCip30 (walletName Eternl) { cip95: false }
+      , "LodeWallet" /\ ConnectToGenericCip30 (walletName Lode) { cip95: false }
+      , "Lace" /\ ConnectToGenericCip30 (walletName Lace) { cip95: false }
+      , "Vespr" /\ ConnectToGenericCip30 ("vespr") { cip95: false }
+      , "NuFi" /\ ConnectToGenericCip30 (walletName NuFi) { cip95: false }
+      ]
 
 mkPrivateKey :: String -> Maybe PrivateKey
 mkPrivateKey str =
