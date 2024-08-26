@@ -1,4 +1,5 @@
 {
+  "type": "module",
   "name": "cardano-racers",
   "version": "0.1.0",
   "description": "",
@@ -8,13 +9,15 @@
   },
   "scripts": {
     "test": "spago run --main Test.CardanoRacers.Main",
+    "start-blockfrost-runtime": "nix run -L .#ctl-scaffold-blockfrost-runtime",
+    "start-runtime": "nix run -L .#ctl-scaffold-runtime",
     "test-unit": "spago run --main Test.CardanoRacers.Unit",
-    "e2e-serve": "make e2e-serve",
-    "e2e-test": "source ./test/e2e.env && spago test --main Scaffold.Test.E2E -a 'e2e-test run'",
-    "e2e-test-debug": "source ./test/e2e.env && spago test --main Scaffold.Test.E2E -a 'e2e-test run --no-headless'",
-    "e2e-browser": "source ./test/e2e.env && spago run --main Scaffold.Test.E2E -a 'e2e-test browser'",
-    "e2e-pack-settings": "source ./test/e2e.env && spago run --main Scaffold.Test.E2E -a 'e2e-test pack'",
-    "e2e-unpack-settings": "source ./test/e2e.env && spago run --main Scaffold.Test.E2E -a 'e2e-test unpack'",
+    "e2e-serve": "make esbuild-serve",
+    "e2e-test": "source ./test/e2e.env && spago test --main CardanoRacers.Test.E2E -a 'run'",
+    "e2e-test-debug": "source ./test/e2e.env && spago test --main CardanoRacers.Test.E2E -a 'run --no-headless'",
+    "e2e-browser": "source ./test/e2e.env && spago run --main CardanoRacers.Test.E2E -a 'e2e-test browser'",
+    "e2e-pack-settings": "source ./test/e2e.env && spago run --main CardanoRacers.Test.E2E -a 'e2e-test pack'",
+    "e2e-unpack-settings": "source ./test/e2e.env && spago run --main CardanoRacers.Test.E2E -a 'e2e-test unpack'",
     "dev": "make run-dev",
     "build": "make run-build"
   },
