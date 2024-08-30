@@ -223,17 +223,19 @@
             ${prev.buildCommand}
           '';
         });
-        adminBundledPursProject = wrapWithCustomEntrypoint "Admin" (project.bundlePursProjectEsbuild {
+        adminBundledPursProject = wrapWithCustomEntrypoint "Admin" (project.bundlePursProjectWebpack {
           main = "Lib.CardanoRacers.AdminFFI";
           psEntrypoint = "admin-entry.js";
           browserRuntime = true;
         });
-        clientBundledPursProject = wrapWithCustomEntrypoint "Client" (project.bundlePursProjectEsbuild {
+        clientBundledPursProject = wrapWithCustomEntrypoint "Client" (project.bundlePursProjectWebpack {
           main = "Lib.CardanoRacers.ClientFFI";
           psEntrypoint = "client-entry.js";
           browserRuntime = true;
         });
-      in pkgs.runCommand "admin-bundle-cmd" {
+	# in builtPursProject;
+
+	in pkgs.runCommand "admin-bundle-cmd" {
           buildInputs = [
             pkgs.nodejs
             project.nodeModules
@@ -250,14 +252,14 @@
         export PATH="${project.nodeModules}/bin:$PATH"
 
         mkdir -p $out/dist/racers-admin $out/dist/racers-client $out/dist/racers-bot
-        cp -r ${adminBundledPursProject}/dist/* $out/dist/racers-admin
-        cp -r ${clientBundledPursProject}/dist/* $out/dist/racers-client
+        cp -r ${adminBundledPursProject}/* $out/dist/racers-admin
+        cp -r ${clientBundledPursProject}/* $out/dist/racers-client
 
         cp -r ${builtPursProject}/output $out/dist/racers-bot/
-        cp ${builtPursProject}/build/package.json $out/dist/racers-bot/
-        cp ${builtPursProject}/build/package-lock.json $out/dist/racers-bot/
-        cp ${builtPursProject}/build/index.js $out/dist/racers-bot/
-        cp ${builtPursProject}/build/index.d.ts $out/dist/racers-bot/
+        cp ${./offchain/build/package.json} $out/dist/racers-bot/
+        cp ${./offchain/package-lock.json} $out/dist/racers-bot/
+        cp ${./offchain/index.js} $out/dist/racers-bot/
+        cp ${./offchain/build/index.d.ts} $out/dist/racers-bot/
         '';
 
       gzippedBundlesFor = system:
