@@ -46,7 +46,7 @@ mkScriptsFFI scripts = ScriptsFFI {js, purs}
     js = unlines $ scriptToDeclaration <$> scripts
     scriptToDeclaration (rawName, script) =
       trace ("generating " <> rawName <> " with hash = " <> show (scriptHash script)) $
-        "exports." <> rawName <> " = " <> show (scriptToString script) <> ";"
+        "export const " <> rawName <> " = " <> show (scriptToString script) <> ";"
     scriptToString =
       Text.unpack
         . Text.decodeUtf8
