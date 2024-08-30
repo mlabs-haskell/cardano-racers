@@ -255,11 +255,14 @@
         cp -r ${adminBundledPursProject}/* $out/dist/racers-admin
         cp -r ${clientBundledPursProject}/* $out/dist/racers-client
 
+        cp ${./offchain/index.html} $out/dist/racers-client/index.html
+        cp ${./offchain/index.html} $out/dist/racers-admin/index.html
+
         cp -r ${builtPursProject}/output $out/dist/racers-bot/
-        cp ${./offchain/build/package.json} $out/dist/racers-bot/
-        cp ${./offchain/package-lock.json} $out/dist/racers-bot/
-        cp ${./offchain/index.js} $out/dist/racers-bot/
-        cp ${./offchain/build/index.d.ts} $out/dist/racers-bot/
+        cp ${./offchain/build/package.json} $out/dist/racers-bot/package.json
+        cp ${./offchain/build/package-lock.json} $out/dist/racers-bot/package-lock.json
+        cp ${./offchain/build/index.js} $out/dist/racers-bot/index.js
+        cp ${./offchain/build/index.d.ts} $out/dist/racers-bot/index.d.ts
         '';
 
       gzippedBundlesFor = system:
