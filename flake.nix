@@ -1,7 +1,7 @@
 {
   inputs = {
     plutip.url = "github:mlabs-haskell/plutip/8364c43ac6bc9ea140412af9a23c691adf67a18b";
-    cardano-transaction-lib.url = "github:Plutonomicon/cardano-transaction-lib/c1ff6245fbb5a7ce835c0100b2fc2ee01a0024b6";
+    cardano-transaction-lib.url = "github:Plutonomicon/cardano-transaction-lib/v9.2.0";
     nixpkgs.follows = "cardano-transaction-lib/nixpkgs";
     plutonomy = {
       url = "github:well-typed/plutonomy/6c01302ba8cf3be4f71617e106cd5ef7ed10fc63";
@@ -24,6 +24,13 @@
           cardano-transaction-lib.overlays.purescript
           cardano-transaction-lib.overlays.runtime
           cardano-transaction-lib.overlays.spago
+	  (_: _: {
+	    # FIXME The used nixpkgs version doesn't contain `nodejs_18` required by easy_purescript-nix
+	    # but updating it to thel latest version leads to other errors
+	    inherit ((builtins.getFlake "github:NixOS/nixpkgs/25039823dc7a2f0e8a1711fe84307be97855c781").legacyPackages.${system})
+              nodejs_18
+              nodejs-18_x;
+	  })
         ];
         inherit (haskell-nix) config;
       };
@@ -210,20 +217,20 @@
           import("./output.js").then(m => window.racers${eName} = m);
           console.log("racers${eName} ready");
         '';
-        wrapWithCustomEntrypoint = eName: b: b.overrideAttrs (_: prev: {
+        wrapWithCustomEntrypoint = eName: b: b.overrideAttrs (prev: {
           buildCommand = ''
             cp ${(createEntrypoint eName)} ${pkgs.lib.toLower eName}-entry.js
             ${prev.buildCommand}
-            '';
+          '';
         });
-        adminBundledPursProject = wrapWithCustomEntrypoint "Admin" (project.bundlePursProject {
+        adminBundledPursProject = wrapWithCustomEntrypoint "Admin" (project.bundlePursProjectEsbuild {
           main = "Lib.CardanoRacers.AdminFFI";
-          entrypoint = "admin-entry.js";
+          psEntrypoint = "admin-entry.js";
           browserRuntime = true;
         });
-        clientBundledPursProject = wrapWithCustomEntrypoint "Client" (project.bundlePursProject {
+        clientBundledPursProject = wrapWithCustomEntrypoint "Client" (project.bundlePursProjectEsbuild {
           main = "Lib.CardanoRacers.ClientFFI";
-          entrypoint = "client-entry.js";
+          psEntrypoint = "client-entry.js";
           browserRuntime = true;
         });
       in pkgs.runCommand "admin-bundle-cmd" {
