@@ -49,9 +49,8 @@ import CardanoRacers.RacersState.Contract (queryRacersRefScriptOutput)
 import Common.ContractHelpers (findAuthInUtxosMap)
 import Contract.Address (Address, getNetworkId, mkAddress)
 import Contract.AuxiliaryData (setTxMetadata)
-import Contract.BalanceTxConstraints (BalancerConstraints)
 import Contract.BalanceTxConstraints as BalanceTxConstraints
-import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
+import Contract.Monad (liftContractM, liftedE, liftedM)
 import Contract.PlutusData (RedeemerDatum(..), fromData, toData, unitRedeemer)
 import Contract.Prim.ByteArray (byteArrayToIntArray)
 import Contract.ScriptLookups as Lookups
@@ -91,7 +90,7 @@ import Data.Char (fromCharCode)
 import Data.List.Lazy (replicateM)
 import Data.List.Lazy as List
 import Data.Map (Map)
-import Data.Map (empty, fromFoldable, lookup, singleton, toUnfoldable) as Map
+import Data.Map (fromFoldable, lookup, singleton, toUnfoldable) as Map
 import Data.String.CodeUnits (fromCharArray)
 import Data.TextEncoder (encodeUtf8)
 import Effect.Aff (try)

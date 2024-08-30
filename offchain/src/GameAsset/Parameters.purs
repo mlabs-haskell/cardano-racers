@@ -47,18 +47,18 @@ generateUniformParameters seed r = flip evalGen { newSeed: seed, size: 1 } $ do
           room = maxParameterScore - p
         in
           if room == 0 then do
-            (rem /\ ps') <- singleDistrPass rem ps
-            pure (rem /\ Array.cons p ps')
+            (rem' /\ ps') <- singleDistrPass rem ps
+            pure (rem' /\ Array.cons p ps')
           else do
             scoreAdded <- chooseInt 1 (min room rem)
-            (rem /\ ps') <- singleDistrPass (rem - scoreAdded) ps
-            pure (rem /\ Array.cons (scoreAdded + p) ps')
+            (rem' /\ ps') <- singleDistrPass (rem - scoreAdded) ps
+            pure (rem' /\ Array.cons (scoreAdded + p) ps')
 
     distribute :: Int -> Array Int -> Gen (Array Int)
     distribute 0 params = pure params
     distribute rem params = do
-      (rem /\ params') <- singleDistrPass rem params
-      distribute rem params'
+      (rem' /\ params') <- singleDistrPass rem params
+      distribute rem' params'
 
   total <- chooseInt (rarityMinRequirement r) adjustedMaxTotalScore
   distribute total initialParams
