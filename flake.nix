@@ -1,7 +1,7 @@
 {
   inputs = {
     plutip.url = "github:mlabs-haskell/plutip/8364c43ac6bc9ea140412af9a23c691adf67a18b";
-    cardano-transaction-lib.url = "github:Plutonomicon/cardano-transaction-lib/60a58f95bf22a7c630a6eddb9a2af2f46c84939d";
+    cardano-transaction-lib.url = "github:Plutonomicon/cardano-transaction-lib/7c1bacbfca260242f68f10d8bbc6928770858239";
     nixpkgs.follows = "cardano-transaction-lib/nixpkgs";
     plutonomy = {
       url = "github:well-typed/plutonomy/6c01302ba8cf3be4f71617e106cd5ef7ed10fc63";
@@ -272,6 +272,7 @@
         in pkgs.runCommand "gzipped-bundles" {
             buildInputs = [
               pkgs.gnutar
+              pkgs.zip
               bundles
             ];
           }
@@ -287,6 +288,7 @@
             tar -czf $out/admin-browser-bundle.tar.gz -C ./admin .
             tar -czf $out/client-browser-bundle.tar.gz -C ./client .
             tar -czf $out/bot-bundle.tar.gz -C ./bot .
+            zip -j $out/bundles.zip $out/admin-browser-bundle.tar.gz $out/bot-bundle.tar.gz $out/client-browser-bundle.tar.gz
           '';
 
     in
