@@ -46,7 +46,7 @@ module.exports = env => {
 
     output: {
       path: path.resolve(__dirname, "dist"),
-      filename: "index.js",
+      filename: "bundle.js",
       library: {
         type: "module",
       },
@@ -74,28 +74,33 @@ module.exports = env => {
   config.node = isBrowser ? {} : { __dirname: true };
   config.resolve.fallback = isBrowser
     ? {
-        buffer: require.resolve("buffer/"),
-        http: false,
-        url: false,
-        stream: false,
-        crypto: false,
-        https: false,
-        net: false,
-        tls: false,
-        zlib: false,
-        os: false,
-        path: false,
-        fs: false,
-        readline: false,
-        child_process: false,
-      }
+      buffer: require.resolve("buffer/"),
+      http: false,
+      url: false,
+      stream: false,
+      crypto: false,
+      https: false,
+      net: false,
+      tls: false,
+      zlib: false,
+      os: false,
+      path: false,
+      fs: false,
+      readline: false,
+      child_process: false,
+    }
     : {};
+  config.resolve.alias = {
+    // You should update this path to the location of your compiled scripts,
+    // relative to `webpack.config.js`
+    Scripts: path.resolve(__dirname, "fixtures/scripts"),
+  },
 
-  // Preserves console.log calls in NodeJS
-  // https://stackoverflow.com/a/71024096/17365145
-  config.optimization = isBrowser
-    ? {}
-    : {
+    // Preserves console.log calls in NodeJS
+    // https://stackoverflow.com/a/71024096/17365145
+    config.optimization = isBrowser
+      ? {}
+      : {
         minimize: false,
       };
 
