@@ -15,7 +15,7 @@ import Effect.Aff.Compat (EffectFn3, mkEffectFn3)
 import Lib.CardanoRacers.Admin (Admin, InitialStateFFI)
 import Lib.CardanoRacers.Admin (initRacers, mkAdmin) as Admin
 import Lib.CardanoRacers.Bot (Bot)
-import Lib.CardanoRacers.Common (contractParams, mkRacersParams) as X
+import Lib.CardanoRacers.Common (contractParams, mkRacersParams, walletSpec) as X
 import Lib.CardanoRacers.Queries (Queries)
 import Type.Row (type (+))
 
