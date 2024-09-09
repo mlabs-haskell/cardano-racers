@@ -6,7 +6,7 @@ import Data.Function.Uncurried (Fn3, mkFn3)
 import Lib.CardanoRacers.Bot (Bot)
 import Lib.CardanoRacers.Bot (mkBot) as Bot
 import Lib.CardanoRacers.Common (CredentialProvider)
-import Lib.CardanoRacers.Common (contractParams, mkRacersParams) as X
+import Lib.CardanoRacers.Common (contractParams, mkRacersParams, walletSpec) as X
 import Lib.CardanoRacers.Queries (Queries)
 import Type.Row (type (+))
 

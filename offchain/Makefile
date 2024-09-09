@@ -87,7 +87,7 @@ bundles: build
 	@echo '"use strict";'  > ./dist/admin/entrypoint.js
 	@echo \
 		'import("../../output/Lib.CardanoRacers.AdminFFI/index.js").then(m => window.racersAdmin = m);' \
-		> ./dist/admin/entrypoint.js
+		>> ./dist/admin/entrypoint.js
 	@echo 'console.log("racersAdmin ready");'  >> ./dist/admin/entrypoint.js
 
 	BROWSER_RUNTIME=${browser-runtime} webpack --mode=production \

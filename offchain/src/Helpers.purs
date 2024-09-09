@@ -123,14 +123,14 @@ fromBIToInt = unsafePartial fromJust <<< CTInt.fromString <<<
   DataBigInt.toString
 
 mkMint :: PlutusValue.Value -> Mint
-mkMint v = Mint.unflatten
-    $ map
-        ( \(cs /\ tk /\ amt) ->
-            unsafePartial (fromJust $ CurrencySymbol.toCardano cs) /\ unwrap tk
-              /\
-                mkInt amt
-        )
-    $ PlutusValue.flattenValue v
+mkMint v = unsafePartial $ fromJust
+  $ Mint.unflatten
+  $ map
+      ( \(cs /\ tk /\ amt) ->
+          unsafePartial (fromJust $ CurrencySymbol.toCardano cs) /\ unwrap tk /\
+            mkInt amt
+      )
+  $ PlutusValue.flattenValue v
 
 fromBIToDataBI :: CTBigInt.BigInt -> Data.BigInt
 fromBIToDataBI = unsafePartial fromJust <<< DataBigInt.fromString <<<
