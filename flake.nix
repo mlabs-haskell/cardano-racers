@@ -1,7 +1,12 @@
 {
   inputs = {
     plutip.url = "github:mlabs-haskell/plutip/8364c43ac6bc9ea140412af9a23c691adf67a18b";
-    cardano-transaction-lib.url = "github:Plutonomicon/cardano-transaction-lib/2ce50a5fe4c2015fec840588b2738d381a0d6ba7";
+    cardano-transaction-lib = {
+      type = "github";
+      owner = "Plutonomicon";
+      repo = "cardano-transaction-lib";
+      rev = "be434c41d80bb10d25825ed247d81f630f2d6b89";
+    };
     nixpkgs.follows = "cardano-transaction-lib/nixpkgs";
     plutonomy = {
       url = "github:well-typed/plutonomy/6c01302ba8cf3be4f71617e106cd5ef7ed10fc63";
@@ -311,7 +316,7 @@
             echo 'console.log("racers${cname} ready");' >> $out/${name}/entrypoint.js
 
             BROWSER_RUNTIME=1 webpack --mode=production \
-                    -c  $src/offchain/webpack.config.cjs \
+                    -c $src/offchain/webpack.config.cjs \
                     -o $out/${name}/ --env entry=$out/${name}/entrypoint.js
             cp $src/offchain/index.html $out/${name}/
 

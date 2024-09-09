@@ -364,9 +364,8 @@ let additions =
           , "foldable-traversable"
           , "maybe"
           , "newtype"
+          , "ordered-collections"
           , "prelude"
-          , "profunctor-lenses"
-          , "typelevel-prelude"
           ]
         , repo =
             "https://github.com/mlabs-haskell/purescript-cardano-key-wallet"
@@ -602,7 +601,7 @@ let additions =
           , "web-storage"
           ]
         , repo = "https://github.com/Plutonomicon/cardano-transaction-lib.git"
-        , version = "2ce50a5fe4c2015fec840588b2738d381a0d6ba7"
+        , version = "v9.3.1"
         }
       , cardano-transaction-builder =
         { dependencies =

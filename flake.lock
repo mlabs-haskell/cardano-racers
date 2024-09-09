@@ -2348,17 +2348,17 @@
         "utils": "utils_8"
       },
       "locked": {
-        "lastModified": 1722955151,
-        "narHash": "sha256-pZUg2PbhK35QdMcEP0or6IyKXBr544KyebQ+xiNc6PE=",
+        "lastModified": 1724944858,
+        "narHash": "sha256-7zV11vZ4e81cDIpk9OpkAnYV9EA5WWH134iei3n8+S8=",
         "owner": "input-output-hk",
         "repo": "cardano-node",
-        "rev": "4f4e372a1641ac68cd09fb0339e6f55bef1ab85d",
+        "rev": "d7abccd4e90c38ff5cd4d6a7839689d888332056",
         "type": "github"
       },
       "original": {
         "owner": "input-output-hk",
         "repo": "cardano-node",
-        "rev": "4f4e372a1641ac68cd09fb0339e6f55bef1ab85d",
+        "rev": "d7abccd4e90c38ff5cd4d6a7839689d888332056",
         "type": "github"
       }
     },
@@ -2770,17 +2770,17 @@
         "ogmios": "ogmios_2"
       },
       "locked": {
-        "lastModified": 1725631890,
-        "narHash": "sha256-nn2kGISO95CfVgxfCVX1rmWCt0SBS6te7QkQNP2TaDA=",
+        "lastModified": 1725898085,
+        "narHash": "sha256-H4sUdX7x/DiCC2iNAHc6zaJtX1Z5w6WURovnQ00tV6w=",
         "owner": "Plutonomicon",
         "repo": "cardano-transaction-lib",
-        "rev": "2ce50a5fe4c2015fec840588b2738d381a0d6ba7",
+        "rev": "be434c41d80bb10d25825ed247d81f630f2d6b89",
         "type": "github"
       },
       "original": {
         "owner": "Plutonomicon",
         "repo": "cardano-transaction-lib",
-        "rev": "2ce50a5fe4c2015fec840588b2738d381a0d6ba7",
+        "rev": "be434c41d80bb10d25825ed247d81f630f2d6b89",
         "type": "github"
       }
     },
