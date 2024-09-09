@@ -224,7 +224,7 @@ let additions =
           , "untagged-union"
           ]
         , repo = "https://github.com/mlabs-haskell/purescript-cip30"
-        , version = "v1.0.0"
+        , version = "v1.0.1"
         }
       , cip30-typesafe =
         { dependencies =
@@ -445,7 +445,7 @@ let additions =
           , "unsafe-coerce"
           ]
         , repo = "https://github.com/mlabs-haskell/purescript-cardano-types"
-        , version = "b084f05e1cc8c4e99fce2c42cf988590555c0ca7"
+        , version = "v3.0.0"
         }
       , cardano-message-signing =
         { dependencies =
@@ -602,7 +602,7 @@ let additions =
           , "web-storage"
           ]
         , repo = "https://github.com/Plutonomicon/cardano-transaction-lib.git"
-        , version = "7c1bacbfca260242f68f10d8bbc6928770858239"
+        , version = "2ce50a5fe4c2015fec840588b2738d381a0d6ba7"
         }
       , cardano-transaction-builder =
         { dependencies =
@@ -657,7 +657,7 @@ let additions =
           ]
         , repo =
             "https://github.com/mlabs-haskell/purescript-cardano-transaction-builder"
-        , version = "v2.0.1"
+        , version = "v2.0.0"
         }
       , cip95 =
         { dependencies =

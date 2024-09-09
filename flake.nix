@@ -206,7 +206,9 @@
           };
       };
 
-
+      # This bundle method is no longer working. CTL bundle process changed,
+      # and we do some changes on the entrypoint to make it easier for the client
+      # to integrate.
       bundlesFor = system:
       let
         pkgs = nixpkgsFor system;
@@ -217,7 +219,7 @@
           import("./output.js").then(m => window.racers${eName} = m);
           console.log("racers${eName} ready");
         '';
-        wrapWithCustomEntrypoint = eName: b: b.overrideAttrs (prev: {
+        wrapWithCustomEntrypoint = eName: b: b.overrideAttrs (_: prev: {
           buildCommand = ''
             cp ${(createEntrypoint eName)} ${pkgs.lib.toLower eName}-entry.js
             ${prev.buildCommand}
@@ -233,7 +235,6 @@
           psEntrypoint = "client-entry.js";
           browserRuntime = true;
         });
-	# in builtPursProject;
 
 	in pkgs.runCommand "admin-bundle-cmd" {
           buildInputs = [
@@ -265,11 +266,11 @@
         cp ${./offchain/build/index.d.ts} $out/dist/racers-bot/index.d.ts
         '';
 
-      gzippedBundlesFor = system:
+      gzippedBundlesForOg = system:
         let
           pkgs = nixpkgsFor system;
           bundles = bundlesFor system;
-        in pkgs.runCommand "gzipped-bundles" {
+        in pkgs.runCommand "gzipped-bundles-og" {
             buildInputs = [
               pkgs.gnutar
               pkgs.zip
@@ -291,6 +292,71 @@
             zip -j $out/bundles.zip $out/admin-browser-bundle.tar.gz $out/bot-bundle.tar.gz $out/client-browser-bundle.tar.gz
           '';
 
+      gzippedBundlesFor = system:
+        let
+          pkgs = nixpkgsFor system;
+          project = (offchain.projectFor system);
+          builtPursProject = project.buildPursProject {};
+          makeBundleInstructionsFor = cname:
+            let 
+              name = pkgs.lib.toLower cname;
+            in
+            ''
+            mkdir -p $out/${name}
+
+            echo '"use strict";'  > $out/${name}/entrypoint.js
+            echo \
+                    'import("../output/Lib.CardanoRacers.${cname}FFI/index.js").then(m => window.racers${cname} = m);' \
+                    >> $out/${name}/entrypoint.js
+            echo 'console.log("racers${cname} ready");' >> $out/${name}/entrypoint.js
+
+            BROWSER_RUNTIME=1 webpack --mode=production \
+                    -c  $src/offchain/webpack.config.cjs \
+                    -o $out/${name}/ --env entry=$out/${name}/entrypoint.js
+            cp $src/offchain/index.html $out/${name}/
+
+            rm $out/${name}/entrypoint.js
+            chmod -R 755 $out/${name}
+            tar -czf $out/${name}-browser-bundle.tar.gz -C $out/${name} .
+            '';
+        in pkgs.runCommand "gzipped-bundles" {
+            src = ./.;
+            buildInputs = [
+              pkgs.gnutar
+              pkgs.zip
+              pkgs.gnumake
+              pkgs.nodejs
+              project.nodeModules
+              builtPursProject
+            ];
+            nativeBuildInputs = [
+                project.purs
+                pkgs.easy-ps.spago
+              ];
+          }
+          ''
+          export HOME=$TMP
+          export NODE_PATH="${project.nodeModules}/lib/node_modules"
+          export PATH="${project.nodeModules}/bin:$PATH"
+
+          mkdir -p $out $out/bot
+
+          cp -r ${builtPursProject}/output $out/output
+
+          ${makeBundleInstructionsFor "Client"}
+          ${makeBundleInstructionsFor "Admin"}
+
+          cp -r ${builtPursProject}/output $out/bot/
+          cp -r $src/offchain/build/* $out/bot/
+          tar -czf $out/bot-bundle.tar.gz -C $out/bot .
+
+          zip -j $out/bundles.zip $out/admin-browser-bundle.tar.gz \
+                  $out/bot-bundle.tar.gz \
+                  $out/client-browser-bundle.tar.gz
+
+          # rm -rf $out/output/
+          '';
+
     in
     {
       inherit nixpkgsFor;
@@ -309,7 +375,7 @@
         {
           script-exporter = onchain.script-exporter system;
           exported-scripts = onchain.exported-scripts system;
-          bundles = bundlesFor system;
+          # bundles = bundlesFor system;
           gzipped-bundles = gzippedBundlesFor system;
         }
       );

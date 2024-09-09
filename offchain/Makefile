@@ -1,7 +1,7 @@
 SHELL := bash
 .ONESHELL:
 .SHELLFLAGS := -eu -o pipefail -c
-.PHONY: test build bundles
+.PHONY: test build bundles dev
 
 ps-sources := $$(fd -epurs)
 
@@ -75,6 +75,18 @@ test:
 	spago test --main Test.CardanoRacers.Main
 
 
+dev: build
+	@echo '"use strict";'  > ./entrypoint.js
+	@echo \
+		'import("./output/Lib.CardanoRacers.ClientFFI/index.js").then(m => window.racersClient = m);' \
+		 >> ./entrypoint.js
+	@echo 'console.log("racersClient ready");'  >> ./entrypoint.js
+
+
+	BROWSER_RUNTIME=${browser-runtime} webpack-dev-server \
+		 --env entry=./dist/client/bundle.js
+
+
 bundles: build
 	@mkdir -p dist/admin dist/client dist/bot
 
@@ -109,4 +121,9 @@ bundles: build
 	@zip -j ./dist/bundles.zip ./dist/admin-browser-bundle.tar.gz \
 		./dist/bot-bundle.tar.gz \
 		./dist/client-browser-bundle.tar.gz
+
+
+	# Testing
+	cp ~/Downloads/bundles3/index.html dist/
+	cp ~/Downloads/bundles3/package.json dist/
 
