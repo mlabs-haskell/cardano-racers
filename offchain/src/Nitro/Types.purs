@@ -5,6 +5,8 @@ module CardanoRacers.Nitro.Types
 import Contract.Prelude
 
 import Aeson (class DecodeAeson, class EncodeAeson, encodeAeson)
+import Cardano.Plutus.DataSchema (S, Z)
+import Cardano.Types (BigInt)
 import CardanoRacers.Helpers
   ( decodeAesonString
   , decodeWrappedAeson
@@ -18,13 +20,10 @@ import Contract.PlutusData
   , type (:=)
   , type (@@)
   , PNil
-  , S
-  , Z
   , genericFromData
   , genericToData
   )
 import Control.Alt ((<|>))
-import Data.BigInt (BigInt)
 
 data NitroPolicyRedeemer
   = MintNitroToken BigInt

@@ -3,9 +3,19 @@ module Lib.CardanoRacers.Common where
 import Contract.Prelude
 
 import Aeson (decodeJsonString)
+import Cardano.Plutus.Types.MintingPolicyHash
+  ( MintingPolicyHash(MintingPolicyHash)
+  )
+import Cardano.Serialization.Lib (toBytes)
+import Cardano.Types (NetworkId(TestnetId, MainnetId), PrivateKey)
+import Cardano.Types.AssetName (unAssetName)
+import Cardano.Types.BigInt as JSBigInt
+import Cardano.Types.NativeScript as NativeScript
+import Cardano.Types.PlutusScript as PlutusScript
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.GameAsset.Contract (mkGameAssetPolicy)
 import CardanoRacers.GameAsset.Types (GameAssetType(DriverType, CarType))
+import CardanoRacers.Helpers (fromBIToJSBI)
 import CardanoRacers.Nitro.Contract (mkNitroPolicy)
 import CardanoRacers.RaceRegistry.Types (RegistryParams)
 import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
@@ -13,59 +23,38 @@ import CardanoRacers.RaceSlot.Types (slotTokenName)
 import CardanoRacers.RacersState.Contract (modifyRacersStateContract)
 import Contract.Config
   ( ContractParams
-  , NetworkId(TestnetId, MainnetId)
+  , KnownWallet(Nami, Gero, Flint, Eternl, Lode, Lace, NuFi)
   , PrivatePaymentKeySource(PrivatePaymentKeyValue)
   , PrivateStakeKeySource(PrivateStakeKeyValue)
   , QueryBackendParams
   , ServerConfig
   , StakeKeyPresence(WithStakeKey, WithoutStakeKey)
-  , WalletSpec
-      ( UseKeys
-      , ConnectToNami
-      , ConnectToGero
-      , ConnectToFlint
-      , ConnectToEternl
-      , ConnectToLode
-      , ConnectToLace
-      , ConnectToNuFi
-      , ConnectToVespr
-      )
+  , WalletSpec(UseKeys, ConnectToGenericCip30)
   , mkBlockfrostBackendParams
   , mkCtlBackendParams
-  , privateKeyFromBytes
   , testnetConfig
+  , walletName
   )
-import Contract.Monad (liftedM)
+import Contract.Keys (privateKeyFromBytes)
+import Contract.Monad (liftContractM)
 import Contract.Prim.ByteArray
   ( ByteArray
   , RawBytes(RawBytes)
+  , byteArrayToHex
   , byteArrayToIntArray
   , hexToByteArray
-  , byteArrayToHex
   )
-import Contract.Scripts (mintingPolicyHash)
-import Contract.Value (TokenName, getTokenName, scriptCurrencySymbol)
-import Contract.Wallet
-  ( WalletExtension
-      ( NamiWallet
-      , EternlWallet
-      , NuFiWallet
-      , LodeWallet
-      , GeroWallet
-      , FlintWallet
-      , LaceWallet
-      , VesprWallet
-      )
-  )
-import Contract.Wallet.Key
-  ( keyWalletPrivatePaymentKey
-  , keyWalletPrivateStakeKey
-  , mkKeyWalletFromMnemonic
-  )
+import Contract.ScriptLookups (ScriptLookups)
+import Contract.Value (TokenName)
+import Contract.Wallet (WalletExtension, WalletSpec)
+import Contract.Wallet.Key (mkKeyWalletFromMnemonic)
 import Control.Alt ((<|>))
 import Control.Monad.Error.Class (liftMaybe)
 import Control.Monad.Except.Trans (ExceptT, mapExceptT, runExceptT)
-import Ctl.Internal.Serialization.Types (PrivateKey)
+import Control.Monad.Trans.Class (lift)
+import Control.Promise (Promise, fromAff)
+import Ctl.Internal.Wallet.Spec (PrivateDrepKeySource(PrivateDrepKeyValue))
+import Data.Array (head)
 import Data.ArrayBuffer.Types (Uint8Array)
 import Data.Bifunctor (lmap)
 import Data.BigInt (BigInt)
@@ -76,7 +65,14 @@ import Data.String (Pattern(Pattern), stripPrefix)
 import Data.String.CodeUnits (fromCharArray)
 import Data.Time.Duration (Seconds(Seconds))
 import Data.UInt (fromInt) as UInt
-import Effect.Aff.Compat (EffectFn1, EffectFn2, mkEffectFn1, mkEffectFn2)
+import Effect.Aff.Compat
+  ( EffectFn1
+  , EffectFn2
+  , EffectFn3
+  , mkEffectFn1
+  , mkEffectFn2
+  , mkEffectFn3
+  )
 import Effect.Exception (error)
 import Effect.Uncurried (EffectFn4, mkEffectFn4)
 import Foreign
@@ -93,7 +89,7 @@ import Foreign.Index (readProp)
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable) as Object
 import Partial.Unsafe (unsafePartial)
-import Racers (Racers, withContract)
+import Racers (Racers)
 
 foreign import fromJsBigInt :: JSBigInt -> BigInt
 foreign import toJsBigInt :: BigInt -> JSBigInt
@@ -209,45 +205,74 @@ contractParams =
       }
 
 walletSpec
-  :: { walletFromMnemonic :: EffectFn4 String Int Int Boolean CredentialProvider
+  :: { walletFromMnemonic ::
+         EffectFn4 String Int Int Boolean (Promise CredentialProvider)
      , walletFromPrivateKey :: EffectFn1 String CredentialProvider
      , walletFromPrivateKeyAndStakeKey ::
          EffectFn2 String String CredentialProvider
+     , walletFromPrivateKeyStakeKeyAndDRepKey ::
+         EffectFn3 String String String CredentialProvider
      , browserWallet :: Object (EffectFn1 Unit CredentialProvider)
      }
 walletSpec =
   { walletFromMnemonic
   , walletFromPrivateKey
   , walletFromPrivateKeyAndStakeKey
+  , walletFromPrivateKeyStakeKeyAndDRepKey
   , browserWallet
   }
   where
   walletFromMnemonic = mkEffectFn4 $
-    \mnemonic accountIndex addressIndex hasStake -> do
-      kw <- liftEither $ left error $ mkKeyWalletFromMnemonic mnemonic
+    \mnemonic accountIndex addressIndex hasStake -> fromAff $ do
+      kw <- liftEither $ left error $ mkKeyWalletFromMnemonic
+        mnemonic
         { accountIndex: UInt.fromInt accountIndex
         , addressIndex: UInt.fromInt addressIndex
         }
         (if hasStake then WithStakeKey else WithoutStakeKey)
-      pure $ UseKeys (PrivatePaymentKeyValue $ keyWalletPrivatePaymentKey kw)
-        (PrivateStakeKeyValue <$> keyWalletPrivateStakeKey kw)
+      privPaymentKey <- (unwrap kw).paymentKey
+      privStakeKey <- (unwrap kw).stakeKey
+      drepKey <- (unwrap kw).drepKey
+      pure $ UseKeys (PrivatePaymentKeyValue privPaymentKey)
+        (PrivateStakeKeyValue <$> privStakeKey)
+        (PrivateDrepKeyValue <$> drepKey)
 
   walletFromPrivateKey = mkEffectFn1 $ \privateKeyStr -> do
     privateKey <- liftMaybe (error "Could not deserialise private key") $
       mkPrivateKey
         privateKeyStr
-    pure $ UseKeys (PrivatePaymentKeyValue $ wrap privateKey) Nothing
+    pure $ UseKeys (PrivatePaymentKeyValue $ wrap privateKey) Nothing Nothing
 
-  walletFromPrivateKeyAndStakeKey = mkEffectFn2 $ \privateKeyStr stakeKeyStr ->
-    do
-      privateKey <- liftMaybe (error "Could not deserialise private key") $
-        mkPrivateKey
-          privateKeyStr
-      stakeKey <- liftMaybe (error "Could not deserialise stake key") $
-        mkPrivateKey
-          stakeKeyStr
-      pure $ UseKeys (PrivatePaymentKeyValue $ wrap privateKey)
-        (Just $ PrivateStakeKeyValue $ wrap stakeKey)
+  walletFromPrivateKeyAndStakeKey = mkEffectFn2 $
+    \privateKeyStr stakeKeyStr ->
+      do
+        privateKey <- liftMaybe (error "Could not deserialise private key") $
+          mkPrivateKey
+            privateKeyStr
+        stakeKey <- liftMaybe (error "Could not deserialise stake key") $
+          mkPrivateKey
+            stakeKeyStr
+
+        pure $ UseKeys (PrivatePaymentKeyValue $ wrap privateKey)
+          (Just $ PrivateStakeKeyValue $ wrap stakeKey)
+          Nothing
+
+  walletFromPrivateKeyStakeKeyAndDRepKey = mkEffectFn3 $
+    \privateKeyStr stakeKeyStr drepKeyStr ->
+      do
+        privateKey <- liftMaybe (error "Could not deserialise private key") $
+          mkPrivateKey
+            privateKeyStr
+        stakeKey <- liftMaybe (error "Could not deserialise stake key") $
+          mkPrivateKey
+            stakeKeyStr
+        drepKey <- liftMaybe (error "Could not deserialise drep key") $
+          mkPrivateKey
+            drepKeyStr
+
+        pure $ UseKeys (PrivatePaymentKeyValue $ wrap privateKey)
+          (Just $ PrivateStakeKeyValue $ wrap stakeKey)
+          (Just $ PrivateDrepKeyValue $ wrap drepKey)
 
   browserWallet = Object.fromFoldable
     $ map
@@ -255,14 +280,14 @@ walletSpec =
             (const $ pure spec)
         )
     $
-      [ "Nami" /\ ConnectToNami
-      , "GeroWallet" /\ ConnectToGero
-      , "Flint" /\ ConnectToFlint
-      , "Eternl" /\ ConnectToEternl
-      , "LodeWallet" /\ ConnectToLode
-      , "Lace" /\ ConnectToLace
-      , "Vespr" /\ ConnectToVespr
-      , "NuFi" /\ ConnectToNuFi
+      [ "Nami" /\ ConnectToGenericCip30 (walletName Nami) { cip95: false }
+      , "GeroWallet" /\ ConnectToGenericCip30 (walletName Gero) { cip95: false }
+      , "Flint" /\ ConnectToGenericCip30 (walletName Flint) { cip95: false }
+      , "Eternl" /\ ConnectToGenericCip30 (walletName Eternl) { cip95: false }
+      , "LodeWallet" /\ ConnectToGenericCip30 (walletName Lode) { cip95: false }
+      , "Lace" /\ ConnectToGenericCip30 (walletName Lace) { cip95: false }
+      , "Vespr" /\ ConnectToGenericCip30 ("vespr") { cip95: false }
+      , "NuFi" /\ ConnectToGenericCip30 (walletName NuFi) { cip95: false }
       ]
 
 mkPrivateKey :: String -> Maybe PrivateKey
@@ -278,15 +303,17 @@ mkRacersParams = mkEffectFn1 $ \rpStr -> liftEither $ lmap (error <<< show) $
 
 walletExtensionFromString :: String -> Maybe WalletExtension
 walletExtensionFromString name = case name of
-  "nami" -> Just NamiWallet
-  "gerowallet" -> Just GeroWallet
-  "flint" -> Just FlintWallet
-  "eternl" -> Just EternlWallet
-  "LodeWallet" -> Just LodeWallet
-  "nufi" -> Just NuFiWallet
-  "lace" -> Just LaceWallet
-  "vespr" -> Just VesprWallet
+  "nami" -> Just { name: "nami", exts }
+  "gerowallet" -> Just { name: "gerowallet", exts }
+  "flint" -> Just { name: "flint", exts }
+  "eternl" -> Just { name: "eternl", exts }
+  "LodeWallet" -> Just { name: "LodeWallet", exts }
+  "nufi" -> Just { name: "nufi", exts }
+  "lace" -> Just { name: "lace", exts }
+  "vespr" -> Just { name: "vespr", exts }
   _ -> Nothing
+  where
+  exts = { cip95: false }
 
 assetTypeFromString :: String -> Maybe GameAssetType
 assetTypeFromString "driver" = pure DriverType
@@ -299,9 +326,10 @@ assetTypeToString CarType = "car"
 
 tokenNameToString :: TokenName -> String
 tokenNameToString tk =
-  if null intArray then "Lovelace" else toAscii $ getTokenName tk
+  if null intArray then "Lovelace" else toAscii tkBytes
   where
-  intArray = byteArrayToIntArray $ getTokenName tk
+  tkBytes = unAssetName tk
+  intArray = byteArrayToIntArray tkBytes
 
   toAscii :: ByteArray -> String
   toAscii ba = fromCharArray
@@ -310,29 +338,52 @@ tokenNameToString tk =
 
 createRegistryParams :: Race -> Racers RegistryParams
 createRegistryParams race = do
-  nitroPolicyHash <- mintingPolicyHash <$> mkNitroPolicy
-  driverAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy DriverType
-  carAssetPolicyHash <- mintingPolicyHash <$> mkGameAssetPolicy CarType
-  slotSymbol <-
-    withContract (liftedM "could not get currency symbol from policy")
-      $ scriptCurrencySymbol
-      <$> mkRaceSlotPolicy (wrap race.raceId)
+  nitroPolicy <- mkNitroPolicy
+  nitroPolicyHash <- lift
+    $ liftContractM "Could not get script hash of nitro policy"
+    $ mintingPolicyHash nitroPolicy
+
+  driverAssetPolicy <- mkGameAssetPolicy DriverType
+  driverAssetPolicyHash <- lift
+    $ liftContractM "Could not get script hash of driver asset policy"
+    $ mintingPolicyHash driverAssetPolicy
+
+  carAssetPolicy <- mkGameAssetPolicy CarType
+  carAssetPolicyHash <- lift
+    $ liftContractM "Could not get script hash of car asset policy"
+    $ mintingPolicyHash carAssetPolicy
+
+  slotPolicy <- mkRaceSlotPolicy (wrap race.raceId)
+  slotSymbol <- lift
+    $ liftContractM "Could not get script hash of races slot policy"
+    $ mintingPolicyHash slotPolicy
+
   pure $ wrap
-    { slotAssetClass: slotSymbol /\ slotTokenName
+    { slotAssetClass: (unwrap slotSymbol) /\ (unwrap slotTokenName)
     , nitroPolicyHash
     , driverAssetPolicyHash
     , carAssetPolicyHash
-    , nitroFee: fromJsBigInt race.nitroFee
+    , nitroFee: toBI race.nitroFee
     }
 
 setAssetPrices :: AssetPricesFFI -> Racers TransactionHashFFI
 setAssetPrices assetPricesFFI = do
   let
     assetPrices = wrap $
-      { common: fromJsBigInt assetPricesFFI.common
-      , rare: fromJsBigInt assetPricesFFI.rare
-      , epic: fromJsBigInt assetPricesFFI.epic
+      { common: toBI assetPricesFFI.common
+      , rare: toBI assetPricesFFI.rare
+      , epic: toBI assetPricesFFI.epic
       }
   txh <- modifyRacersStateContract
     (\cur -> wrap $ (unwrap cur) { assetPrices = assetPrices })
-  pure $ byteArrayToHex (unwrap txh)
+  pure $ byteArrayToHex (toBytes $ unwrap txh)
+
+toBI :: Lovelace -> JSBigInt.BigInt
+toBI = fromBIToJSBI <<< fromJsBigInt
+
+mintingPolicyHash :: ScriptLookups -> Maybe MintingPolicyHash
+mintingPolicyHash sl = case head (unwrap sl).plutusMintingPolicies of
+  Just pmp -> Just $ MintingPolicyHash $ PlutusScript.hash pmp
+  Nothing -> do
+    (MintingPolicyHash <<< NativeScript.hash) <$> head
+      (unwrap sl).nativeMintingPolicies

@@ -13,6 +13,14 @@ module CardanoRacers.Nitro.Contract
 
 import Contract.Prelude
 
+import Cardano.Plutus.ApplyArgs (applyArgs)
+import Cardano.Plutus.Types.Address as Address
+import Cardano.ToData (toData)
+import Cardano.Types (TransactionOutput)
+import Cardano.Types.BigInt (fromString) as CTBigInt
+import Cardano.Types.BigNum as BigNum
+import Cardano.Types.Int as Int
+import Cardano.Types.PlutusScript (hash)
 import CardanoRacers.Common.Types (nitroToken)
 import CardanoRacers.Helpers (paysToAddrConstraint)
 import CardanoRacers.Nitro.Types
@@ -26,70 +34,77 @@ import CardanoRacers.ScriptsFFI (nitroMintingPolicyScript)
 import Common.ContractHelpers (findAnyAuthUtxo)
 import Contract.Address (Address)
 import Contract.Monad (liftContractM, liftedM)
-import Contract.PlutusData (Redeemer(Redeemer), toData)
+import Contract.PlutusData (RedeemerDatum(RedeemerDatum))
+import Contract.ScriptLookups (ScriptLookups, plutusMintingPolicy)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts
-  ( MintingPolicy(PlutusMintingPolicy)
-  , applyArgs
-  , mintingPolicyHash
-  )
-import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptV2FromEnvelope)
+import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptFromEnvelope)
 import Contract.Transaction
   ( TransactionHash
   , TransactionInput
-  , TransactionOutputWithRefScript
   , awaitTxConfirmed
-  , mkTxUnspentOut
   , submitTxFromConstraints
   )
 import Contract.TxConstraints (InputWithScriptRef(RefInput))
 import Contract.TxConstraints as Constraints
 import Contract.Value (lovelaceValueOf, singleton) as Value
-import Contract.Value (scriptCurrencySymbol)
 import Control.Monad.Reader.Trans (asks)
 import Control.Monad.Trans.Class (lift)
+import Data.Array (head)
 import Data.Array (singleton) as Array
 import Data.BigInt (BigInt)
-import Data.BigInt (fromInt, toNumber) as BigInt
+import Data.BigInt (fromString, toNumber, toString) as BigInt
 import Data.Int (ceil)
 import Data.Map (singleton) as Map
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
+import JS.BigInt as JSBigInt
+import Partial.Unsafe (unsafePartial)
 import Racers (Racers, withContract)
 
 mintNitroConstraints
-  :: (TransactionInput /\ TransactionOutputWithRefScript)
+  :: (TransactionInput /\ TransactionOutput)
   -> BigInt
   -> Racers
-       (Constraints.TxConstraints Void Void /\ Lookups.ScriptLookups Void)
+       (Constraints.TxConstraints /\ Lookups.ScriptLookups)
 mintNitroConstraints (authTxi /\ authTxo) nitroAmount = do
   nitroPolicy <- mkNitroPolicy
-  mNitroPolicyRef <- queryRacersRefScriptOutput
-    (unwrap $ mintingPolicyHash nitroPolicy)
+  nitroSHash <- lift $ liftContractM "Could not get script hash"
+    $ hash
+    <$> (head (unwrap nitroPolicy).plutusMintingPolicies)
+  mNitroPolicyRef <- queryRacersRefScriptOutput nitroSHash
+
+  nitroAmountBG <- lift
+    $ liftContractM "Could not convert nitroAmount to BigNum"
+    $ CTBigInt.fromString
+    $ BigInt.toString nitroAmount
+
+  nitroAmountI <- lift $ liftContractM "Could not convert nitroAmount to Int"
+    $ Int.fromString
+    $ BigInt.toString nitroAmount
 
   let
-    red = Redeemer $ toData $ MintNitroToken nitroAmount
+    red = RedeemerDatum $ toData $ MintNitroToken nitroAmountBG
 
     mintConstraints /\ mintLookups = case mNitroPolicyRef of
       Nothing ->
         Constraints.mustMintCurrencyWithRedeemer
-          (mintingPolicyHash nitroPolicy)
+          nitroSHash
           red
-          nitroToken
-          nitroAmount
-          /\ Lookups.mintingPolicy nitroPolicy
+          (unwrap nitroToken)
+          nitroAmountI
+          /\ nitroPolicy
       Just (refTxi /\ refTxo) ->
         Constraints.mustMintCurrencyWithRedeemerUsingScriptRef
-          (mintingPolicyHash nitroPolicy)
+          nitroSHash
           red
-          nitroToken
-          nitroAmount
-          (RefInput $ mkTxUnspentOut refTxi refTxo) /\ mempty
+          (unwrap nitroToken)
+          nitroAmountI
+          (RefInput $ wrap { input: refTxi, output: refTxo }) /\ mempty
 
-    constraints :: Constraints.TxConstraints Void Void
+    constraints :: Constraints.TxConstraints
     constraints = mintConstraints <> Constraints.mustSpendPubKeyOutput authTxi
 
-    lookups :: Lookups.ScriptLookups Void
+    lookups :: Lookups.ScriptLookups
     lookups = mintLookups
       <> Lookups.unspentOutputs (Map.singleton authTxi authTxo)
 
@@ -97,51 +112,67 @@ mintNitroConstraints (authTxi /\ authTxo) nitroAmount = do
 
 burnNitroConstraints
   :: BigInt
-  -> Racers (Constraints.TxConstraints Void Void /\ Lookups.ScriptLookups Void)
+  -> Racers (Constraints.TxConstraints /\ Lookups.ScriptLookups)
 burnNitroConstraints nitroAmount = do
   nitroPolicy <- mkNitroPolicy
-  mNitroPolicyRef <- queryRacersRefScriptOutput
-    (unwrap $ mintingPolicyHash nitroPolicy)
+  nitroSHash <- lift $ liftContractM "Could not get script hash"
+    $ hash
+    <$> (head (unwrap nitroPolicy).plutusMintingPolicies)
+  mNitroPolicyRef <- queryRacersRefScriptOutput nitroSHash
 
   let
-    red = Redeemer $ toData $ BurnNitroToken
+    red = RedeemerDatum $ toData $ BurnNitroToken
 
     nitroToMint = negate nitroAmount
 
+  nitroToMintI <- lift $ liftContractM "Could not convert nitroToMint to BigInt"
+    $ Int.fromString
+    $ BigInt.toString nitroToMint
+
+  let
     mintConstraints /\ mintLookups = case mNitroPolicyRef of
       Nothing ->
         Constraints.mustMintCurrencyWithRedeemer
-          (mintingPolicyHash nitroPolicy)
+          nitroSHash
           red
-          nitroToken
-          nitroToMint
-          /\ Lookups.mintingPolicy nitroPolicy
+          (unwrap nitroToken)
+          nitroToMintI
+          /\ nitroPolicy
       Just (refTxi /\ refTxo) ->
         Constraints.mustMintCurrencyWithRedeemerUsingScriptRef
-          (mintingPolicyHash nitroPolicy)
+          nitroSHash
           red
-          nitroToken
-          nitroToMint
-          (RefInput $ mkTxUnspentOut refTxi refTxo) /\ mempty
+          (unwrap nitroToken)
+          nitroToMintI
+          (RefInput $ wrap { input: refTxi, output: refTxo }) /\ mempty
   pure (mintConstraints /\ mintLookups)
 
 paysNitroConstraints
   :: Address
   -> BigInt
-  -> Racers (Constraints.TxConstraints Void Void)
+  -> Racers (Constraints.TxConstraints)
 paysNitroConstraints targetAddress nitroAmount = do
-  nitroSymbol <-
-    (scriptCurrencySymbol <$> mkNitroPolicy) >>=
-      (lift <<< liftContractM "Could not get currency symbol")
-  pure $ paysToAddrConstraint targetAddress
-    (Value.singleton nitroSymbol nitroToken nitroAmount)
+  nitroPolicy <- mkNitroPolicy
+  nitroSymbol <- lift $ liftContractM "Could not get script hash"
+    $ hash
+    <$> (head (unwrap nitroPolicy).plutusMintingPolicies)
+  let
+    addr = unsafePartial $ fromJust $
+      Address.fromCardano
+        targetAddress
+  nitroAmountBG <- lift
+    $ liftContractM "Could not convert nitroAmount to BigNum"
+    $ BigNum.fromString
+    $ BigInt.toString nitroAmount
+  pure $ paysToAddrConstraint addr
+    (Value.singleton nitroSymbol (unwrap nitroToken) nitroAmountBG)
 
 mintNitroAndPayToAddressConstraints
-  :: (TransactionInput /\ TransactionOutputWithRefScript)
+  :: (TransactionInput /\ TransactionOutput)
   -> BigInt
   -> Address
   -> Racers
-       (Constraints.TxConstraints Void Void /\ Lookups.ScriptLookups Void)
+       (Constraints.TxConstraints /\ Lookups.ScriptLookups)
 mintNitroAndPayToAddressConstraints
   (authTxi /\ authTxo)
   nitroAmount
@@ -191,44 +222,67 @@ botMintsNitroContract nitroAmount = mintNitroContract nitroAmount
 buyNitroContract :: BigInt -> Racers TransactionHash
 buyNitroContract nitroAmount = do
   nitroPolicy <- mkNitroPolicy
+  nitroSHash <- lift $ liftContractM "Could not get script hash"
+    $ hash
+    <$> (head (unwrap nitroPolicy).plutusMintingPolicies)
+
+  nitroAmountBG <- lift
+    $ liftContractM "Could not convert nitroAmount to BigNum"
+    $ CTBigInt.fromString
+    $ BigInt.toString nitroAmount
+
+  nitroAmountI <- lift $ liftContractM "Could not convert nitroAmount to Int"
+    $ Int.fromString
+    $ BigInt.toString nitroAmount
+
   let
-    red = Redeemer $ toData $ BuyNitroToken nitroAmount
+    red = RedeemerDatum $ toData $ BuyNitroToken nitroAmountBG
+
   ns /\ stateTxi /\ stateTxo <- queryRacersState
 
-  mNitroPolicyRef <- queryRacersRefScriptOutput
-    (unwrap $ mintingPolicyHash nitroPolicy)
+  nitroPriceI <- lift $ liftContractM "Could not convert nitroPrice to BigInt"
+    $ BigInt.fromString
+    $ JSBigInt.toString (unwrap ns).nitroPrice
+
+  mNitroPolicyRef <- queryRacersRefScriptOutput nitroSHash
 
   let
-    totalAmount = (unwrap ns).nitroPrice * nitroAmount
-    treasuryAmt = BigInt.fromInt <<< ceil $ BigInt.toNumber totalAmount * 0.75
-    operatingAmt = BigInt.fromInt <<< ceil $ BigInt.toNumber totalAmount * 0.25
+    (totalAmount :: BigInt) = nitroPriceI * nitroAmount
+
+    (treasuryAmt :: BigNum.BigNum) = BigNum.fromInt <<< ceil
+      $ BigInt.toNumber totalAmount
+      * 0.75
+
+    (operatingAmt :: BigNum.BigNum) = BigNum.fromInt <<< ceil
+      $ BigInt.toNumber totalAmount
+      * 0.25
     treasuryVal = Value.lovelaceValueOf treasuryAmt
     operatingVal = Value.lovelaceValueOf operatingAmt
 
     mintConstraints /\ mintLookups = case mNitroPolicyRef of
       Nothing ->
         Constraints.mustMintCurrencyWithRedeemer
-          (mintingPolicyHash nitroPolicy)
+          nitroSHash
           red
-          nitroToken
-          nitroAmount
-          /\ Lookups.mintingPolicy nitroPolicy
+          (unwrap nitroToken)
+          nitroAmountI
+          /\ nitroPolicy
       Just (refTxi /\ refTxo) ->
         Constraints.mustMintCurrencyWithRedeemerUsingScriptRef
-          (mintingPolicyHash nitroPolicy)
+          nitroSHash
           red
-          nitroToken
-          nitroAmount
-          (RefInput $ mkTxUnspentOut refTxi refTxo) /\ mempty
+          (unwrap nitroToken)
+          nitroAmountI
+          (RefInput $ wrap { input: refTxi, output: refTxo }) /\ mempty
 
-    constraints :: Constraints.TxConstraints Void Void
+    constraints :: Constraints.TxConstraints
     constraints =
       Constraints.mustReferenceOutput stateTxi
         <> paysToAddrConstraint (unwrap ns).treasuryAddress treasuryVal
         <> paysToAddrConstraint (unwrap ns).operatingAddress operatingVal
         <> mintConstraints
 
-    lookups :: Lookups.ScriptLookups Void
+    lookups :: Lookups.ScriptLookups
     lookups = mintLookups
       <> Lookups.unspentOutputs (Map.singleton stateTxi stateTxo)
 
@@ -237,13 +291,13 @@ buyNitroContract nitroAmount = do
     awaitTxConfirmed txId
     pure txId
 
-mkNitroPolicy :: Racers MintingPolicy
+mkNitroPolicy :: Racers ScriptLookups
 mkNitroPolicy = do
   rp <- asks _.params
   v2script <- lift $ liftContractM "Could not decode applied script" do
     envelope <- decodeTextEnvelope nitroMintingPolicyScript
-    plutusScriptV2FromEnvelope envelope
+    plutusScriptFromEnvelope envelope
   appliedScript <- liftEither $ left (error <<< show) $ applyArgs v2script
     $ Array.singleton
     $ toData rp
-  pure $ PlutusMintingPolicy $ appliedScript
+  pure $ plutusMintingPolicy $ appliedScript

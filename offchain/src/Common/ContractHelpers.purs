@@ -7,77 +7,93 @@ module Common.ContractHelpers
 
 import Contract.Prelude
 
+import Cardano.Plutus.Types.CurrencySymbol (toCardano)
+import Cardano.Types (BigInt, TransactionOutput)
+import Cardano.Types.Asset (Asset(AdaAsset))
+import Cardano.Types.BigNum (BigNum, toBigInt)
+import Cardano.Types.BigNum as BigNum
+import Cardano.Types.Value (Value, valueOf)
 import CardanoRacers.Common.Types (RacersParams)
 import Contract.Monad (Contract, liftedM, throwContractError)
 import Contract.ScriptLookups as Lookups
 import Contract.Transaction
   ( TransactionHash
   , TransactionInput
-  , TransactionOutputWithRefScript
   , awaitTxConfirmed
   , submitTxFromConstraints
   )
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (UtxoMap)
-import Contract.Value (Value, getLovelace, valueToCoin)
 import Contract.Value (geq, singleton) as Value
 import Contract.Wallet (getWalletUtxos)
 import Control.Apply (lift2)
 import Control.Monad.Reader.Class (asks)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (find) as Array
-import Data.BigInt (BigInt)
-import Data.BigInt (fromInt) as BigInt
 import Data.Map (filter, isEmpty, keys, toUnfoldable) as Map
 import Racers (Racers)
 
 findAnyAuthUtxo
-  :: Racers (Maybe (TransactionInput /\ TransactionOutputWithRefScript))
+  :: Racers (Maybe (TransactionInput /\ TransactionOutput))
 findAnyAuthUtxo = do
   rp <- asks _.params
   utxos <- lift $ liftedM "could not get wallet utxos" $ getWalletUtxos
   pure $ findAuthInUtxosMap rp utxos
 
 findAdminAuthUtxo
-  :: Racers (Maybe (TransactionInput /\ TransactionOutputWithRefScript))
+  :: Racers (Maybe (TransactionInput /\ TransactionOutput))
 findAdminAuthUtxo = do
   utxos <- lift $ liftedM "could not get wallet utxos" $ getWalletUtxos
-  asks _.params <#> \rp ->
+  asks _.params <#> \rp -> do
+    adminScriptHash <- toCardano $ fst (unwrap rp).adminToken
     let
       adminValue :: Value
-      adminValue = uncurry Value.singleton (unwrap rp).adminToken $
-        BigInt.fromInt
-          1
+      adminValue =
+        Value.singleton
+          adminScriptHash
+          (unwrap $ snd (unwrap rp).adminToken) $
+          BigNum.fromInt
+            1
 
       mUtxo =
         Array.find
           ( \(_ /\ txo) -> (_ `Value.geq` adminValue)
-              (unwrap (unwrap txo).output).amount
+              (unwrap txo).amount
           ) $ Map.toUnfoldable utxos
-    in
-      mUtxo
+    mUtxo
 
 findAuthInUtxosMap
   :: RacersParams
   -> UtxoMap
-  -> Maybe (TransactionInput /\ TransactionOutputWithRefScript)
-findAuthInUtxosMap rp utxos =
+  -> Maybe (TransactionInput /\ TransactionOutput)
+findAuthInUtxosMap rp utxos = do
+  adminScriptHash <- toCardano $ fst (unwrap rp).adminToken
+  botScriptHash <- toCardano $ fst (unwrap rp).botToken
   let
+
     adminValue :: Value
-    adminValue = uncurry Value.singleton (unwrap rp).adminToken $ BigInt.fromInt
-      1
+    adminValue =
+      Value.singleton
+        adminScriptHash
+        (unwrap $ snd (unwrap rp).adminToken) $
+        BigNum.fromInt
+          1
 
     botValue :: Value
-    botValue = uncurry Value.singleton (unwrap rp).botToken $ BigInt.fromInt 1
+    botValue =
+      Value.singleton
+        botScriptHash
+        (unwrap $ snd (unwrap rp).botToken) $
+        BigNum.fromInt
+          1
 
     mUtxo =
       Array.find
         ( \(_ /\ txo) -> lift2 (||) (_ `Value.geq` adminValue)
             (_ `Value.geq` botValue)
-            (unwrap (unwrap txo).output).amount
+            (unwrap txo).amount
         ) $ Map.toUnfoldable utxos
-  in
-    mUtxo
+  mUtxo
 
 collectDustByThreshold :: BigInt -> Contract TransactionHash
 collectDustByThreshold threshold = do
@@ -87,10 +103,9 @@ collectDustByThreshold threshold = do
     dustUtxos = Map.filter
       ( \txo ->
           let
-            value = (unwrap (unwrap txo).output).amount
-            adaAmount = getLovelace $ valueToCoin value
+            (adaAmount :: BigNum) = valueOf AdaAsset (unwrap txo).amount
           in
-            adaAmount <= threshold
+            toBigInt adaAmount <= threshold
       )
       utxos
 
@@ -98,10 +113,10 @@ collectDustByThreshold threshold = do
 
   let
 
-    constraints :: Constraints.TxConstraints Void Void
+    constraints :: Constraints.TxConstraints
     constraints = foldMap Constraints.mustSpendPubKeyOutput $ Map.keys dustUtxos
 
-    lookups :: Lookups.ScriptLookups Void
+    lookups :: Lookups.ScriptLookups
     lookups = Lookups.unspentOutputs dustUtxos
 
   txId <- submitTxFromConstraints lookups constraints

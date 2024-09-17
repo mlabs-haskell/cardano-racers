@@ -2,48 +2,101 @@ module Lib.CardanoRacers.Bot where
 
 import Contract.Prelude
 
-import Aeson (Aeson, encodeAeson, stringifyAeson)
+import Aeson (Aeson)
+import Cardano.AsCbor (encodeCbor)
+import Cardano.Plutus.Types.Address (scriptHashAddress)
+import Cardano.Plutus.Types.Address as PlutusAddress
+import Cardano.Types.Address (toBech32)
+import Cardano.Types.Asset (Asset(Asset, AdaAsset))
+import Cardano.Types.BigNum as BigNum
+import Cardano.Types.PlutusScript (hash)
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.Deposit.Contract (PendingAssetRequest, consumeAndRedeemRequests, queryRequestsWithAirdropAddress)
-import CardanoRacers.GameAsset.Types (AssetOption, CarAttributes(CarAttributes), DriverAttributes(DriverAttributes), GameAssetAttributes(CarAttrs, DriverAttrs), GameAssetObject, Rarity(Common, Rare, Epic))
-import CardanoRacers.Helpers (paysToAddrConstraint)
+import CardanoRacers.Deposit.Contract
+  ( PendingAssetRequest
+  , consumeAndRedeemRequests
+  , queryRequestsWithAirdropAddress
+  )
+import CardanoRacers.GameAsset.Types
+  ( AssetOption
+  , CarAttributes(CarAttributes)
+  , DriverAttributes(DriverAttributes)
+  , GameAssetAttributes(CarAttrs, DriverAttrs)
+  , GameAssetObject
+  , Rarity(Common, Rare, Epic)
+  )
+import CardanoRacers.Helpers
+  ( fromBIToBigNum
+  , fromBIToJSBI
+  , fromBigNumToBI
+  , fromJSBIToInt
+  , paysToAddrConstraint
+  )
 import CardanoRacers.Nitro.Contract (mintNitroContract)
-import CardanoRacers.RaceRegistry.Contract (collectRegistryScriptLeftovers, initRace, mkRaceRegistryScript, queryRegistryUtxos, supplyRegistrySlots)
+import CardanoRacers.RaceRegistry.Contract
+  ( collectRegistryScriptLeftovers
+  , initRace
+  , mkRaceRegistryScript
+  , queryRegistryUtxos
+  , supplyRegistrySlots
+  )
 import CardanoRacers.RaceRegistry.Types (RegistryParams)
 import CardanoRacers.RaceSlot.Types (RaceHash)
 import Common.ContractHelpers (collectDustByThreshold)
-import Contract.Address (addressFromBech32, addressToBech32, scriptHashAddress)
+import Contract.Address (addressFromBech32, getNetworkId)
+import Contract.CborBytes (cborBytesToHex)
 import Contract.Config (ContractParams, WalletSpec)
-import Contract.Metadata (mkCip25String, unCip25String)
 import Contract.Monad (liftContractM, liftedM, runContract)
-import Contract.Prim.ByteArray (byteArrayToHex)
 import Contract.ScriptLookups as Lookups
-import Contract.Scripts (validatorHash)
-import Contract.Transaction (TransactionInput, awaitTxConfirmed, submitTxFromConstraints)
+import Contract.Transaction
+  ( TransactionInput
+  , awaitTxConfirmed
+  , submitTxFromConstraints
+  )
 import Contract.TxConstraints as Constraints
 import Contract.Utxos (utxosAt)
-import Contract.Value (adaSymbol, adaToken, lovelaceValueOf, valueOf)
+import Contract.Value (lovelaceValueOf, valueOf)
 import Contract.Wallet (getWalletBalance)
 import Control.Monad.Error.Class (try)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff, toAffE)
-import Data.Array (concat, replicate, cons) as Array
+import Data.Array (concat, cons, replicate) as Array
 import Data.Bifunctor (rmap)
 import Data.BigInt (BigInt)
-import Data.BigInt (fromInt, toInt, toString) as BigInt
+import Data.BigInt (toInt, toString) as BigInt
 import Data.Bitraversable (ltraverse, rtraverse)
 import Data.Map (Map)
 import Data.Map (fromFoldable, toUnfoldable) as Map
 import Data.String (toLower)
 import Data.UInt (toInt) as UInt
-import Effect.Aff.Compat (EffectFn1, EffectFn2, EffectFn3, mkEffectFn1, mkEffectFn2, mkEffectFn3, runEffectFn1)
+import Effect.Aff.Compat
+  ( EffectFn1
+  , EffectFn2
+  , EffectFn3
+  , mkEffectFn1
+  , mkEffectFn2
+  , mkEffectFn3
+  , runEffectFn1
+  )
 import Effect.Uncurried (EffectFn4, mkEffectFn4)
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable, toUnfoldable) as Object
-import Lib.CardanoRacers.Common (Lovelace, Nitro, Race, TransactionHashFFI, AssetPricesFFI, assetTypeFromString, assetTypeToString, createRegistryParams, fromJsBigInt, toJsBigInt, tokenNameToString, setAssetPrices)
+import Lib.CardanoRacers.Common
+  ( AssetPricesFFI
+  , Lovelace
+  , Nitro
+  , Race
+  , TransactionHashFFI
+  , assetTypeFromString
+  , assetTypeToString
+  , createRegistryParams
+  , fromJsBigInt
+  , setAssetPrices
+  , toJsBigInt
+  , tokenNameToString
+  )
 import Lib.CardanoRacers.Queries (Queries, mkQueries, registryEntryToAeson)
-import Partial.Unsafe (unsafePartial)
 import Racers (Racers, runRacers)
+import Racers.Metadata.Cip25.Cip25String (mkCip25String, unCip25String)
 import Record (merge)
 import Type.Row (type (+))
 
@@ -136,7 +189,7 @@ mkBot cp walletSpec rp =
     } `merge` queries
 
 mintNitro :: Nitro -> Racers TransactionHashFFI
-mintNitro = map (byteArrayToHex <<< unwrap) <<< mintNitroContract <<<
+mintNitro = map (cborBytesToHex <<< encodeCbor) <<< mintNitroContract <<<
   fromJsBigInt
 
 queryAssetRequests :: Racers (Object (Array AssetRequestFFI))
@@ -150,7 +203,8 @@ queryAssetRequests = do
     :: Tuple TransactionInput PendingAssetRequest
     -> Racers (Tuple String (Array AssetRequestFFI))
   toAssetRequestFFI (txi /\ { airdropAddress, requestedAssets }) = lift do
-    addrStr <- addressToBech32 airdropAddress
+    let
+      addrStr = toBech32 airdropAddress
     as <- Array.concat <$> traverse
       ( \(r /\ bi) -> do
           i <- liftContractM "Could not convert BigInt to Int" $ BigInt.toInt bi
@@ -159,7 +213,7 @@ queryAssetRequests = do
       )
       requestedAssets
     let
-      txiHash = byteArrayToHex (unwrap (unwrap txi).transactionId)
+      txiHash = cborBytesToHex $ encodeCbor $ (unwrap txi).transactionId
       txiIdx = show $ UInt.toInt (unwrap txi).index
     pure $ (txiHash <> "#" <> txiIdx) /\ as
 
@@ -167,24 +221,29 @@ queryRaceSlotUtxos :: Race -> Racers (Array SlotUtxoFFI)
 queryRaceSlotUtxos race = do
   rgp <- createRegistryParams race
   regUtxos <- queryRegistryUtxos rgp <#> Map.toUnfoldable
-  traverse 
-      ( \(txi /\ (txo /\ rges)) -> do
-          reAeson <- traverse registryEntryToAeson rges
-          pure $
-            { slotTxIn: byteArrayToHex (unwrap (unwrap txi).transactionId) <> "#"
-                <> show (UInt.toInt (unwrap txi).index)
-            , slotCount: BigInt.toString $ uncurry
-                (valueOf (unwrap (unwrap txo).output).amount)
-                (unwrap rgp).slotAssetClass
-            , registrations: reAeson
-            }
-      )
-      regUtxos
+  let
+    assetName = Asset (fst (unwrap rgp).slotAssetClass)
+      (snd (unwrap rgp).slotAssetClass)
+  traverse
+    ( \(txi /\ (txo /\ rges)) -> do
+
+        reAeson <- traverse registryEntryToAeson rges
+        pure $
+          { slotTxIn: (cborBytesToHex $ encodeCbor $ (unwrap txi).transactionId)
+              <> "#"
+              <> show (UInt.toInt (unwrap txi).index)
+          , slotCount: BigNum.toString $
+              (valueOf assetName (unwrap txo).amount)
+
+          , registrations: reAeson
+          }
+    )
+    regUtxos
 
 getWalletLovelaceBalance :: Racers Lovelace
 getWalletLovelaceBalance = lift do
   bal <- liftedM "Could not get wallet balance" getWalletBalance
-  pure $ toJsBigInt $ valueOf bal adaSymbol adaToken
+  pure $ toJsBigInt $ fromBigNumToBI $ valueOf AdaAsset bal
 
 tryRedeemingPendingRequests
   :: AvailableAssetsFFI
@@ -243,22 +302,22 @@ tryRedeemingPendingRequests
     , imageUrl: gao.imageUrl
     , rarity: toLower $ show gao.rarity
     , description: gao.description
-    , tokenName: tokenNameToString gao.tokenName
+    , tokenName: tokenNameToString $ unwrap gao.tokenName
     , attributes: attributesToObject gao.attributes
     }
 
   attributesToObject :: GameAssetAttributes -> Object Int
   attributesToObject (DriverAttrs (DriverAttributes da)) = Object.fromFoldable
-    [ "experience" /\ unsafePartial (fromJust $ BigInt.toInt da.experience)
-    , "aggression" /\ unsafePartial (fromJust $ BigInt.toInt da.aggression)
-    , "reflexes" /\ unsafePartial (fromJust $ BigInt.toInt da.reflexes)
-    , "luck" /\ unsafePartial (fromJust $ BigInt.toInt da.luck)
+    [ "experience" /\ fromJSBIToInt da.experience
+    , "aggression" /\ fromJSBIToInt da.aggression
+    , "reflexes" /\ fromJSBIToInt da.reflexes
+    , "luck" /\ fromJSBIToInt da.luck
     ]
   attributesToObject (CarAttrs (CarAttributes ca)) = Object.fromFoldable
-    [ "topSpeed" /\ unsafePartial (fromJust $ BigInt.toInt ca.topSpeed)
-    , "acceleration" /\ unsafePartial (fromJust $ BigInt.toInt ca.acceleration)
-    , "cornering" /\ unsafePartial (fromJust $ BigInt.toInt ca.cornering)
-    , "aerodynamics" /\ unsafePartial (fromJust $ BigInt.toInt ca.aerodynamics)
+    [ "topSpeed" /\ fromJSBIToInt ca.topSpeed
+    , "acceleration" /\ fromJSBIToInt ca.acceleration
+    , "cornering" /\ fromJSBIToInt ca.cornering
+    , "aerodynamics" /\ fromJSBIToInt ca.aerodynamics
     ]
 
 createRace :: Race -> Int -> Int -> Racers Unit
@@ -280,44 +339,68 @@ closeRace race rewardsFFI = do
 
   collectTxIds <- collectRegistryRetryOnFailure (wrap race.raceId) rgp
 
-  rewards <- traverse (ltraverse $ lift <<< addressFromBech32)
-    $ rmap fromJsBigInt
-    <$> (Object.toUnfoldable rewardsFFI :: Array _)
+  rewards <-
+    traverse
+      ( ltraverse $ lift <<<
+          ( addressFromBech32
+              >>>
+                ( \ca ->
+                    do
+                      addr <- ca
+                      paddr <-
+                        liftContractM
+                          "Could not convert address from Plutus to Cardano"
+                          $ PlutusAddress.fromCardano addr
+                      pure paddr
+                )
+          )
+      )
+      $ rmap (fromBIToBigNum <<< fromJsBigInt)
+      <$> (Object.toUnfoldable rewardsFFI :: Array _)
 
   let
-    constraints :: Constraints.TxConstraints Void Void
+    constraints :: Constraints.TxConstraints
     constraints = foldMap
       (\(addr /\ amount) -> paysToAddrConstraint addr $ lovelaceValueOf amount)
       rewards
 
-  if null rewards
-    then pure collectTxIds
-    else do
-      txId <- lift $ submitTxFromConstraints (mempty :: Lookups.ScriptLookups Void)
-        constraints
-      lift $ awaitTxConfirmed txId
-      pure $ Array.cons (byteArrayToHex (unwrap txId)) collectTxIds
-
+  if null rewards then pure collectTxIds
+  else do
+    txId <- lift $ submitTxFromConstraints (mempty :: Lookups.ScriptLookups)
+      constraints
+    lift $ awaitTxConfirmed txId
+    pure $ Array.cons (cborBytesToHex $ encodeCbor txId) collectTxIds
 
 -- TODO: Collecting is very inefficient, at time of writing, testing on preview
 -- scripts can only handle 2 registry utxos in one tx.
-collectRegistryRetryOnFailure :: RaceHash -> RegistryParams -> Racers (Array TransactionHashFFI)
+collectRegistryRetryOnFailure
+  :: RaceHash -> RegistryParams -> Racers (Array TransactionHashFFI)
 collectRegistryRetryOnFailure raceHash rgp = do
-  let go 1 txhs = collectRegistryScriptLeftovers raceHash rgp 1 <#> (flip Array.cons txhs)
-      go n txhs = do
-        registryScript <- mkRaceRegistryScript rgp
-        utxosAtRegistry <- lift $ utxosAt
-          (scriptHashAddress (validatorHash registryScript) Nothing)
-        if null utxosAtRegistry
-          then pure txhs
-          else try (collectRegistryScriptLeftovers raceHash rgp n)
-               >>= either 
-                (const $ go (n - 1) txhs) 
-                (\txId -> lift (awaitTxConfirmed txId) *> go (n + 1) (Array.cons txId txhs))
-  go 5 [] <#> map (unwrap >>> byteArrayToHex)
+  networkId <- lift $ getNetworkId
+  let
+    go 1 txhs = collectRegistryScriptLeftovers raceHash rgp 1 <#>
+      (flip Array.cons txhs)
+    go n txhs = do
+      registryScript <- mkRaceRegistryScript rgp
+      let
+        addrPlutus = scriptHashAddress (wrap $ hash $ unwrap registryScript)
+          Nothing
+      addr <- lift
+        $ liftContractM "Could not convert address from Plutus to Cardano"
+        $ PlutusAddress.toCardano networkId addrPlutus
 
+      utxosAtRegistry <- lift $ utxosAt addr
+      if null utxosAtRegistry then pure txhs
+      else try (collectRegistryScriptLeftovers raceHash rgp n)
+        >>= either
+          (const $ go (n - 1) txhs)
+          ( \txId -> lift (awaitTxConfirmed txId) *> go (n + 1)
+              (Array.cons txId txhs)
+          )
+  go 5 [] <#> map (encodeCbor >>> cborBytesToHex)
 
 collectDust :: Lovelace -> Racers TransactionHashFFI
-collectDust = lift <<< map (byteArrayToHex <<< unwrap)
+collectDust = lift <<< map (cborBytesToHex <<< encodeCbor)
   <<< collectDustByThreshold
+  <<< fromBIToJSBI
   <<< fromJsBigInt

@@ -5,12 +5,14 @@ module Test.CardanoRacers.Helpers
 
 import Contract.Prelude
 
+import Cardano.Plutus.Types.Address as PlutusAddress
 import CardanoRacers.Common.Types (RacersParams)
+import CardanoRacers.Helpers (fromBIToJSBI)
 import CardanoRacers.Nitro.Helpers as NitroHelpers
 import CardanoRacers.RacersState.Contract (initRacersStateContract) as RacersState
 import CardanoRacers.RacersState.Types (AssetPrices, RacersState(RacersState))
 import Contract.Monad (Contract, liftContractM, liftedM)
-import Contract.Test.Plutip (withKeyWallet)
+import Contract.Test.Testnet (withKeyWallet)
 import Contract.Wallet (KeyWallet, getWalletAddresses, getWalletUtxos)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
@@ -42,11 +44,18 @@ initRacersStateWithAdminAndTreasury
     ownAddr <- lift $ liftedM "Could not get address" $ Array.head <$>
       getWalletAddresses
 
+    treasuryAddrPlutus <- lift
+      $ liftContractM "Could not convert treasury address to Plutus"
+      $ PlutusAddress.fromCardano treasuryAddr
+    ownAddrPlutus <- lift
+      $ liftContractM "Could not convert own address to Plutus"
+      $ PlutusAddress.fromCardano ownAddr
+
     let
       rs = RacersState
-        { nitroPrice: nitroPrice
-        , treasuryAddress: treasuryAddr
-        , operatingAddress: ownAddr
+        { nitroPrice: fromBIToJSBI nitroPrice
+        , treasuryAddress: treasuryAddrPlutus
+        , operatingAddress: ownAddrPlutus
         , assetPrices: assetPrices
         }
     _ <- RacersState.initRacersStateContract rs

@@ -3,6 +3,13 @@ module Test.CardanoRacers.Nitro.Types (suite) where
 import Contract.Prelude
 
 import Aeson (decodeJsonString, encodeAeson)
+import Cardano.Plutus.Types.Address (Address(Address))
+import Cardano.Plutus.Types.Credential (Credential(PubKeyCredential))
+import Cardano.Plutus.Types.CurrencySymbol (mkCurrencySymbol)
+import Cardano.Plutus.Types.PubKeyHash (PubKeyHash(PubKeyHash))
+import Cardano.Plutus.Types.TokenName (mkTokenName)
+import Cardano.Types.BigInt (fromInt) as BigInt
+import Cardano.Types.Ed25519KeyHash as Ed25519KeyHash
 import CardanoRacers.Common.Types (RacersParams(RacersParams))
 import CardanoRacers.Nitro.Types
   ( NitroPolicyRedeemer(MintNitroToken, BuyNitroToken)
@@ -12,16 +19,11 @@ import CardanoRacers.RacersState.Types
   , RacersState(RacersState)
   , RacersStateRedeemer(SetRacersState)
   )
-import Contract.Address (PubKeyHash(PubKeyHash))
-import Contract.Credential (Credential(PubKeyCredential))
 import Contract.Prim.ByteArray (hexToByteArrayUnsafe)
 import Contract.Test.Mote (TestPlanM)
-import Contract.Value (mkCurrencySymbol, mkTokenName)
-import Ctl.Internal.Plutus.Types.Address (Address(Address))
-import Ctl.Internal.Serialization.Hash (ed25519KeyHashFromBech32)
 import Data.Bifunctor (lmap)
-import Data.BigInt (fromInt) as BigInt
 import Effect.Aff (error)
+import JS.BigInt (fromInt) as JSBigInt
 import Mote (test)
 import Partial.Unsafe (unsafePartial)
 import Test.Spec.Assertions (shouldEqual)
@@ -86,20 +88,20 @@ nitroStateFixture =
     treasuryAddress =
       Address
         { addressCredential: PubKeyCredential
-            ( PubKeyHash $ unsafePartial $ fromJust $ ed25519KeyHashFromBech32
+            ( PubKeyHash $ unsafePartial $ fromJust $ Ed25519KeyHash.fromBech32
                 "addr_vkh1zuctrdcq6ctd29242w8g84nlz0q38t2lnv3zzfcrfqktx0c9tzp"
             )
         , addressStakingCredential: Nothing
         }
 
     ns = RacersState
-      { nitroPrice: BigInt.fromInt 1000000
+      { nitroPrice: JSBigInt.fromInt 1000000
       , treasuryAddress
       , operatingAddress: treasuryAddress
       , assetPrices: AssetPrices
-          { common: BigInt.fromInt 1000000
-          , rare: BigInt.fromInt 2000000
-          , epic: BigInt.fromInt 3000000
+          { common: JSBigInt.fromInt 1000000
+          , rare: JSBigInt.fromInt 2000000
+          , epic: JSBigInt.fromInt 3000000
           }
       }
   in

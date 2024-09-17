@@ -2,8 +2,8 @@ module CardanoRacers.RaceSlot.Types where
 
 import Contract.Prelude
 
+import Cardano.Plutus.Types.TokenName (TokenName, mkTokenName)
 import Contract.Prim.ByteArray (ByteArray, byteArrayFromAscii)
-import Contract.Value (TokenName, mkTokenName)
 import Partial.Unsafe (unsafePartial)
 
 type RaceHash = ByteArray

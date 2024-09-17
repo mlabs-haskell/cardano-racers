@@ -33,7 +33,7 @@ suite = group "Parameters" do
     $ quickCheckGen' 10000
     $ all (_ > 0)
     <$> paramsGen
-  test "All params have value less than 10000" 
+  test "All params have value less than 10000"
     $ liftEffect
     $ quickCheckGen' 10000
     $ all (_ <= 10000)

@@ -6,12 +6,11 @@ module CardanoRacers.GameAsset.Parameters
 import Contract.Prelude hiding (choose)
 
 import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
-import Control.Apply (lift2)
 import Data.Array (zip)
 import Data.Array as Array
-import Data.Int (floor, pow)
+import Data.Int (floor)
 import Data.List.Lazy (replicateM)
-import Math (abs, cos, log, pi, sqrt) as Math
+import Data.Number (abs, cos, log, pi, sqrt) as Math
 import Random.LCG (Seed)
 import Test.QuickCheck.Gen (Gen, choose, chooseInt, evalGen)
 
@@ -33,31 +32,33 @@ chooseUpperExclusive x y = choose x y >>= \n ->
   if n == y then chooseUpperExclusive x y else pure n
 
 generateUniformParameters :: Seed -> Rarity -> Array Int
-generateUniformParameters seed r = flip evalGen { newSeed: seed, size: 1} $ do
-  let maxTotalScore = parameterCount * maxParameterScore
-      initialParams = [1,1,1,1]
-      adjustedMaxTotalScore = maxTotalScore - sum initialParams
+generateUniformParameters seed r = flip evalGen { newSeed: seed, size: 1 } $ do
+  let
+    maxTotalScore = parameterCount * maxParameterScore
+    initialParams = [ 1, 1, 1, 1 ]
+    adjustedMaxTotalScore = maxTotalScore - sum initialParams
 
-      singleDistrPass :: Int -> Array Int -> Gen (Int /\ Array Int)
-      singleDistrPass 0 params = pure (0 /\ params)
-      singleDistrPass rem params = case Array.uncons params of
-          Nothing -> pure (rem /\ [])
-          Just {head: p, tail: ps} ->
-            let room = maxParameterScore - p
-            in if room == 0
-              then do
-                (rem /\ ps') <- singleDistrPass rem ps
-                pure (rem /\ Array.cons p ps')
-              else do
-                scoreAdded <- chooseInt 1 (min room rem)
-                (rem /\ ps') <- singleDistrPass (rem - scoreAdded) ps
-                pure (rem /\ Array.cons (scoreAdded + p) ps')
+    singleDistrPass :: Int -> Array Int -> Gen (Int /\ Array Int)
+    singleDistrPass 0 params = pure (0 /\ params)
+    singleDistrPass rem params = case Array.uncons params of
+      Nothing -> pure (rem /\ [])
+      Just { head: p, tail: ps } ->
+        let
+          room = maxParameterScore - p
+        in
+          if room == 0 then do
+            (rem' /\ ps') <- singleDistrPass rem ps
+            pure (rem' /\ Array.cons p ps')
+          else do
+            scoreAdded <- chooseInt 1 (min room rem)
+            (rem' /\ ps') <- singleDistrPass (rem - scoreAdded) ps
+            pure (rem' /\ Array.cons (scoreAdded + p) ps')
 
-      distribute :: Int -> Array Int -> Gen (Array Int)
-      distribute 0 params = pure params
-      distribute rem params = do
-        (rem /\ params') <- singleDistrPass rem params
-        distribute rem params'
+    distribute :: Int -> Array Int -> Gen (Array Int)
+    distribute 0 params = pure params
+    distribute rem params = do
+      (rem' /\ params') <- singleDistrPass rem params
+      distribute rem' params'
 
   total <- chooseInt (rarityMinRequirement r) adjustedMaxTotalScore
   distribute total initialParams

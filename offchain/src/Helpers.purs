@@ -3,8 +3,16 @@ module CardanoRacers.Helpers
   , counterNonce
   , decodeWrappedAeson
   , paysToAddrConstraint
-  , getTxoWithRefScrpt
   , decodeAesonString
+  , fromBIToJSBI
+  , fromJSBIToBI
+  , fromBIToBigNum
+  , fromBIToInt
+  , fromBIToDataBI
+  , fromBigNumToBI
+  , fromJSBIToInt
+  , fromJSBIToBigNum
+  , mkMint
   ) where
 
 import Contract.Prelude
@@ -19,38 +27,34 @@ import Aeson
   , encodeAeson
   , getField
   )
-import Contract.Address (Address)
-import Contract.Credential (Credential(PubKeyCredential, ScriptCredential))
-import Contract.Monad (Contract, liftContractM, liftedE, liftedM)
-import Contract.PlutusData (unitDatum)
-import Contract.Transaction (TransactionInput, TransactionOutputWithRefScript)
+import Cardano.Plutus.Types.Address (Address)
+import Cardano.Plutus.Types.Credential
+  ( Credential(PubKeyCredential, ScriptCredential)
+  )
+import Cardano.Plutus.Types.CurrencySymbol as CurrencySymbol
+import Cardano.Plutus.Types.Value as PlutusValue
+import Cardano.Types (Mint)
+import Cardano.Types.BigInt as CTBigInt
+import Cardano.Types.BigNum (BigNum)
+import Cardano.Types.BigNum as BigNum
+import Cardano.Types.Int as CT
+import Cardano.Types.Int as CTInt
+import Cardano.Types.Int as Int
+import Cardano.Types.Mint as Mint
+import Cardano.Types.PlutusData (unit) as PlutusData
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
 import Contract.Value (Value)
-import Ctl.Internal.Contract.Monad (getQueryHandle)
-import Ctl.Internal.Plutus.Conversion (toPlutusTxOutputWithRefScript)
+import Data.BigInt as Data
+import Data.BigInt as DataBigInt
 import Effect.Ref (Ref)
 import Effect.Ref (read, write) as Ref
 import Foreign.Object (singleton)
+import JS.BigInt as JSBigInt
+import Partial.Unsafe (unsafePartial)
 
 wrapEncodeAeson :: forall (a :: Type). EncodeAeson a => String -> a -> Aeson
 wrapEncodeAeson constr = encodeAeson <<< singleton constr <<< encodeAeson
-
-getTxoWithRefScrpt
-  :: TransactionInput -> Contract TransactionOutputWithRefScript
-getTxoWithRefScrpt scriptRefIn = do
-  -- Need to use internal functions here to get
-  -- a TransactionOutputWithRefScript
-  -- otherwise, getUtxo uses toPlutusTxOutput which drops the script ref
-  -- and attaches a script ref hash
-  queryHandle <- getQueryHandle
-  txo <- liftedM "could not get script ref from txin" $ liftedE $ liftAff
-    $ queryHandle.getUtxoByOref scriptRefIn
-  txoWithScriptRef <-
-    liftContractM
-      "could not convert TransactionOutput to TransactionOutputWithScriptRef"
-      $ toPlutusTxOutputWithRefScript txo
-  pure txoWithScriptRef
 
 counterNonce :: Ref Int -> Effect String
 counterNonce ref = do
@@ -84,9 +88,53 @@ decodeAesonString str f aes = decodeAeson aes >>=
   )
 
 paysToAddrConstraint
-  :: Address -> Value -> Constraints.TxConstraints Void Void
+  :: Address -> Value -> Constraints.TxConstraints
 paysToAddrConstraint a v = case (unwrap a).addressCredential of
   PubKeyCredential pkh ->
-    Constraints.mustPayToPubKey (wrap pkh) v
+    Constraints.mustPayToPubKey (wrap $ unwrap pkh) v
   ScriptCredential vh ->
-    Constraints.mustPayToScript vh unitDatum DatumWitness v
+    Constraints.mustPayToScript (unwrap vh) PlutusData.unit DatumWitness v
+
+fromBIToJSBI :: Data.BigInt -> JSBigInt.BigInt
+fromBIToJSBI = unsafePartial fromJust <<< JSBigInt.fromString <<<
+  DataBigInt.toString
+
+fromBigNumToBI :: BigNum -> Data.BigInt
+fromBigNumToBI = unsafePartial fromJust <<< DataBigInt.fromString <<<
+  BigNum.toString
+
+fromJSBIToBI :: JSBigInt.BigInt -> Data.BigInt
+fromJSBIToBI = unsafePartial fromJust <<< Data.fromString <<<
+  JSBigInt.toString
+
+fromBIToBigNum :: Data.BigInt -> BigNum
+fromBIToBigNum = unsafePartial fromJust <<< BigNum.fromString <<<
+  DataBigInt.toString
+
+fromJSBIToBigNum :: JSBigInt.BigInt -> BigNum
+fromJSBIToBigNum = unsafePartial fromJust <<< BigNum.fromString <<<
+  JSBigInt.toString
+
+fromJSBIToInt :: JSBigInt.BigInt -> Int
+fromJSBIToInt = unsafePartial fromJust <<< JSBigInt.toInt
+
+fromBIToInt :: Data.BigInt -> CT.Int
+fromBIToInt = unsafePartial fromJust <<< CTInt.fromString <<<
+  DataBigInt.toString
+
+mkMint :: PlutusValue.Value -> Mint
+mkMint v = unsafePartial $ fromJust
+  $ Mint.unflatten
+  $ map
+      ( \(cs /\ tk /\ amt) ->
+          unsafePartial (fromJust $ CurrencySymbol.toCardano cs) /\ unwrap tk /\
+            mkInt amt
+      )
+  $ PlutusValue.flattenValue v
+
+fromBIToDataBI :: CTBigInt.BigInt -> Data.BigInt
+fromBIToDataBI = unsafePartial fromJust <<< DataBigInt.fromString <<<
+  CTBigInt.toString
+
+mkInt :: JSBigInt.BigInt -> Int.Int
+mkInt a = unsafePartial $ fromJust $ Int.fromBigInt a

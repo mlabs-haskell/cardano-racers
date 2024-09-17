@@ -57,11 +57,16 @@ type MkWalletSpec = {
     accountIndex: number,
     addressIndex: number,
     hasStake: boolean
-  ) => WalletSpec;
+  ) => Promise<WalletSpec>;
   walletFromPrivateKey: (privateKey: string) => WalletSpec;
   walletFromPrivateKeyAndStakeKey: (
     privateKey: string,
     stakeKey: string
+  ) => WalletSpec;
+  walletFromPrivateKeyStakeKeyAndDRepKey: (
+    privateKey: string,
+    stakeKey: string,
+    drepKey: string
   ) => WalletSpec;
   browserWallet: {
     connectToNami: () => WalletSpec;
@@ -112,6 +117,7 @@ export interface RacersUtils {
    * - walletFromMnemonic: Function to create a wallet from a mnemonic string. Takes four arguments: mnemonic string, account index, address index, and a boolean indicating if the wallet has a stake.
    * - walletFromPrivateKey: Function to create a wallet from a private key string.
    * - walletFromPrivateKeyAndStakeKey: Function to create a wallet from a private key and a stake key strings.
+   * - walletFromPrivateKeyStakeKeyAndDRepKey: Function to create a wallet from a private key, a stake key and a drep key strings.
    * - browserWallet: An object mapping wallet names to functions that connect to these wallets.
    *
    * @throws Will throw an error if the provided mnemonic or private keys cannot be correctly converted into a wallet.

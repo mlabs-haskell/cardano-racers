@@ -281,11 +281,16 @@ declare module "cardano-racers" {
       accountIndex: number,
       addressIndex: number,
       hasStake: boolean
-    ) => WalletSpec;
+    ) => Promise<WalletSpec>;
     walletFromPrivateKey: (privateKey: string) => WalletSpec;
     walletFromPrivateKeyAndStakeKey: (
       privateKey: string,
       stakeKey: string
+    ) => WalletSpec;
+    walletFromPrivateKeyStakeKeyAndDRepKey: (
+      privateKey: string,
+      stakeKey: string,
+      drepKey: string
     ) => WalletSpec;
     browserWallet: {
       connectToNami: () => WalletSpec;

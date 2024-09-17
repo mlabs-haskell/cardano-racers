@@ -5,6 +5,7 @@ module CardanoRacers.Deposit.Types
 import Contract.Prelude
 
 import Aeson (class DecodeAeson, class EncodeAeson, (.:))
+import Cardano.Plutus.DataSchema (Z)
 import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
 import Contract.PlutusData
   ( class FromData
@@ -15,7 +16,6 @@ import Contract.PlutusData
   , type (@@)
   , I
   , PNil
-  , Z
   , genericFromData
   , genericToData
   )

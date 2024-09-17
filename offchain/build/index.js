@@ -1,9 +1,13 @@
-const admin = require('./output/Lib.CardanoRacers.AdminFFI/index.js')
-const bot = require('./output/Lib.CardanoRacers.BotFFI/index.js')
-const client = require('./output/Lib.CardanoRacers.ClientFFI/index.js')
+const loadModules = async () => {
+  const admin = await import('./output/Lib.CardanoRacers.AdminFFI/index.js');
+  const bot = await import('./output/Lib.CardanoRacers.BotFFI/index.js');
+  const client = await import('./output/Lib.CardanoRacers.ClientFFI/index.js');
 
-module.exports = {
-  admin,
-  bot,
-  client
-}
+  return {
+    admin,
+    bot,
+    client
+  };
+};
+
+module.exports = loadModules();

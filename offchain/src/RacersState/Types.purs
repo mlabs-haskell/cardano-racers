@@ -8,9 +8,10 @@ module CardanoRacers.RacersState.Types
 import Contract.Prelude
 
 import Aeson (class DecodeAeson, class EncodeAeson, (.:))
+import Cardano.Plutus.DataSchema (Z)
+import Cardano.Plutus.Types.Address (Address)
 import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
 import CardanoRacers.Helpers (decodeWrappedAeson, wrapEncodeAeson)
-import Contract.Address (Address)
 import Contract.PlutusData
   ( class FromData
   , class HasPlutusSchema
@@ -20,11 +21,10 @@ import Contract.PlutusData
   , type (@@)
   , I
   , PNil
-  , Z
   , genericFromData
   , genericToData
   )
-import Data.BigInt (BigInt)
+import JS.BigInt (BigInt)
 
 newtype AssetPrices = AssetPrices
   { common :: BigInt

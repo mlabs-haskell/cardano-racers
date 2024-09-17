@@ -17,16 +17,24 @@ module CardanoRacers.GameAsset.Types
 import Contract.Prelude
 
 import Aeson (class DecodeAeson, class EncodeAeson, encodeAeson, (.:))
+import Cardano.FromMetadata (class FromMetadata, fromMetadata)
+import Cardano.Plutus.DataSchema (S, Z)
+import Cardano.Plutus.Types.Address (Address)
+import Cardano.Plutus.Types.MintingPolicyHash (MintingPolicyHash)
+import Cardano.Plutus.Types.TokenName (TokenName, mkTokenName)
+import Cardano.Serialization.Lib (toBytes)
+import Cardano.ToMetadata (class ToMetadata, toMetadata)
+import Cardano.Types (TransactionMetadatum)
+import Cardano.Types.AssetName (unAssetName)
+import Cardano.Types.BigNum as BigNum
+import Cardano.Types.Int as Int
+import Cardano.Types.TransactionMetadatum
+  ( TransactionMetadatum(Int, Map)
+  ) as TxMetadatum
 import CardanoRacers.Helpers
   ( decodeAesonString
   , decodeWrappedAeson
   , wrapEncodeAeson
-  )
-import Contract.Address (Address)
-import Contract.Metadata
-  ( Cip25String
-  , Cip25TokenName
-  , TransactionMetadatum(MetadataMap)
   )
 import Contract.PlutusData
   ( class FromData
@@ -37,37 +45,27 @@ import Contract.PlutusData
   , type (@@)
   , I
   , PNil
-  , S
-  , Z
   , genericFromData
   , genericToData
   )
-import Contract.Prim.ByteArray (ByteArray)
-import Contract.Scripts (MintingPolicyHash)
-import Contract.Value
-  ( CurrencySymbol
-  , TokenName
-  , currencyMPSHash
-  , getTokenName
-  , mkTokenName
-  , mpsSymbol
-  )
+import Contract.Prim.ByteArray (ByteArray, byteArrayToHex)
+import Contract.Value (CurrencySymbol)
 import Control.Alt ((<|>))
-import Ctl.Internal.Metadata.Cip25.Cip25String
-  ( fromMetadataString
-  , toMetadataString
-  )
-import Ctl.Internal.Metadata.FromMetadata (class FromMetadata, fromMetadata)
-import Ctl.Internal.Metadata.Helpers (lookupMetadata)
 import Ctl.Internal.Metadata.MetadataType (class MetadataType)
-import Ctl.Internal.Metadata.ToMetadata (class ToMetadata, toMetadata)
-import Ctl.Internal.Serialization.Hash (scriptHashFromBytes, scriptHashToBytes)
 import Data.Array (catMaybes, concat)
 import Data.BigInt (BigInt)
-import Data.BigInt (fromInt) as BigInt
 import Data.Function (on)
-import Data.Map as Map
+import Data.Map (fromFoldable, toUnfoldable, union) as Map
 import Data.Profunctor.Strong ((***))
+import JS.BigInt (BigInt, fromInt) as JSBigInt
+import Partial.Unsafe (unsafePartial)
+import Racers.Metadata.Cip25.Cip25String
+  ( Cip25String
+  , fromMetadataString
+  , toMetadataString
+  )
+import Racers.Metadata.Cip25.Common (Cip25TokenName)
+import Racers.Metadata.Helpers (lookupMetadata)
 
 type AssetOption =
   { name :: Cip25String
@@ -124,10 +122,10 @@ rarityFromString "Epic" = Just Epic
 rarityFromString _ = Nothing
 
 newtype DriverAttributes = DriverAttributes
-  { aggression :: BigInt
-  , experience :: BigInt
-  , reflexes :: BigInt
-  , luck :: BigInt
+  { aggression :: JSBigInt.BigInt
+  , experience :: JSBigInt.BigInt
+  , reflexes :: JSBigInt.BigInt
+  , luck :: JSBigInt.BigInt
   }
 
 derive instance Generic DriverAttributes _
@@ -155,9 +153,14 @@ instance
 instance ToData DriverAttributes where
   toData = genericToData
 
-instance FromData DriverAttributes where
-  fromData = genericFromData
-
+-- instance FromData DriverAttributes where
+--   -- fromData = genericFromData
+--   fromData d =
+--     let
+--       ad = genericFromData d
+--     in
+--       ad
+--
 instance Show DriverAttributes where
   show = genericShow
 
@@ -173,10 +176,10 @@ instance DecodeAeson DriverAttributes where
     pure $ DriverAttributes { aggression, experience, reflexes, luck }
 
 newtype CarAttributes = CarAttributes
-  { topSpeed :: BigInt
-  , acceleration :: BigInt
-  , cornering :: BigInt
-  , aerodynamics :: BigInt
+  { topSpeed :: JSBigInt.BigInt
+  , acceleration :: JSBigInt.BigInt
+  , cornering :: JSBigInt.BigInt
+  , aerodynamics :: JSBigInt.BigInt
   }
 
 derive instance Generic CarAttributes _
@@ -204,8 +207,8 @@ instance
 instance ToData CarAttributes where
   toData = genericToData
 
-instance FromData CarAttributes where
-  fromData = genericFromData
+-- instance FromData CarAttributes where
+--   fromData = genericFromData
 
 instance Show CarAttributes where
   show = genericShow
@@ -292,8 +295,8 @@ instance
 instance ToData GameAssetAttributes where
   toData = genericToData
 
-instance FromData GameAssetAttributes where
-  fromData = genericFromData
+-- instance FromData GameAssetAttributes where
+--   fromData = genericFromData
 
 instance Show GameAssetAttributes where
   show = genericShow
@@ -420,12 +423,23 @@ gameAssetMetadataEntryToKeyValue
   policyEntry
   where
   policyEntry =
-    [ ( unwrap $ scriptHashToBytes $ unwrap $ currencyMPSHash
-          (fst assetClass)
+    --   [ ( unwrap $ byteArrayToHex $ unwrap $ currencyMPSHash
+    --         (fst assetClass)
+    --     ) /\ toMetadata assetEntry
+    --   ]
+    -- assetEntry =
+    --   [ (getTokenName $ snd assetClass) /\ toMetadata dataEntry
+    -- =======
+    [ ( toBytes
+          $ unwrap
+          $
+            (fst assetClass)
       ) /\ toMetadata assetEntry
     ]
   assetEntry =
-    [ (getTokenName $ snd assetClass) /\ toMetadata dataEntry
+    [ (byteArrayToHex $ unAssetName $ unwrap $ snd assetClass) /\ toMetadata
+        dataEntry
+    -- >>>>>>> 7d1f78d (Update to latest CTL version (WIP))
     ]
   dataEntry =
     [ "name" /\ toMetadata (asset.name)
@@ -441,16 +455,16 @@ gameAssetMetadataEntryToKeyValue
     ]
   attributesEntry = case asset.attributes of
     DriverAttrs (DriverAttributes driver) ->
-      [ "aggression" /\ toMetadata (driver.aggression)
-      , "experience" /\ toMetadata (driver.experience)
-      , "reflexes" /\ toMetadata (driver.reflexes)
-      , "luck" /\ toMetadata (driver.luck)
+      [ "aggression" /\ toMetadataInt driver.aggression
+      , "experience" /\ toMetadataInt (driver.experience)
+      , "reflexes" /\ toMetadataInt (driver.reflexes)
+      , "luck" /\ toMetadataInt (driver.luck)
       ]
     CarAttrs (CarAttributes car) ->
-      [ "topSpeed" /\ toMetadata (car.topSpeed)
-      , "acceleration" /\ toMetadata (car.acceleration)
-      , "cornering" /\ toMetadata (car.cornering)
-      , "aerodynamics" /\ toMetadata (car.aerodynamics)
+      [ "topSpeed" /\ toMetadataInt (car.topSpeed)
+      , "acceleration" /\ toMetadataInt (car.acceleration)
+      , "cornering" /\ toMetadataInt (car.cornering)
+      , "aerodynamics" /\ toMetadataInt (car.aerodynamics)
       ]
 
 gameAssetMetadataEntryFromMetadata
@@ -467,7 +481,8 @@ gameAssetMetadataEntryFromMetadata policy tk md = do
     "Car" -> pure CarType
     _ -> Nothing
   description <- lookupMetadata "description" md >>= fromMetadataString
-  cs <- mpsSymbol policy
+  let
+    cs = unwrap policy
   attrsMd <- lookupMetadata "attributes" md >>= fromMetadata >>=
     ( \attrs ->
         case assetType of
@@ -489,18 +504,18 @@ gameAssetMetadataEntryFromMetadata policy tk md = do
   where
   decodeDriverAttrs :: TransactionMetadatum -> Maybe DriverAttributes
   decodeDriverAttrs attrs = do
-    aggression <- lookupMetadata "aggression" attrs >>= fromMetadata
-    experience <- lookupMetadata "experience" attrs >>= fromMetadata
-    reflexes <- lookupMetadata "reflexes" attrs >>= fromMetadata
-    luck <- lookupMetadata "luck" attrs >>= fromMetadata
+    aggression <- lookupMetadata "aggression" attrs >>= fromMetadataInt
+    experience <- lookupMetadata "experience" attrs >>= fromMetadataInt
+    reflexes <- lookupMetadata "reflexes" attrs >>= fromMetadataInt
+    luck <- lookupMetadata "luck" attrs >>= fromMetadataInt
     pure $ DriverAttributes { aggression, experience, reflexes, luck }
 
   decodeCarAttrs :: TransactionMetadatum -> Maybe CarAttributes
   decodeCarAttrs attrs = do
-    acceleration <- lookupMetadata "acceleration" attrs >>= fromMetadata
-    cornering <- lookupMetadata "cornering" attrs >>= fromMetadata
-    topSpeed <- lookupMetadata "topSpeed" attrs >>= fromMetadata
-    aerodynamics <- lookupMetadata "aerodynamics" attrs >>= fromMetadata
+    acceleration <- lookupMetadata "acceleration" attrs >>= fromMetadataInt
+    cornering <- lookupMetadata "cornering" attrs >>= fromMetadataInt
+    topSpeed <- lookupMetadata "topSpeed" attrs >>= fromMetadataInt
+    aerodynamics <- lookupMetadata "aerodynamics" attrs >>= fromMetadataInt
     pure $ CarAttributes { acceleration, cornering, topSpeed, aerodynamics }
 
 newtype GameAssetNftMetadata = GameAssetNftMetadata
@@ -511,30 +526,29 @@ instance ToMetadata GameAssetNftMetadata where
   toMetadata (GameAssetNftMetadata ganmes) = toMetadata $
     let
       policyEntries = concat $ gameAssetMetadataEntryToKeyValue <$> ganmes
-      versionEntry = [ "version" /\ toMetadata (BigInt.fromInt 2) ]
+      versionEntry = [ "version" /\ toMetadataInt (JSBigInt.fromInt 2) ]
     in
-      MetadataMap $ Map.union
+      TxMetadatum.Map $ Map.union
         (Map.fromFoldable $ (toMetadata *** toMetadata) <$> policyEntries)
         (Map.fromFoldable $ (toMetadata *** toMetadata) <$> versionEntry)
 
 instance FromMetadata GameAssetNftMetadata where
-  fromMetadata (MetadataMap mp1) = do
+  fromMetadata (TxMetadatum.Map mp1) = do
     arrMbArrGanmes <- for (Map.toUnfoldable mp1 :: Array _)
       \(policy /\ assets) ->
         if policy == toMetadata "version" then
-          ( if assets == toMetadata (BigInt.fromInt 2) then Just Nothing
+          ( if assets == toMetadataInt (JSBigInt.fromInt 2) then Just Nothing
             else Nothing
           )
         else
           Just case assets of
-            MetadataMap mp2 ->
+            TxMetadatum.Map mp2 ->
               for (Map.toUnfoldable mp2 :: Array _)
                 \( assetName /\
                      contents
                  ) -> join $ gameAssetMetadataEntryFromMetadata
                   <$>
-                    ( map wrap <<< scriptHashFromBytes
-                        <=< fromMetadata
+                    ( fromMetadata
                         $ policy
                     )
                   <*>
@@ -549,4 +563,14 @@ instance FromMetadata GameAssetNftMetadata where
   fromMetadata _ = Nothing
 
 instance MetadataType GameAssetNftMetadata where
-  metadataLabel _ = wrap $ BigInt.fromInt 721
+  metadataLabel _ = wrap $ BigNum.fromInt 721
+
+toMetadataInt :: JSBigInt.BigInt -> TransactionMetadatum
+toMetadataInt i = TxMetadatum.Int
+  $ unsafePartial
+  $ fromJust
+  $ Int.fromBigInt i
+
+fromMetadataInt :: TxMetadatum.TransactionMetadatum -> Maybe JSBigInt.BigInt
+fromMetadataInt (TxMetadatum.Int i) = Just $ Int.toBigInt i
+fromMetadataInt _ = Nothing

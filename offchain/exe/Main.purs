@@ -11,5 +11,5 @@ import Contract.Wallet (getWalletAddresses)
 main :: Effect Unit
 main = Contract.Monad.launchAff_
   $ void
-  $ Contract.Monad.runContract Contract.Config.testnetNamiConfig
+  $ Contract.Monad.runContract Contract.Config.mainnetConfig
   $ getWalletAddresses

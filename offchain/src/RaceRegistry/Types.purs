@@ -9,12 +9,16 @@ module CardanoRacers.RaceRegistry.Types
 import Contract.Prelude
 
 import Aeson (class DecodeAeson, class EncodeAeson, encodeAeson, getField, (.:))
+import Cardano.Plutus.DataSchema (S, Z)
+import Cardano.Plutus.Types.Address (Address)
+import Cardano.Plutus.Types.MintingPolicyHash (MintingPolicyHash)
+import Cardano.Plutus.Types.PubKeyHash (PubKeyHash)
+import Cardano.Types (BigInt)
 import CardanoRacers.Helpers
   ( decodeAesonString
   , decodeWrappedAeson
   , wrapEncodeAeson
   )
-import Contract.Address (Address, PubKeyHash)
 import Contract.PlutusData
   ( class FromData
   , class HasPlutusSchema
@@ -24,15 +28,11 @@ import Contract.PlutusData
   , type (@@)
   , I
   , PNil
-  , S
-  , Z
   , genericFromData
   , genericToData
   )
-import Contract.Scripts (MintingPolicyHash)
 import Contract.Value (CurrencySymbol, TokenName)
 import Control.Alt ((<|>))
-import Data.BigInt (BigInt)
 
 newtype RegistryParams = RegistryParams
   { slotAssetClass :: (CurrencySymbol /\ TokenName)
