@@ -22,6 +22,7 @@ import Test.CardanoRacers.AssetRequest (suite) as AssetRequest
 import Test.CardanoRacers.Deposit (suite) as Deposit
 import Test.CardanoRacers.Nft (suite) as Nft
 import Test.CardanoRacers.Nitro.Contract (suite) as Nitro
+import Test.CardanoRacers.OrganizeWalletUtxos (suite) as OrganizeWalletUtxos
 import Test.CardanoRacers.RaceRegistry (suite) as RaceRegistry
 import Test.CardanoRacers.RacersState.Contract (suite) as RacersState
 import Test.Spec.Runner (defaultConfig)
@@ -42,10 +43,11 @@ suite = do
   AssetRequest.suite
   Deposit.suite
   RaceRegistry.suite
+  OrganizeWalletUtxos.suite
 
 config :: TestnetConfig
 config =
-  { logLevel: Info
+  { logLevel: Error
   -- Server configs are used to deploy the corresponding services:
   , ogmiosConfig:
       { port: UInt.fromInt 1338
