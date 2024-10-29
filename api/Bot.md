@@ -37,7 +37,7 @@ Fetches the current Lovelace balance of the wallet. Returns a `Promise` that res
 ```typescript
 async getWalletNitroBalance(): Promise<Nitro>;
 ```
-This can be used to query the wallets Nitro balance programmatically. 
+This can be used to query the wallets Nitro balance programmatically.
 Fetches the current Nitro balance of the wallet. Returns a `Promise` that resolves to a `Nitro` object.
 
 ### `mintNitro(amount: Nitro)`
@@ -56,7 +56,7 @@ The threshold can be set as a very large constant, or it can also be set dynamic
 This method is used to redeem the current Asset Requests made by users at the deposit script. It should be used in conjunction with `queryAssetRequests` by the bot to ensure that user requests are redeemed in a timely manner.
 
 ```typescript
-type AssetOption = { 
+type AssetOption = {
   name: string, // "Mustang"
   assetType: GameAssetType, // "driver" | "car"
   imageUrl: string,

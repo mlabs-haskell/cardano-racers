@@ -14,6 +14,7 @@ import CardanoRacers.RaceRegistry.Contract
   ( confirmAssetSelection
   , registerPositionInRace
   )
+import Common.OrganizeWalletUtxos (organizeUTXOsByAssetClass)
 import Contract.CborBytes (cborBytesToHex, hexToCborBytes)
 import Contract.Config (ContractParams, WalletSpec)
 import Contract.Monad (liftContractM, liftedM, runContract, throwContractError)
@@ -50,6 +51,7 @@ import Type.Row (type (+))
 
 type Client r =
   ( buyNitro :: EffectFn1 Nitro (Promise TransactionHashFFI)
+  , organizeWalletUTxOs :: Effect (Promise TransactionHashFFI)
   , requestAsset :: EffectFn1 String (Promise TransactionHashFFI)
   , registerInRace :: EffectFn2 Race String (Promise TransactionHashFFI)
   , joinRace :: EffectFn3 Race String String (Promise TransactionHashFFI)
@@ -70,6 +72,8 @@ mkClient cp walletSpec rp =
     runC = runContract cfg <<< runRacers rp
   in
     { buyNitro: mkEffectFn1 $ fromAff <<< runC <<< buyNitro
+    , organizeWalletUTxOs: fromAff <<< runC $
+        organizeUTXOsByAssetClassContract
     , requestAsset: mkEffectFn1 $ fromAff <<< runC <<< requestAsset
     , registerInRace: mkEffectFn2 $ \race txInJson -> fromAff $ runC $
         registerInRace race txInJson
@@ -81,6 +85,10 @@ mkClient cp walletSpec rp =
 buyNitro :: Nitro -> Racers TransactionHashFFI
 buyNitro = map (cborBytesToHex <<< encodeCbor) <<< buyNitroContract <<<
   fromJsBigInt
+
+organizeUTXOsByAssetClassContract :: Racers TransactionHashFFI
+organizeUTXOsByAssetClassContract = map (cborBytesToHex <<< encodeCbor) $
+  organizeUTXOsByAssetClass
 
 requestAsset :: String -> Racers TransactionHashFFI
 requestAsset rarityStr = do

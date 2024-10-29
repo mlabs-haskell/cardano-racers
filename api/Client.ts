@@ -31,6 +31,13 @@ interface Client extends RacersQueries {
   buyNitro(amount: Nitro): Promise<TransactionHash>;
 
   /**
+   * Organizes the wallet's UTXOs by separating ADA, Nitro tokens, and other tokens into distinct UTXOs.
+   * Ensures that each UTXO contains only one type of non-native asset class and meets the minimum ADA requirements.
+   * @returns The transaction hash of the reorganization transaction.
+   */
+  organizeWalletUTxOs(): Promise<TransactionHash>;
+
+  /**
    * Requests an asset by rarity, using the current asset prices on the
    * blockchain
    * @param {Rarity} rarity The rarity of the asset to request
