@@ -122,8 +122,3 @@ bundles: build
 		./dist/bot-bundle.tar.gz \
 		./dist/client-browser-bundle.tar.gz
 
-
-	# Testing
-	cp ~/Downloads/bundles3/index.html dist/
-	cp ~/Downloads/bundles3/package.json dist/
-
