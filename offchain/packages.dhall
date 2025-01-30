@@ -1,109 +1,3 @@
-{-
-Welcome to your new Dhall package-set!
-
-Below are instructions for how to edit this file for most use
-cases, so that you don't need to know Dhall to use it.
-
-## Warning: Don't Move This Top-Level Comment!
-
-Due to how `dhall format` currently works, this comment's
-instructions cannot appear near corresponding sections below
-because `dhall format` will delete the comment. However,
-it will not delete a top-level comment like this one.
-
-## Use Cases
-
-Most will want to do one or both of these options:
-1. Override/Patch a package's dependency
-2. Add a package not already in the default package set
-
-This file will continue to work whether you use one or both options.
-Instructions for each option are explained below.
-
-### Overriding/Patching a package
-
-Purpose:
-- Change a package's dependency to a newer/older release than the
-    default package set's release
-- Use your own modified version of some dependency that may
-    include new API, changed API, removed API by
-    using your custom git repo of the library rather than
-    the package set's repo
-
-Syntax:
-where `entityName` is one of the following:
-- dependencies
-- repo
-- version
--------------------------------
-let upstream = --
-in  upstream
-  with packageName.entityName = "new value"
--------------------------------
-
-Example:
--------------------------------
-let upstream = --
-in  upstream
-  with halogen.version = "master"
-  with halogen.repo = "https://example.com/path/to/git/repo.git"
-
-  with halogen-vdom.version = "v4.0.0"
--------------------------------
-
-### Additions
-
-Purpose:
-- Add packages that aren't already included in the default package set
-
-Syntax:
-where `<version>` is:
-- a tag (i.e. "v4.0.0")
-- a branch (i.e. "master")
-- commit hash (i.e. "701f3e44aafb1a6459281714858fadf2c4c2a977")
--------------------------------
-let upstream = --
-in  upstream
-  with new-package-name =
-    { dependencies =
-       [ "dependency1"
-       , "dependency2"
-       ]
-    , repo =
-       "https://example.com/path/to/git/repo.git"
-    , version =
-        "<version>"
-    }
--------------------------------
-
-Example:
--------------------------------
-let upstream = --
-in  upstream
-  with benchotron =
-      { dependencies =
-          [ "arrays"
-          , "exists"
-          , "profunctor"
-          , "strings"
-          , "quickcheck"
-          , "lcg"
-          , "transformers"
-          , "foldable-traversable"
-          , "exceptions"
-          , "node-fs"
-          , "node-buffer"
-          , "node-readline"
-          , "datetime"
-          , "now"
-          ]
-      , repo =
-          "https://github.com/hdgarrood/purescript-benchotron.git"
-      , version =
-          "v7.0.0"
-      }
--------------------------------
--}
 let upstream =
       https://github.com/purescript/package-sets/releases/download/psc-0.15.4-20230105/packages.dhall
         sha256:3e9fbc9ba03e9a1fcfd895f65e2d50ee2f5e86c4cd273f3d5c841b655a0e1bda
@@ -244,6 +138,40 @@ let additions =
         , repo = "https://github.com/mlabs-haskell/purescript-cip30-typesafe"
         , version = "v1.0.0"
         }
+      , cip95 =
+        { dependencies =
+          [ "aff"
+          , "aff-promise"
+          , "cip30"
+          , "console"
+          , "effect"
+          , "newtype"
+          , "prelude"
+          ]
+        , repo = "https://github.com/mlabs-haskell/purescript-cip95"
+        , version = "v1.0.0"
+        }
+      , cip95-typesafe =
+        { dependencies =
+          [ "aff"
+          , "bifunctors"
+          , "cip30"
+          , "cip30-typesafe"
+          , "cip95"
+          , "console"
+          , "control"
+          , "effect"
+          , "either"
+          , "exceptions"
+          , "maybe"
+          , "prelude"
+          , "spec"
+          , "transformers"
+          , "variant"
+          ]
+        , repo = "https://github.com/mlabs-haskell/purescript-cip95-typesafe"
+        , version = "v1.0.0"
+        }
       , bytearrays =
         { dependencies =
           [ "aeson"
@@ -286,7 +214,7 @@ let additions =
           ]
         , repo =
             "https://github.com/mlabs-haskell/purescript-cardano-serialization-lib"
-        , version = "v2.0.0"
+        , version = "v3.0.0"
         }
       , cardano-plutus-data-schema =
         { dependencies = [ "prelude" ]
@@ -444,7 +372,7 @@ let additions =
           , "unsafe-coerce"
           ]
         , repo = "https://github.com/mlabs-haskell/purescript-cardano-types"
-        , version = "v3.0.0"
+        , version = "v4.0.0"
         }
       , cardano-message-signing =
         { dependencies =
@@ -471,6 +399,61 @@ let additions =
           ]
         , repo = "https://github.com/mlabs-haskell/purescript-cardano-hd-wallet"
         , version = "cc1073ddf8bce72407ef6671e3decb59f422e304"
+        }
+      , cardano-transaction-builder =
+        { dependencies =
+          [ "aeson"
+          , "aff"
+          , "arraybuffer-types"
+          , "arrays"
+          , "bifunctors"
+          , "bytearrays"
+          , "cardano-plutus-data-schema"
+          , "cardano-serialization-lib"
+          , "cardano-types"
+          , "console"
+          , "control"
+          , "datetime"
+          , "effect"
+          , "either"
+          , "encoding"
+          , "exceptions"
+          , "foldable-traversable"
+          , "foreign-object"
+          , "integers"
+          , "js-bigints"
+          , "lattice"
+          , "lists"
+          , "literals"
+          , "maybe"
+          , "monad-logger"
+          , "mote"
+          , "mote-testplan"
+          , "newtype"
+          , "nonempty"
+          , "nullable"
+          , "ordered-collections"
+          , "partial"
+          , "prelude"
+          , "profunctor"
+          , "profunctor-lenses"
+          , "quickcheck"
+          , "rationals"
+          , "record"
+          , "safe-coerce"
+          , "spec"
+          , "strings"
+          , "these"
+          , "transformers"
+          , "tuples"
+          , "typelevel-prelude"
+          , "uint"
+          , "unfoldable"
+          , "unsafe-coerce"
+          ]
+        , repo =
+            "https://github.com/mlabs-haskell/purescript-cardano-transaction-builder"
+        , version = "v2.0.0"
         }
       , mote-testplan =
         { dependencies =
@@ -600,97 +583,8 @@ let additions =
           , "web-html"
           , "web-storage"
           ]
-        , repo = "https://github.com/Plutonomicon/cardano-transaction-lib.git"
-        , version = "v9.3.1"
-        }
-      , cardano-transaction-builder =
-        { dependencies =
-          [ "aeson"
-          , "aff"
-          , "arraybuffer-types"
-          , "arrays"
-          , "bifunctors"
-          , "bytearrays"
-          , "cardano-plutus-data-schema"
-          , "cardano-serialization-lib"
-          , "cardano-types"
-          , "console"
-          , "control"
-          , "datetime"
-          , "effect"
-          , "either"
-          , "encoding"
-          , "exceptions"
-          , "foldable-traversable"
-          , "foreign-object"
-          , "integers"
-          , "js-bigints"
-          , "lattice"
-          , "lists"
-          , "literals"
-          , "maybe"
-          , "monad-logger"
-          , "mote"
-          , "mote-testplan"
-          , "newtype"
-          , "nonempty"
-          , "nullable"
-          , "ordered-collections"
-          , "partial"
-          , "prelude"
-          , "profunctor"
-          , "profunctor-lenses"
-          , "quickcheck"
-          , "rationals"
-          , "record"
-          , "safe-coerce"
-          , "spec"
-          , "strings"
-          , "these"
-          , "transformers"
-          , "tuples"
-          , "typelevel-prelude"
-          , "uint"
-          , "unfoldable"
-          , "unsafe-coerce"
-          ]
-        , repo =
-            "https://github.com/mlabs-haskell/purescript-cardano-transaction-builder"
-        , version = "v2.0.0"
-        }
-      , cip95 =
-        { dependencies =
-          [ "aff"
-          , "aff-promise"
-          , "cip30"
-          , "console"
-          , "effect"
-          , "newtype"
-          , "prelude"
-          ]
-        , repo = "https://github.com/mlabs-haskell/purescript-cip95"
-        , version = "v1.0.0"
-        }
-      , cip95-typesafe =
-        { dependencies =
-          [ "aff"
-          , "bifunctors"
-          , "cip30"
-          , "cip30-typesafe"
-          , "cip95"
-          , "console"
-          , "control"
-          , "effect"
-          , "either"
-          , "exceptions"
-          , "maybe"
-          , "prelude"
-          , "spec"
-          , "transformers"
-          , "variant"
-          ]
-        , repo = "https://github.com/mlabs-haskell/purescript-cip95-typesafe"
-        , version = "v1.0.0"
+        , repo = "https://github.com/Plutonomicon/cardano-transaction-lib"
+        , version = "d7b5de6a0e6077d3fd0d834b7c4a4214a324d49e"
         }
       }
 
