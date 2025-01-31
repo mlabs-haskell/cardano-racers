@@ -23,6 +23,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "big-integer": "1.6.51",
     "@mlabs-haskell/ctl-npm-meta": "1.0.0"
   },
   "devDependencies": {
