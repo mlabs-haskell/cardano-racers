@@ -1,0 +1,32 @@
+{ name = "cardano-racers-hydra"
+, dependencies =
+  [ "aff"
+  , "avar"
+  , "cardano-transaction-lib"
+  , "cardano-types"
+  , "codec-aeson"
+  , "console"
+  , "effect"
+  , "either"
+  , "exceptions"
+  , "foldable-traversable"
+  , "hydra-sdk"
+  , "maybe"
+  , "monad-logger"
+  , "newtype"
+  , "node-buffer"
+  , "node-child-process"
+  , "node-fs-aff"
+  , "node-path"
+  , "node-process"
+  , "posix-types"
+  , "prelude"
+  , "refs"
+  , "strings"
+  , "tailrec"
+  , "transformers"
+  , "tuples"
+  ]
+, packages = ./packages.dhall
+, sources = [ "app/**/*.purs", "src/**/*.purs", "test/**/*.purs" ]
+}
