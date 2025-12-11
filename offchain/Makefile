@@ -16,10 +16,8 @@ ps-bundle = spago bundle-module -m ${ps-entrypoint} --to output.js
 serve-port := 4008
 purs-args := "--stash --censor-lib --censor-codes=UserDefinedWarning,ImplicitImport,ImplicitQualifiedImport,ImplicitQualifiedImportReExport"
 
-
 build:
 	@spago build --purs-args ${purs-args}
-
 
 create-bundle-entrypoint:
 	@mkdir -p dist/
@@ -37,7 +35,7 @@ create-html-entrypoint:
 delete-bundle-entrypoint:
 	@rm -f ./dist/entrypoint.js
 
-esbuild-bundle:build create-bundle-entrypoint
+esbuild-bundle: build create-bundle-entrypoint
 	BROWSER_RUNTIME=${browser-runtime} node --trace-uncaught esbuild/bundle.js ./dist/entrypoint.js dist/index.js
 	@make delete-bundle-entrypoint
 
@@ -74,7 +72,6 @@ test:
 	spago test --main Test.CardanoRacers.Unit
 	spago test --main Test.CardanoRacers.Main
 
-
 dev: build
 	@echo '"use strict";'  > ./entrypoint.js
 	@echo \
@@ -85,7 +82,6 @@ dev: build
 
 	BROWSER_RUNTIME=${browser-runtime} webpack-dev-server \
 		 --env entry=./dist/client/bundle.js
-
 
 bundles: build
 	@mkdir -p dist/admin dist/client dist/bot
@@ -121,9 +117,3 @@ bundles: build
 	@zip -j ./dist/bundles.zip ./dist/admin-browser-bundle.tar.gz \
 		./dist/bot-bundle.tar.gz \
 		./dist/client-browser-bundle.tar.gz
-
-
-	# Testing
-	cp ~/Downloads/bundles3/index.html dist/
-	cp ~/Downloads/bundles3/package.json dist/
-

@@ -1,10 +1,9 @@
 {
   "name": "cardano-racers-hydra",
-  "version": "0.1.0",
   "type": "module",
   "dependencies": {
     "@errfrom/cardano-data-lite": "1.0.1",
-    "@mlabs-haskell/ctl-npm-meta": "2.0.0-beta.1",
+    "@mlabs-haskell/ctl-npm-meta": "2.0.0",
     "partysocket": "1.0.2",
     "uuid": "^8.3.2"
   }

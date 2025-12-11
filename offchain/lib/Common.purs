@@ -3,10 +3,8 @@ module Lib.CardanoRacers.Common where
 import Contract.Prelude
 
 import Aeson (decodeJsonString)
-import Cardano.Plutus.Types.MintingPolicyHash
-  ( MintingPolicyHash(MintingPolicyHash)
-  )
-import Cardano.Serialization.Lib (toBytes)
+import Cardano.Data.Lite (toBytes)
+import Cardano.Plutus.Types.MintingPolicyHash (MintingPolicyHash(MintingPolicyHash))
 import Cardano.Types (NetworkId(TestnetId, MainnetId), PrivateKey)
 import Cardano.Types.AssetName (unAssetName)
 import Cardano.Types.BigInt as JSBigInt
@@ -21,29 +19,10 @@ import CardanoRacers.RaceRegistry.Types (RegistryParams)
 import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
 import CardanoRacers.RaceSlot.Types (slotTokenName)
 import CardanoRacers.RacersState.Contract (modifyRacersStateContract)
-import Contract.Config
-  ( ContractParams
-  , KnownWallet(Nami, Gero, Flint, Eternl, Lode, Lace, NuFi)
-  , PrivatePaymentKeySource(PrivatePaymentKeyValue)
-  , PrivateStakeKeySource(PrivateStakeKeyValue)
-  , QueryBackendParams
-  , ServerConfig
-  , StakeKeyPresence(WithStakeKey, WithoutStakeKey)
-  , WalletSpec(UseKeys, ConnectToGenericCip30)
-  , mkBlockfrostBackendParams
-  , mkCtlBackendParams
-  , testnetConfig
-  , walletName
-  )
+import Contract.Config (ContractParams, KnownWallet(Gero, Eternl, Lode, Lace, NuFi), PrivatePaymentKeySource(PrivatePaymentKeyValue), PrivateStakeKeySource(PrivateStakeKeyValue), ProviderBackendParams, ServerConfig, StakeKeyPresence(WithStakeKey, WithoutStakeKey), WalletSpec(UseKeys, ConnectToGenericCip30), mkBlockfrostBackendParams, mkCtlBackendParams, testnetConfig, walletName)
 import Contract.Keys (privateKeyFromBytes)
 import Contract.Monad (liftContractM)
-import Contract.Prim.ByteArray
-  ( ByteArray
-  , RawBytes(RawBytes)
-  , byteArrayToHex
-  , byteArrayToIntArray
-  , hexToByteArray
-  )
+import Contract.Prim.ByteArray (ByteArray, RawBytes(RawBytes), byteArrayToHex, byteArrayToIntArray, hexToByteArray)
 import Contract.ScriptLookups (ScriptLookups)
 import Contract.Value (TokenName)
 import Contract.Wallet (WalletExtension, WalletSpec)
@@ -65,26 +44,10 @@ import Data.String (Pattern(Pattern), stripPrefix)
 import Data.String.CodeUnits (fromCharArray)
 import Data.Time.Duration (Seconds(Seconds))
 import Data.UInt (fromInt) as UInt
-import Effect.Aff.Compat
-  ( EffectFn1
-  , EffectFn2
-  , EffectFn3
-  , mkEffectFn1
-  , mkEffectFn2
-  , mkEffectFn3
-  )
+import Effect.Aff.Compat (EffectFn1, EffectFn2, EffectFn3, mkEffectFn1, mkEffectFn2, mkEffectFn3)
 import Effect.Exception (error)
 import Effect.Uncurried (EffectFn4, mkEffectFn4)
-import Foreign
-  ( Foreign
-  , ForeignError(ForeignError)
-  , MultipleErrors
-  , readBoolean
-  , readInt
-  , readNumber
-  , readString
-  , renderForeignError
-  )
+import Foreign (Foreign, ForeignError(ForeignError), MultipleErrors, readBoolean, readInt, readNumber, readString, renderForeignError)
 import Foreign.Index (readProp)
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable) as Object
@@ -122,7 +85,7 @@ contractParams =
       mkContractParams opts
   }
   where
-  mkContractParams :: Foreign -> QueryBackendParams -> Effect ContractParams
+  mkContractParams :: Foreign -> ProviderBackendParams -> Effect ContractParams
   mkContractParams opts backend = do
     mNeworkId <- liftExcept $ readNetworkId opts
     mLogLevel <- liftExcept $ readLogLevel opts
@@ -162,7 +125,7 @@ contractParams =
               "Invalid 'logLevel'. Expected 'traec', 'debug', 'info', 'warn' or 'error'"
         )
 
-  mkBlockfrostBackend :: Foreign -> Effect QueryBackendParams
+  mkBlockfrostBackend :: Foreign -> Effect ProviderBackendParams
   mkBlockfrostBackend f = do
     blockfrostConfig <- liftExcept (readProp "blockfrostConfig" f) >>=
       parseServerConfig
@@ -177,7 +140,7 @@ contractParams =
       , confirmTxDelay: mConfirmTxDelay
       }
 
-  mkCtlBackend :: Foreign -> Effect QueryBackendParams
+  mkCtlBackend :: Foreign -> Effect ProviderBackendParams
   mkCtlBackend f = do
     ogmiosConfig <- liftExcept (readProp "ogmiosConfig" f) >>= parseServerConfig
     kupoConfig <- liftExcept (readProp "kupoConfig" f) >>= parseServerConfig
@@ -280,9 +243,7 @@ walletSpec =
             (const $ pure spec)
         )
     $
-      [ "Nami" /\ ConnectToGenericCip30 (walletName Nami) { cip95: false }
-      , "GeroWallet" /\ ConnectToGenericCip30 (walletName Gero) { cip95: false }
-      , "Flint" /\ ConnectToGenericCip30 (walletName Flint) { cip95: false }
+      [ "GeroWallet" /\ ConnectToGenericCip30 (walletName Gero) { cip95: false }
       , "Eternl" /\ ConnectToGenericCip30 (walletName Eternl) { cip95: false }
       , "LodeWallet" /\ ConnectToGenericCip30 (walletName Lode) { cip95: false }
       , "Lace" /\ ConnectToGenericCip30 (walletName Lace) { cip95: false }
@@ -303,9 +264,7 @@ mkRacersParams = mkEffectFn1 $ \rpStr -> liftEither $ lmap (error <<< show) $
 
 walletExtensionFromString :: String -> Maybe WalletExtension
 walletExtensionFromString name = case name of
-  "nami" -> Just { name: "nami", exts }
   "gerowallet" -> Just { name: "gerowallet", exts }
-  "flint" -> Just { name: "flint", exts }
   "eternl" -> Just { name: "eternl", exts }
   "LodeWallet" -> Just { name: "LodeWallet", exts }
   "nufi" -> Just { name: "nufi", exts }

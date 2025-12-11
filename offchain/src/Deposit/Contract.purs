@@ -9,16 +9,10 @@ import Contract.Prelude
 
 import Cardano.Plutus.Types.Address as PlutusAddress
 import Cardano.Plutus.Types.CurrencySymbol as CurrencySymbol
-import Cardano.Plutus.Types.MintingPolicyHash
-  ( MintingPolicyHash(MintingPolicyHash)
-  )
+import Cardano.Plutus.Types.MintingPolicyHash (MintingPolicyHash(MintingPolicyHash))
 import Cardano.Plutus.Types.Value (flattenValue) as Value
 import Cardano.Plutus.Types.Value (fromCardano) as Plutus
-import Cardano.Types
-  ( Credential(ScriptHashCredential)
-  , Transaction
-  , TransactionOutput
-  )
+import Cardano.Types (Credential(ScriptHashCredential), Transaction, TransactionOutput)
 import Cardano.Types.AssetName (mkAssetName, unAssetName)
 import Cardano.Types.Int as Int
 import Cardano.Types.Mint as Mint
@@ -26,23 +20,10 @@ import Cardano.Types.OutputDatum (outputDatumDatum)
 import Cardano.Types.PlutusScript (hash)
 import Cardano.Types.PlutusScript as PlutusScript
 import CardanoRacers.AssetRequest.Contract (mkAssetRequestPolicy)
-import CardanoRacers.AssetRequest.Types
-  ( AirdropAddressDatum
-  , AssetRequestRedeemer(BurnRequestToken)
-  )
+import CardanoRacers.AssetRequest.Types (AirdropAddressDatum, AssetRequestRedeemer(BurnRequestToken))
 import CardanoRacers.Deposit.Validator (mkDepositValidator)
-import CardanoRacers.GameAsset.Contract
-  ( mintAvailableAssetByRarity
-  , mkGameAssetPolicy
-  )
-import CardanoRacers.GameAsset.Types
-  ( AssetOption
-  , GameAssetNftMetadata
-  , GameAssetObject
-  , GameAssetType(DriverType, CarType)
-  , Rarity(Epic, Rare, Common)
-  , unGameAsset
-  )
+import CardanoRacers.GameAsset.Contract (mintAvailableAssetByRarity, mkGameAssetPolicy)
+import CardanoRacers.GameAsset.Types (AssetOption, GameAssetNftMetadata, GameAssetObject, GameAssetType(DriverType, CarType), Rarity(Epic, Rare, Common), unGameAsset)
 import CardanoRacers.Helpers (fromBIToInt, fromJSBIToBI)
 import CardanoRacers.Nitro.Contract (paysNitroConstraints)
 import CardanoRacers.RacersState.Contract (queryRacersRefScriptOutput)
@@ -54,14 +35,7 @@ import Contract.Monad (liftContractM, liftedE, liftedM)
 import Contract.PlutusData (RedeemerDatum(..), fromData, toData, unitRedeemer)
 import Contract.Prim.ByteArray (byteArrayToIntArray)
 import Contract.ScriptLookups as Lookups
-import Contract.Transaction
-  ( TransactionInput
-  , awaitTxConfirmed
-  , createAdditionalUtxos
-  , signTransaction
-  , submit
-  , withBalancedTx
-  )
+import Contract.Transaction (TransactionInput, awaitTxConfirmed, createAdditionalUtxos, defaultBalancer, signTransaction, submit, withBalancedTx)
 import Contract.TxConstraints (InputWithScriptRef(RefInput))
 import Contract.TxConstraints as Constraints
 import Contract.UnbalancedTx (mkUnbalancedTxE)
@@ -71,18 +45,7 @@ import Contract.Wallet (getWalletUtxos)
 import Control.Monad.Error.Class (liftMaybe)
 import Control.Monad.Reader.Trans (asks, runReaderT)
 import Control.Monad.Trans.Class (lift)
-import Data.Array
-  ( catMaybes
-  , concat
-  , cons
-  , drop
-  , elem
-  , filter
-  , mapMaybe
-  , snoc
-  , take
-  , uncons
-  ) as Array
+import Data.Array (catMaybes, concat, cons, drop, elem, filter, mapMaybe, snoc, take, uncons) as Array
 import Data.Array (head)
 import Data.BigInt (BigInt)
 import Data.BigInt (toInt) as BigInt
@@ -421,11 +384,11 @@ consumeAndRedeemRequests chunkSize mMaxRequests availableAssets generateNonce =
         Nothing -> pure acc
         Just { head: req, tail: rest } -> do
           let
-            balanceTxConstraints =
+            balancerConstraints =
               if null acc then mempty
               else BalanceTxConstraints.mustUseAdditionalUtxos additionalUtxos
           -- Create the unbalanced transaction by redeeming the current request.
-          (unbalancedTx /\ usedUtxos /\ assets) <- do
+          (unbalancedTx /\ extraUtxos /\ assets) <- do
             (authTxi /\ authTxo) <-
               liftContractM
                 "could not get auth UTxO containing token (RacersAdminNFT/BotNFT) in current wallet UTxOs"
@@ -434,7 +397,7 @@ consumeAndRedeemRequests chunkSize mMaxRequests availableAssets generateNonce =
             runReaderT (redeemTx (authTxi /\ Map.singleton authTxi authTxo) req)
               { params: rp }
 
-          withBalancedTx unbalancedTx usedUtxos balanceTxConstraints $ \balTx ->
+          withBalancedTx defaultBalancer unbalancedTx { balancerConstraints, extraUtxos } $ \balTx ->
             do
               balSignedTx <- signTransaction balTx
               additionalUtxos_ <- createAdditionalUtxos balSignedTx

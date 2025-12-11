@@ -4,27 +4,11 @@ import Contract.Prelude
 
 import Aeson (Aeson, encodeAeson)
 import Cardano.AsCbor (encodeCbor)
+import Cardano.Data.Lite (address_toBech32, assetName_name, baseAddress_toAddress, byronAddress_toAddress, enterpriseAddress_toAddress, rewardAddress_toAddress)
 import Cardano.Plutus.Types.Address as PlutusAddress
-import Cardano.Serialization.Lib
-  ( address_toBech32
-  , assetName_name
-  , baseAddress_toAddress
-  , byronAddress_toAddress
-  , enterpriseAddress_toAddress
-  , pointerAddress_toAddress
-  , rewardAddress_toAddress
-  )
 import Cardano.Types (Asset(Asset), AssetName, Bech32String)
-import Cardano.Types.Address
-  ( Address
-      ( BaseAddress
-      , ByronAddress
-      , EnterpriseAddress
-      , RewardAddress
-      , PointerAddress
-      )
-  )
-import Cardano.Types.BaseAddress (toCsl) as BA
+import Cardano.Types.Address (Address(BaseAddress, ByronAddress, EnterpriseAddress, RewardAddress))
+import Cardano.Types.BaseAddress (toCdl) as BA
 import Cardano.Types.EnterpriseAddress as EA
 import Cardano.Types.Internal.Helpers (decodeUtf8)
 import Cardano.Types.PlutusScript as PlutusScript
@@ -36,20 +20,14 @@ import CardanoRacers.GameAsset.Types (GameAssetType(CarType, DriverType))
 import CardanoRacers.Helpers (fromBigNumToBI, fromJSBIToBI)
 import CardanoRacers.Nitro.Contract (mkNitroPolicy)
 import CardanoRacers.RaceRegistry.Contract (queryRegistryUtxos)
-import CardanoRacers.RaceRegistry.Types
-  ( RegistryEntry(PendingSelection, AssetSelection)
-  )
+import CardanoRacers.RaceRegistry.Types (RegistryEntry(PendingSelection, AssetSelection))
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Address (getNetworkId)
 import Contract.Config (ContractParams, WalletSpec)
 import Contract.Monad (liftContractM, liftedM, runContract)
 import Contract.Value (valueOf)
-import Contract.Wallet
-  ( getWalletAddresses
-  , getWalletBalance
-  , ownPaymentPubKeyHashes
-  )
+import Contract.Wallet (getWalletAddresses, getWalletBalance, ownPaymentPubKeyHashes)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff)
 import Data.Array (concat, fromFoldable, head) as Array
@@ -60,16 +38,7 @@ import Data.Maybe (fromMaybe)
 import Data.Newtype (unwrap)
 import Effect.Aff.Compat (EffectFn1, mkEffectFn1)
 import JS.BigInt (BigInt) as JSBigInt
-import Lib.CardanoRacers.Common
-  ( AssetPricesFFI
-  , Lovelace
-  , Nitro
-  , Race
-  , createRegistryParams
-  , mintingPolicyHash
-  , toJsBigInt
-  , tokenNameToString
-  )
+import Lib.CardanoRacers.Common (AssetPricesFFI, Lovelace, Nitro, Race, createRegistryParams, mintingPolicyHash, toJsBigInt, tokenNameToString)
 import Literals.Undefined (undefined)
 import Racers (Racers, runRacers, withContract)
 import Unsafe.Coerce (unsafeCoerce)
@@ -174,19 +143,17 @@ registryEntryToAeson (AssetSelection par) = do
 
 -- TODO: check this
 toBech32 :: Address -> Bech32String
-toBech32 = toCsl >>> flip address_toBech32 (unsafeCoerce undefined)
+toBech32 = toCdl >>> flip address_toBech32 (unsafeCoerce undefined)
   where
-  toCsl = case _ of
+  toCdl = case _ of
     BaseAddress ba ->
-      baseAddress_toAddress $ BA.toCsl ba
+      baseAddress_toAddress $ BA.toCdl ba
     ByronAddress ba ->
       byronAddress_toAddress $ unwrap ba
     EnterpriseAddress ea ->
-      enterpriseAddress_toAddress $ EA.toCsl ea
+      enterpriseAddress_toAddress $ EA.toCdl ea
     RewardAddress ra ->
-      rewardAddress_toAddress $ RA.toCsl ra
-    PointerAddress pc ->
-      pointerAddress_toAddress $ unwrap pc
+      rewardAddress_toAddress $ RA.toCdl ra
 
 queryRaceRegistry :: Race -> Racers (Array Aeson)
 queryRaceRegistry race = do

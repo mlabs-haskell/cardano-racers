@@ -1,8 +1,4 @@
-{-
-Welcome to a Spago project!
-You can edit this file as you like.
--}
-{ name = "ctl-package-example"
+{ name = "cardano-racers-offchain"
 , dependencies =
   [ "aeson"
   , "aff"
@@ -12,14 +8,13 @@ You can edit this file as you like.
   , "bifunctors"
   , "bigints"
   , "bytearrays"
+  , "cardano-data-lite"
   , "cardano-plutus-data-schema"
-  , "cardano-serialization-lib"
   , "cardano-transaction-lib"
   , "cardano-types"
   , "console"
   , "control"
   , "datetime"
-  , "debug"
   , "effect"
   , "either"
   , "encoding"
@@ -34,7 +29,6 @@ You can edit this file as you like.
   , "lists"
   , "literals"
   , "maybe"
-  , "monad-logger"
   , "mote"
   , "newtype"
   , "numbers"

@@ -1,7 +1,7 @@
 let upstream =
     -- https://github.com/mlabs-haskell/purescript-cardano-package-set
-      https://raw.githubusercontent.com/mlabs-haskell/purescript-cardano-package-set/v4.0.0/packages.dhall
-        sha256:3c2ed3da5ea24434d71c93748594cddcd9feedeadf170e0687ffd47916de1f97
+      https://raw.githubusercontent.com/mlabs-haskell/purescript-cardano-package-set/v4.0.1/packages.dhall
+        sha256:738a4057532f0dc140978b02964432d281011514e7ab9482053adaef4e4e7027
 
 let additions =
       { aeson =
@@ -41,34 +41,9 @@ let additions =
         , repo = "https://github.com/mlabs-haskell/purescript-aeson.git"
         , version = "e7bfc24a941e1d73de88de3f4a034e1da33cc8ae"
         }
-      , cardano-data-lite =
-        { dependencies =
-          [ "aeson"
-          , "aff"
-          , "argonaut"
-          , "bifunctors"
-          , "bytearrays"
-          , "effect"
-          , "either"
-          , "enums"
-          , "maybe"
-          , "newtype"
-          , "nullable"
-          , "ordered-collections"
-          , "partial"
-          , "prelude"
-          , "profunctor"
-          , "spec"
-          , "transformers"
-          , "tuples"
-          , "unsafe-coerce"
-          ]
-        , repo = "https://github.com/mlabs-haskell/purescript-cardano-data-lite"
-        , version = "44a08930844221afc4ef750104940f81a75b996e"
-        } 
       , cardano-transaction-lib =
         { dependencies =
-          [ "aeson"
+         [ "aeson"
           , "aff"
           , "aff-promise"
           , "aff-retry"
@@ -174,7 +149,7 @@ let additions =
           , "web-storage"
           ]
         , repo = "https://github.com/Plutonomicon/cardano-transaction-lib.git"
-        , version = "3c3c69be74e70211d05768659e254b4c733def84"
+        , version = "2f7751724f703f4c480df3d50204020932f64b83"
         }
       , codec-aeson =
         { dependencies =
