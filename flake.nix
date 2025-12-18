@@ -1,6 +1,8 @@
 {
   inputs = {
     nixpkgs.follows = "cardano-transaction-lib/nixpkgs";
+
+    # offchain
     cardano-transaction-lib = {
       type = "github";
       owner = "Plutonomicon";
@@ -8,20 +10,23 @@
       rev = "2f7751724f703f4c480df3d50204020932f64b83";
     };
     cardano-node.follows = "cardano-transaction-lib/cardano-node";
-    haskell-nix.follows = "cardano-node/haskellNix";
     hydra.follows = "hydra-sdk/hydra";
     hydra-sdk = {
       url = "github:mlabs-haskell/purescript-hydra-sdk/dshuiski/revive";
       inputs.ctl.follows = "cardano-transaction-lib";
     };
-    iohk-nix.follows = "cardano-node/iohkNix";
+
+    # onchain
+    plutip.url = "github:mlabs-haskell/plutip/8364c43ac6bc9ea140412af9a23c691adf67a18b";
+    haskell-nix.follows = "plutip/haskell-nix";
+    iohk-nix.follows = "plutip/iohk-nix";
     plutonomy = {
       url = "github:well-typed/plutonomy/6c01302ba8cf3be4f71617e106cd5ef7ed10fc63";
       flake = false;
     };
   };
 
-  outputs = inputs@{ self, nixpkgs, haskell-nix, hydra, iohk-nix, cardano-transaction-lib, ... }:
+  outputs = inputs@{ self, nixpkgs, haskell-nix, hydra, iohk-nix, cardano-transaction-lib, plutip, ... }:
     let
       # GENERAL
       # supportedSystems = with nixpkgs.lib.systems.supported; tier1 ++ tier2 ++ tier3;
@@ -75,13 +80,13 @@
       onchain = rec {
         ghcVersion = "ghc8107";
 
-        inherit nixpkgs haskell-nix;
+        inherit (plutip.inputs) nixpkgs haskell-nix;
 
         nixpkgsFor = system: import nixpkgs {
           inherit system;
           overlays = [
             haskell-nix.overlay
-            (import "${iohk-nix}/overlays/crypto")
+            (import "${plutip.inputs.iohk-nix}/overlays/crypto")
           ];
           inherit (haskell-nix) config;
         };
@@ -102,8 +107,7 @@
 
               packages: ./.
             '';
-            # inherit (plutip) cabalProjectLocal;
-            /*
+            inherit (plutip) cabalProjectLocal;
             extraSources = plutip.extraSources ++ [
               {
                 src = "${inputs.plutonomy}";
@@ -114,8 +118,7 @@
                 subdirs = [ "." ];
               }
             ];
-            */
-            # modules = plutip.haskellModules;
+            modules = plutip.haskellModules;
             shell = {
               withHoogle = true;
               exactDeps = true;
