@@ -36,7 +36,6 @@
       nixpkgsFor = system: import nixpkgs {
         inherit system;
         overlays = [
-          haskell-nix.overlay
           cardano-transaction-lib.overlays.purescript
           cardano-transaction-lib.overlays.runtime
           cardano-transaction-lib.overlays.spago
@@ -90,7 +89,10 @@
           ];
           inherit (haskell-nix) config;
         };
-        nixpkgsFor' = system: import nixpkgs { inherit system; inherit (haskell-nix) config; };
+        nixpkgsFor' = system: import nixpkgs {
+          inherit system;
+          inherit (haskell-nix) config;
+        };
 
         projectFor = system:
           let

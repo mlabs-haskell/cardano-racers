@@ -60,7 +60,7 @@ config =
       , path: Nothing
       }
   , customLogger: Nothing
-  , suppressLogs: false
+  , suppressLogs: true
   , hooks: emptyHooks
   , clusterConfig:
       { slotLength: Seconds 0.05

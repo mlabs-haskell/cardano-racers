@@ -67,6 +67,7 @@ library
     , AssetRequestPolicy
     , DepositScript
     , RacersStateScript
+    , RaceScript
                  
   other-modules:
     , Utils
