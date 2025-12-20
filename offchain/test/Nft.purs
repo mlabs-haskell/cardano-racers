@@ -44,7 +44,7 @@ import Control.Monad.Trans.Class (lift)
 import Data.Array (head)
 import Data.Array (head) as Array
 import Data.Map (toUnfoldable)
-import Mote (group, test, skip)
+import Mote (group, skip, test)
 import Test.Spec.Assertions (shouldSatisfy)
 
 suite :: TestPlanM ContractTest Unit
