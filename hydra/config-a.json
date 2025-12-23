@@ -20,7 +20,20 @@
       "4bb8c01290599cc9de195b586ee1eb73422b00198126f51f52b00a8e35da9ce3"
     ],
     "contestPeriodSec": 60,
-    "peers": []
+    "peers": [
+      {
+        "hydraNodeAddress": "127.0.0.1:7002",
+        "hydraVerificationKey": "data/keys/hydra-b.vk",
+        "cardanoVerificationKey": "data/keys/cardano-b.vk",
+        "httpServer": {
+          "port": 7012,
+          "host": "127.0.0.1",
+          "secure": false,
+          "path": null
+        }
+      }
+    ]
   },
+  "serverPort": 7010,
   "logLevel": "trace"
 }

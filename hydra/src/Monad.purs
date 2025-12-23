@@ -8,6 +8,7 @@ module CardanoRacers.Hydra.Monad
   , getAppRunner
   , initApp
   , launchApp
+  , liftContract
   , readHeadStatus
   , runApp
   , setHeadStatus
@@ -15,8 +16,11 @@ module CardanoRacers.Hydra.Monad
 
 import Prelude
 
-import Cardano.Types (NetworkId(MainnetId, TestnetId))
+import Cardano.Types (NetworkId(MainnetId, TestnetId), TransactionInput, TransactionOutput)
 import CardanoRacers.Hydra.Config (AppConfig)
+import CardanoRacers.Hydra.Contracts.Collateral (getCollateralUtxo)
+import CardanoRacers.Hydra.Types.Common (Utxo)
+import CardanoRacers.Race.Types (RaceParams)
 import Contract.Config
   ( ContractParams
   , PrivatePaymentKeySource(PrivatePaymentKeyFile)
@@ -31,7 +35,13 @@ import Contract.Config
   , emptyHooks
   , mkBlockfrostBackendParams
   )
-import Contract.Monad (ContractEnv, mkContractEnv, stopContractEnv)
+import Contract.Monad
+  ( Contract(..)
+  , ContractEnv
+  , mkContractEnv
+  , runContractInEnv
+  , stopContractEnv
+  )
 import Control.Monad.Error.Class (class MonadError, class MonadThrow, liftMaybe, throwError)
 import Control.Monad.Logger.Class (class MonadLogger)
 import Control.Monad.Logger.Trans (LoggerT(LoggerT), runLoggerT)
@@ -85,6 +95,7 @@ type AppLogger = Message -> ReaderT AppState Aff Unit
 type AppState =
   { config :: AppConfig
   , contractEnv :: ContractEnv
+  , collateralUtxo :: Utxo
   , headStatus :: AVar HydraHeadStatus
   }
 
@@ -124,6 +135,11 @@ cleanupApp state = do
     )
     (stopContractEnv state.contractEnv)
 
+liftContract :: forall (a :: Type). Contract a -> AppM a
+liftContract contract = do
+  { contractEnv } <- ask
+  liftAff $ runContractInEnv contractEnv contract
+
 appLogger :: AppLogger
 appLogger message = do
   { config: { logLevel } } <- ask
@@ -155,10 +171,12 @@ initApp config@{ hydraNodeStartupParams } = do
     contractParams = mkContractParams backendParams network config.logLevel
       hydraNodeStartupParams.cardanoSigningKey
   contractEnv <- mkContractEnv contractParams
+  collateralUtxo <- runContractInEnv contractEnv getCollateralUtxo
   headStatus <- AVar.new HeadStatus_Unknown
   pure
     { config
     , contractEnv
+    , collateralUtxo
     , headStatus
     }
 

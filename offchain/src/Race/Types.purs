@@ -1,6 +1,7 @@
 module CardanoRacers.Race.Types
   ( RaceDatum(ValueEscrow, RaceState)
   , RaceParams(RaceParams)
+  , RaceRedeemer(MoveL2, AnnounceDistribution, Distribute, ClaimTTL)
   ) where
 
 import Prelude
@@ -102,4 +103,37 @@ instance ToData RaceDatum where
   toData = genericToData
 
 instance FromData RaceDatum where
+  fromData = genericFromData
+
+-- RaceRedeemer
+
+data RaceRedeemer = MoveL2 | AnnounceDistribution | Distribute | ClaimTTL
+
+derive instance Generic RaceRedeemer _
+derive instance Eq RaceRedeemer
+
+instance Show RaceRedeemer where
+  show = genericShow
+
+instance
+  HasPlutusSchema RaceRedeemer
+    ( "MoveL2"
+        := PNil
+        @@ Z
+        :+ "AnnounceDistribution"
+        := PNil
+        @@ (S Z)
+        :+ "Distribute"
+        := PNil
+        @@ (S (S Z))
+        :+ "ClaimTTL"
+        := PNil
+        @@ (S (S (S Z)))
+        :+ PNil
+    )
+
+instance ToData RaceRedeemer where
+  toData = genericToData
+
+instance FromData RaceRedeemer where
   fromData = genericFromData

@@ -1,5 +1,6 @@
 module CardanoRacers.Race.Contract
-  ( startRace
+  ( mkRaceValidator
+  , startRace
   ) where
 
 import Contract.Prelude

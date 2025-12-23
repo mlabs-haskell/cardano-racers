@@ -43,7 +43,7 @@ import Cardano.Types.Int as CTInt
 import Cardano.Types.Int as Int
 import Cardano.Types.Mint as Mint
 import Cardano.Types.PlutusData (unit) as PlutusData
-import Contract.Time (POSIXTime(..))
+import Contract.Time (POSIXTime)
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
 import Contract.Value (Value)

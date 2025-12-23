@@ -4,7 +4,8 @@ let upstream =
         sha256:738a4057532f0dc140978b02964432d281011514e7ab9482053adaef4e4e7027
 
 let additions =
-      { aeson =
+      { cardano-racers-offchain = ../offchain/spago.dhall as Location
+      , aeson =
         { dependencies =
           [ "aff"
           , "argonaut"
@@ -250,6 +251,7 @@ let additions =
           , "profunctor"
           , "quickcheck"
           , "record"
+          , "record-extra"
           , "safely"
           , "spec"
           , "strings"
@@ -261,7 +263,7 @@ let additions =
           , "uuid"
           ]
         , repo = "https://github.com/mlabs-haskell/purescript-hydra-sdk"
-        , version = "2059acaaf11b8bc45172bd68bc6140d385e90bf3"
+        , version = "18b8390370e1f4fd39a826cbce81dcedf3dd0992"
         }
       }
 

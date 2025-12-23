@@ -1,0 +1,39 @@
+{
+  "hydraNodeStartupParams": {
+    "nodeId": "40086fd1-81fc-4a38-bf41-3039991bc2e0",
+    "hydraNodeAddress": "0.0.0.0:7002",
+    "hydraNodeAdvertisedAddress": null,
+    "hydraNodeApiAddress": "127.0.0.1:7003",
+    "persistDir": "data/hydra-persist",
+    "hydraSigningKey": "data/keys/hydra-b.sk",
+    "cardanoSigningKey": "data/keys/cardano-b.sk",
+    "queryLayer": {
+      "tag": "Blockfrost",
+      "apiKeyFile": "data/blockfrost.txt",
+      "queryTimeoutSec": null,
+      "retryTimeoutSec": null
+    },
+    "pparams": "pparams.json",
+    "hydraScripts": [
+      "ba97aaa648271c75604e66e3a4e00da49bdcaca9ba74d9031ab4c08f736e1c12",
+      "ff046eba10b9b0f90683bf5becbd6afa496059fc1cf610e798cfe778d85b70ba",
+      "4bb8c01290599cc9de195b586ee1eb73422b00198126f51f52b00a8e35da9ce3"
+    ],
+    "contestPeriodSec": 60,
+    "peers": [
+      {
+        "hydraNodeAddress": "127.0.0.1:7000",
+        "hydraVerificationKey": "data/keys/hydra-a.vk",
+        "cardanoVerificationKey": "data/keys/cardano-a.vk",
+        "httpServer": {
+          "port": 7010,
+          "host": "127.0.0.1",
+          "secure": false,
+          "path": null
+        }
+      }
+    ]
+  },
+  "serverPort": 7012,
+  "logLevel": "trace"
+}

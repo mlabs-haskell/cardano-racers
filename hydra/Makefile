@@ -1,4 +1,4 @@
-.PHONY: build format run gen-keys
+.PHONY: build format run-a run-b gen-keys
 
 ps-sources := $(shell fd --no-ignore-parent -epurs)
 purs-args := "--stash --censor-lib --censor-codes=ImplicitImport,ImplicitQualifiedImport,ImplicitQualifiedImportReExport,UserDefinedWarning"
@@ -16,8 +16,11 @@ build: requires-nix-shell
 format: requires-nix-shell
 	purs-tidy format-in-place ${ps-sources}
 
-run: requires-nix-shell
-	spago run --main CardanoRacers.Hydra.Main --exec-args 'config.json'
+run-a: requires-nix-shell
+	spago run --main CardanoRacers.Hydra.Main --exec-args 'config-a.json'
+
+run-b: requires-nix-shell
+	spago run --main CardanoRacers.Hydra.Main --exec-args 'config-b.json'
 
 gen-keys: requires-nix-shell
 	@hydra-node gen-hydra-key --output-file ${keys-dir}/hydra-a

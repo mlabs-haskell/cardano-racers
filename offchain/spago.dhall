@@ -53,6 +53,5 @@
   , "web-storage"
   ]
 , packages = ./packages.dhall
-, sources =
-  [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs", "lib/**/*.purs" ]
+, sources = [ "src/**/*.purs", "exe/**/*.purs", "test/**/*.purs" ]
 }
