@@ -6,12 +6,14 @@
   , "arrays"
   , "avar"
   , "bifunctors"
+  , "bytearrays"
   , "cardano-provider"
   , "cardano-racers-offchain"
   , "cardano-transaction-lib"
   , "cardano-types"
   , "codec-aeson"
   , "console"
+  , "debug"
   , "effect"
   , "either"
   , "errors"
@@ -47,5 +49,6 @@
   , "variant"
   ]
 , packages = ./packages.dhall
-, sources = [ "app/**/*.purs", "src/**/*.purs", "test/**/*.purs" ]
+, sources =
+  [ "app/**/*.purs", "demo/**/*.purs", "src/**/*.purs", "test/**/*.purs" ]
 }

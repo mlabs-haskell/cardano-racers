@@ -1,10 +1,10 @@
 {
   "hydraNodeStartupParams": {
     "nodeId": "40086fd1-81fc-4a38-bf41-3039991bc2e0",
-    "hydraNodeAddress": "0.0.0.0:7002",
+    "hydraNodeAddress": "127.0.0.1:7002",
     "hydraNodeAdvertisedAddress": null,
     "hydraNodeApiAddress": "127.0.0.1:7003",
-    "persistDir": "data/hydra-persist",
+    "persistDir": "data/hydra-persist-b",
     "hydraSigningKey": "data/keys/hydra-b.sk",
     "cardanoSigningKey": "data/keys/cardano-b.sk",
     "queryLayer": {

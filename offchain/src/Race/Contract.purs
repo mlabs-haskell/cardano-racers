@@ -40,7 +40,10 @@ startRace
   :: RaceHash
   -> Value
   -> Array Ed25519KeyHash
-  -> Racers TransactionHash
+  -> Racers
+       { txHash :: TransactionHash
+       , raceParams :: RaceParams
+       }
 startRace raceHash totalRewardValue delegates = do
   -- mint 2 state tokens 
   slotPolicy <- mkRaceSlotPolicy raceHash
@@ -94,7 +97,10 @@ startRace raceHash totalRewardValue delegates = do
   lift do
     txHash <- submitTxFromConstraints lookups constraints
     awaitTxConfirmed txHash
-    pure txHash
+    pure
+      { txHash
+      , raceParams
+      }
 
 mkRaceValidator :: RaceParams -> Contract PlutusScript
 mkRaceValidator params = do

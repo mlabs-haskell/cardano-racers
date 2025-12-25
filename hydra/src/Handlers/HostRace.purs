@@ -1,5 +1,19 @@
 module CardanoRacers.Hydra.Handlers.HostRace
-  ( hostRaceHandler
+  ( HostRaceError
+      ( CouldNotDecodeRequestBody
+      , CouldNotResolveRaceOref
+      , CouldNotDecodeRaceParams
+      , InvalidHeadStatus
+      )
+  , HostRaceRequest
+  , HostRaceResponse
+  , HostRaceSuccess
+  , hostRaceErrorCodec
+  , hostRaceHandler
+  , hostRaceHandlerImpl
+  , hostRaceRequestCodec
+  , hostRaceResponseCodec
+  , hostRaceSuccessCodec
   ) where
 
 import Prelude

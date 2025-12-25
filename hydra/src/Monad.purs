@@ -7,6 +7,7 @@ module CardanoRacers.Hydra.Monad
   , getAppLauncher
   , getAppRunner
   , initApp
+  , initContractEnv
   , launchApp
   , liftContract
   , readHeadStatus
@@ -163,14 +164,9 @@ initApp config@{ hydraNodeStartupParams } = do
         throwError $ error $
           "initApp: Could not get Blockfrost API key. Unexpected query layer configuration: "
             <> show hydraNodeStartupParams.queryLayer
-  blockfrostApiKey <- String.trim <$> readTextFile UTF8 blockfrostApiKeyFile
-  network /\ backendParams <-
-    liftMaybe (error "initApp: Could not build ProviderBackendParams. Unknown network prefix.")
-      $ mkBackendParams blockfrostApiKey
-  let
-    contractParams = mkContractParams backendParams network config.logLevel
-      hydraNodeStartupParams.cardanoSigningKey
-  contractEnv <- mkContractEnv contractParams
+  contractEnv <-
+    initContractEnv blockfrostApiKeyFile hydraNodeStartupParams.cardanoSigningKey
+      config.logLevel
   collateralUtxo <- runContractInEnv contractEnv getCollateralUtxo
   headStatus <- AVar.new HeadStatus_Unknown
   pure
@@ -179,6 +175,16 @@ initApp config@{ hydraNodeStartupParams } = do
     , collateralUtxo
     , headStatus
     }
+
+initContractEnv :: FilePath -> FilePath -> LogLevel -> Aff ContractEnv
+initContractEnv blockfrostApiKeyFile signingKey logLevel = do
+  blockfrostApiKey <- String.trim <$> readTextFile UTF8 blockfrostApiKeyFile
+  network /\ backendParams <-
+    liftMaybe
+      (error "initContractEnv: Could not build ProviderBackendParams. Unknown network prefix.")
+      (mkBackendParams blockfrostApiKey)
+  let contractParams = mkContractParams backendParams network logLevel signingKey
+  mkContractEnv contractParams
 
 mkBackendParams :: String -> Maybe (NetworkId /\ ProviderBackendParams)
 mkBackendParams blockfrostApiKey = do
