@@ -6,6 +6,8 @@ import Prelude
 
 import CardanoRacers.Hydra.Contracts.Commit (commitCollateralToHydra)
 import CardanoRacers.Hydra.Monad (AppM)
+import Contract.Log (logInfo', logWarn')
+import Control.Monad.Error.Class (try)
 import Data.Either (Either(Left, Right))
 import Effect.Class (liftEffect)
 import HydraSdk.NodeApi (HydraNodeApiWebSocket)
@@ -27,7 +29,14 @@ messageHandler ws =
           -- TODO: ensure only one Head member calls initHead
           when (headStatus == HeadStatus_Idle) $
             liftEffect ws.initHead
-        Committed _ -> do
+        Committed _ ->
           -- TODO: prevent double-committing, introduce "committed" flag / barrier
-          void commitCollateralToHydra
+          try commitCollateralToHydra >>=
+            case _ of
+              Left err ->
+                logWarn' $ "Could not commit collateral. Already committed? Error: "
+                  <> show err
+              Right txHash ->
+                logInfo' $ "Successfully commited collateral: "
+                  <> show txHash
         _ -> pure unit

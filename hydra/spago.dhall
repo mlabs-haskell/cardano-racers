@@ -13,7 +13,6 @@
   , "cardano-types"
   , "codec-aeson"
   , "console"
-  , "debug"
   , "effect"
   , "either"
   , "errors"

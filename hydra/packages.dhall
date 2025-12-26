@@ -42,6 +42,31 @@ let additions =
         , repo = "https://github.com/mlabs-haskell/purescript-aeson.git"
         , version = "e7bfc24a941e1d73de88de3f4a034e1da33cc8ae"
         }
+      , cardano-data-lite =
+        { dependencies =
+          [ "aeson"
+          , "aff"
+          , "argonaut"
+          , "bifunctors"
+          , "bytearrays"
+          , "effect"
+          , "either"
+          , "enums"
+          , "maybe"
+          , "newtype"
+          , "nullable"
+          , "ordered-collections"
+          , "partial"
+          , "prelude"
+          , "profunctor"
+          , "spec"
+          , "transformers"
+          , "tuples"
+          , "unsafe-coerce"
+          ]
+        , repo = "https://github.com/mlabs-haskell/purescript-cardano-data-lite"
+        , version = "2ccb31011e2e00c94aac6303dff3f16087560adb"
+        }
       , cardano-transaction-lib =
         { dependencies =
          [ "aeson"

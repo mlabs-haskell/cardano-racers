@@ -30,6 +30,7 @@ import CardanoRacers.Hydra.Types.ServerResponse
   , serverResponseCodec
   )
 import CardanoRacers.Race.Types (RaceParams)
+import Contract.Log (logInfo')
 import Contract.Utxos (getUtxo)
 import Control.Error.Util ((!?), (??))
 import Control.Monad.Error.Class (liftEither, throwError)
@@ -72,6 +73,7 @@ hostRaceHandlerImpl bodyStr =
     raceOut <- liftContract (getUtxo reqBody.raceOref) !? CouldNotResolveRaceOref
     raceParams <- (fromData =<< decodeCbor reqBody.raceParams) ?? CouldNotDecodeRaceParams
     txHash <- lift $ commitRaceUtxoToHydra (reqBody.raceOref /\ raceOut) raceParams
+    logInfo' $ "Successfully commited RaceValidator utxo: " <> show txHash
     pure
       { commitTxHash: txHash
       }

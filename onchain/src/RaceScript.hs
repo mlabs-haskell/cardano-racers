@@ -58,8 +58,8 @@ mkRaceScript RaceParams{stateAssetClass, totalRewardValue, delegates} dat red ct
     RaceState {distribution=distr} ->
       case red of
         MoveL2 ->
-          -- FIXME: traceIfFalse "must be signed by all delegates" txSignedByDelegates
-          traceIfFalse "distribution already announced" (currentDistributionUndefined distr)
+          traceIfFalse "must be signed by all delegates" txSignedByDelegates
+            && traceIfFalse "distribution already announced" (currentDistributionUndefined distr)
             && traceIfFalse "state token missing" stateTokenPresent
         AnnounceDistribution ->
           traceIfFalse "must be signed by all delegates" txSignedByDelegates

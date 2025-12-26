@@ -9,14 +9,29 @@ import Cardano.AsCbor (decodeCbor, encodeCbor)
 import Cardano.Provider (ServerConfig)
 import Cardano.Provider.ServerConfig (mkHttpUrl)
 import Cardano.ToData (toData)
-import Cardano.Types (Credential(ScriptHashCredential), Ed25519KeyHash, Language(PlutusV2, PlutusV3), RedeemerDatum, Transaction, TransactionHash, TransactionInput, TransactionOutput)
+import Cardano.Types
+  ( Credential(ScriptHashCredential)
+  , Ed25519KeyHash
+  , Language(PlutusV2, PlutusV3)
+  , RedeemerDatum
+  , Transaction
+  , TransactionHash
+  , TransactionInput
+  , TransactionOutput
+  )
 import Cardano.Types.Address (mkPaymentAddress)
 import Cardano.Types.PlutusScript (hash) as PlutusScript
-import CardanoRacers.Hydra.Lib.Transaction (appendTxSignatures, reSignTransaction, setAuxDataHash)
+import CardanoRacers.Hydra.Lib.Transaction
+  ( appendTxSignatures
+  , reSignTransaction
+  , setAuxDataHash
+  )
 import CardanoRacers.Hydra.Monad (AppM, liftContract)
 import CardanoRacers.Hydra.Services.HydraPeer (signCommitTxRequest)
 import CardanoRacers.Hydra.Types.Common (Utxo)
-import CardanoRacers.Hydra.Types.ServerResponse (ServerResponse(ServerResponseError, ServerResponseSuccess))
+import CardanoRacers.Hydra.Types.ServerResponse
+  ( ServerResponse(ServerResponseError, ServerResponseSuccess)
+  )
 import CardanoRacers.Race.Contract (mkRaceValidator)
 import CardanoRacers.Race.Types (RaceParams, RaceRedeemer(MoveL2))
 import Contract.Address (getNetworkId)
@@ -36,6 +51,7 @@ import Control.Monad.Error.Class (liftMaybe, throwError)
 import Control.Monad.Reader (ask)
 import Control.Parallel (parTraverse)
 import Ctl.Internal.Transaction (setScriptDataHash)
+import Data.Array (elem) as Array
 import Data.Either (either)
 import Data.Foldable (foldMap)
 import Data.Map (empty, filterKeys, fromFoldable) as Map
@@ -44,14 +60,18 @@ import Data.Newtype (unwrap, wrap)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.UInt (fromInt) as UInt
-import Debug (traceM)
 import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (error)
 import HydraSdk.NodeApi (commitRequest)
 import HydraSdk.Process (HydraHeadPeer)
-import HydraSdk.Types (HostPort, HydraCommitRequest, mkFullCommitRequest, mkSimpleCommitRequest)
+import HydraSdk.Types
+  ( HostPort
+  , HydraCommitRequest
+  , mkFullCommitRequest
+  , mkSimpleCommitRequest
+  )
 import URI.Port (toInt) as Port
 
 commitCollateralToHydra :: AppM TransactionHash
@@ -60,20 +80,9 @@ commitCollateralToHydra = do
   let req = mkSimpleCommitRequest $ Map.fromFoldable [ collateralUtxo ]
   commitTx <- do
     tx <- liftAff $ queryCommitTx req hydraNodeApiAddress
-    liftContract $ fixCommitTx tx
+    liftContract $ fixCommitTx tx [ PlutusV3 ]
   liftContract $ submit commitTx
 
--- FIXME
--- Hydra "Initial" validator fails for "Fixed CommitTx" with I11 error: ExpectedCommitDatumTypeGotSomethingElse
--- CBOR decoder bug in CDL?
---
--- To reproduce:
--- > test x = decodeCbor (encodeCbor x) == Just x
--- > test (List [(Bytes (hexToByteArrayUnsafe "d8799fd8799fd87a9f581ce3602e5cefef774ce26c05052dd4fd2544146cf4a3489d7d62e1ae2fffd87a80ffa240a1401a001081d2581ca7b88431985897177445eaf04881ba54c9e6d4cf3b3057535a40c6efa144536c6f7401d87b9fd87a9fd87a80ffffd87a80ff")),(Constr BigNum.zero []),(Integer one)])
--- false
---
--- https://github.com/cardano-scaling/hydra/blob/ba13df8d58a9020e4f8c5d4314d6ca19022ef788/hydra-plutus/validators/initial.ak#L94
--- https://github.com/mlabs-haskell/cardano-data-lite/blob/b099b3d11b009b971f918217bc15a769555be8fb/src/lib/cbor/reader.ts#L304
 commitRaceUtxoToHydra :: Utxo -> RaceParams -> AppM TransactionHash
 commitRaceUtxoToHydra raceUtxo raceParams = do
   { collateralUtxo, config: { hydraNodeStartupParams: { hydraNodeApiAddress, peers } } } <- ask
@@ -81,20 +90,12 @@ commitRaceUtxoToHydra raceUtxo raceParams = do
   let req = mkFullCommitRequest blueprintTx $ Map.fromFoldable [ raceUtxo, collateralUtxo ]
   commitTx <- do
     tx <- liftAff $ queryCommitTx req hydraNodeApiAddress
-    liftContract $ fixCommitTx tx
-  traceM $ "Fixed CommitTx: " <> cborBytesToHex (encodeCbor commitTx)
-  liftContract do
-    { provider } <- ask
-    evalResult <- liftAff $ provider.evaluateTx commitTx Map.empty
-    traceM $ "TxEval Result: " <> show evalResult
+    liftContract $ fixCommitTx tx [ PlutusV2, PlutusV3 ]
   pkh <-
     liftMaybe (error "commitRaceUtxoToHydra: could not get own pkh") =<<
       liftContract ownPaymentPubKeyHash
-  -- FIXME
-  -- signedCommitTx <- liftAff $ multiSignCommitTx peers commitTx $ unwrap pkh
-  -- traceM $ "Multi-signed CommitTx: " <> cborBytesToHex (encodeCbor signedCommitTx)
-  -- liftContract $ submit signedCommitTx
-  liftContract $ submit commitTx
+  signedCommitTx <- liftAff $ multiSignCommitTx peers commitTx $ unwrap pkh
+  liftContract $ submit signedCommitTx
 
 queryCommitTx :: HydraCommitRequest -> HostPort -> Aff Transaction
 queryCommitTx req hydraNodeApiAddress = do
@@ -103,7 +104,6 @@ queryCommitTx req hydraNodeApiAddress = do
     either (throwError <<< error <<< append "queryCommitTx: commitRequest failed: " <<< show)
       pure
       eiResult
-  traceM $ "Hydra CommitTx: " <> cborBytesToHex hydraTx.cborHex
   commitTx <-
     liftMaybe (error "queryCommitTx: could not decode transaction") $
       decodeCbor hydraTx.cborHex
@@ -119,13 +119,13 @@ queryCommitTx req hydraNodeApiAddress = do
 
 -- Recompute script integrity and auxiliary data hashes, and re-sign the
 -- transaction. Tx CBOR can change after re-serialization.
-fixCommitTx :: Transaction -> Contract Transaction
-fixCommitTx tx = do
+fixCommitTx :: Transaction -> Array Language -> Contract Transaction
+fixCommitTx tx languages = do
   pparams <- unwrap <$> getProtocolParameters
   let
     costModels =
       -- PlutusV2 for CardanoRacers scripts, PlutusV3 for Hydra scripts
-      Map.filterKeys (\lang -> lang == PlutusV2 || lang == PlutusV3)
+      Map.filterKeys (flip Array.elem languages)
         pparams.costModels
     ws = unwrap (unwrap tx).witnessSet
   fixedTx <- liftEffect $ setScriptDataHash costModels ws.redeemers ws.plutusData $
@@ -188,7 +188,7 @@ mkBlueprintTx raceParams raceUtxo collateralUtxo = do
     constraints = mconcat
       [ Constraints.mustSpendScriptOutput (fst raceUtxo) redeemer
       , Constraints.mustSpendPubKeyOutput (fst collateralUtxo)
-      -- FIXME: , foldMap (Constraints.mustBeSignedBy <<< wrap) (unwrap raceParams).delegates
+      , foldMap (Constraints.mustBeSignedBy <<< wrap) (unwrap raceParams).delegates
       ]
 
     lookups :: ScriptLookups
