@@ -29,23 +29,21 @@ import CardanoRacers.Hydra.Types.ServerResponse
   , respCreatedOrBadRequest
   , serverResponseCodec
   )
-import CardanoRacers.Race.Types (RaceParams)
 import Contract.Log (logInfo')
 import Contract.Utxos (getUtxo)
 import Control.Error.Util ((!?), (??))
 import Control.Monad.Error.Class (liftEither, throwError)
-import Control.Monad.Except (ExceptT, runExceptT)
+import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift)
 import Data.Bifunctor (lmap)
 import Data.Codec.Argonaut (JsonCodec, object, printJsonDecodeError, string) as CA
 import Data.Codec.Argonaut.Record (record) as CAR
 import Data.Codec.Argonaut.Sum (sumFlat) as CAS
-import Data.Either (Either(Left, Right))
+import Data.Either (Either)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
 import Data.Tuple.Nested ((/\))
-import Effect.Aff (Aff)
-import HTTPure (Response, notFound) as HTTPure
+import HTTPure (Response) as HTTPure
 import HydraSdk.Lib (caDecodeString, cborBytesCodec, txHashCodec)
 import HydraSdk.Lib (orefCodec) as HydraSdk
 import HydraSdk.Types (HydraHeadStatus(HeadStatus_Initializing), headStatusCodec)

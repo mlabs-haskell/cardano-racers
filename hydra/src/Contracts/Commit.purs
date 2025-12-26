@@ -5,7 +5,7 @@ module CardanoRacers.Hydra.Contracts.Commit
 
 import Prelude
 
-import Cardano.AsCbor (decodeCbor, encodeCbor)
+import Cardano.AsCbor (decodeCbor)
 import Cardano.Provider (ServerConfig)
 import Cardano.Provider.ServerConfig (mkHttpUrl)
 import Cardano.ToData (toData)
@@ -16,8 +16,6 @@ import Cardano.Types
   , RedeemerDatum
   , Transaction
   , TransactionHash
-  , TransactionInput
-  , TransactionOutput
   )
 import Cardano.Types.Address (mkPaymentAddress)
 import Cardano.Types.PlutusScript (hash) as PlutusScript
@@ -35,8 +33,6 @@ import CardanoRacers.Hydra.Types.ServerResponse
 import CardanoRacers.Race.Contract (mkRaceValidator)
 import CardanoRacers.Race.Types (RaceParams, RaceRedeemer(MoveL2))
 import Contract.Address (getNetworkId)
-import Contract.CborBytes (cborBytesToHex)
-import Contract.Log (logDebug', logInfo')
 import Contract.Monad (Contract)
 import Contract.Prelude (mconcat)
 import Contract.ProtocolParameters (getProtocolParameters)
@@ -54,18 +50,17 @@ import Ctl.Internal.Transaction (setScriptDataHash)
 import Data.Array (elem) as Array
 import Data.Either (either)
 import Data.Foldable (foldMap)
-import Data.Map (empty, filterKeys, fromFoldable) as Map
+import Data.Map (filterKeys, fromFoldable) as Map
 import Data.Maybe (Maybe(Nothing))
 import Data.Newtype (unwrap, wrap)
 import Data.Tuple (fst, snd)
-import Data.Tuple.Nested (type (/\), (/\))
+import Data.Tuple.Nested ((/\))
 import Data.UInt (fromInt) as UInt
 import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (error)
 import HydraSdk.NodeApi (commitRequest)
-import HydraSdk.Process (HydraHeadPeer)
 import HydraSdk.Types
   ( HostPort
   , HydraCommitRequest

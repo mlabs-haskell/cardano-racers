@@ -17,11 +17,10 @@ module CardanoRacers.Hydra.Monad
 
 import Prelude
 
-import Cardano.Types (NetworkId(MainnetId, TestnetId), TransactionInput, TransactionOutput)
+import Cardano.Types (NetworkId(MainnetId, TestnetId))
 import CardanoRacers.Hydra.Config (AppConfig)
 import CardanoRacers.Hydra.Contracts.Collateral (getCollateralUtxo)
 import CardanoRacers.Hydra.Types.Common (Utxo)
-import CardanoRacers.Race.Types (RaceParams)
 import Contract.Config
   ( ContractParams
   , PrivatePaymentKeySource(PrivatePaymentKeyFile)
@@ -37,7 +36,7 @@ import Contract.Config
   , mkBlockfrostBackendParams
   )
 import Contract.Monad
-  ( Contract(..)
+  ( Contract
   , ContractEnv
   , mkContractEnv
   , runContractInEnv

@@ -44,7 +44,6 @@
   , "tuples"
   , "uint"
   , "uri"
-  , "validation"
   , "variant"
   ]
 , packages = ./packages.dhall

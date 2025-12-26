@@ -9,13 +9,10 @@ import Prelude
 import Aeson (Aeson, stringifyAeson)
 import Affjax (Error, Response, URL, defaultRequest) as Affjax
 import Affjax.RequestBody (RequestBody(String)) as Affjax
-import Affjax.RequestHeader (RequestHeader(RequestHeader)) as Affjax
+import Affjax.RequestHeader (RequestHeader) as Affjax
 import Affjax.ResponseFormat (string) as Affjax.ResponseFormat
 import Affjax.StatusCode (StatusCode(StatusCode)) as Affjax
-import Cardano.AsCbor (encodeCbor)
 import Cardano.Provider (request) as Affjax
-import Cardano.Types (ScriptHash)
-import Contract.CborBytes (cborBytesToHex)
 import Data.Bifunctor (lmap)
 import Data.Codec.Argonaut (JsonCodec) as CA
 import Data.Either (Either(Left, Right))

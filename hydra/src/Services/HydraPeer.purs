@@ -12,7 +12,6 @@ import CardanoRacers.Hydra.Handlers.SignCommitTx
   )
 import CardanoRacers.Hydra.Services.Utils (handleResponse, postRequest)
 import Ctl.Internal.Helpers ((<</>>))
-import Data.Array (singleton) as Array
 import Data.Codec.Argonaut (encode) as CA
 import Data.Either (Either)
 import Data.Maybe (Maybe(Just))
