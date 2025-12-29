@@ -17,6 +17,7 @@
     };
 
     # onchain
+    # TODO: https://github.com/mlabs-haskell/cardano-racers/issues/22
     plutip.url = "github:mlabs-haskell/plutip/8364c43ac6bc9ea140412af9a23c691adf67a18b";
     haskell-nix.follows = "plutip/haskell-nix";
     iohk-nix.follows = "plutip/iohk-nix";
@@ -352,7 +353,12 @@
       checks = perSystem (system:
         self.onchain.flake.${system}.checks
         // {
-          cardano-racers = self.offchain.project.${system}.runPlutipTest { testMain = "Test"; };
+          cardano-racers-offchain-localnet-tests = self.offchain.project.${system}.runLocalTestnetTest {
+            testMain = "Test.CardanoRacers.Main";
+          };
+          cardano-racers-offchain-unit-tests = self.offchain.project.${system}.runPursTest {
+            testMain = "Test.CardanoRacers.Unit";
+          };
         }
       );
 
@@ -363,8 +369,9 @@
       });
 
       apps = perSystem (system: {
-        docs = self.offchain.project.${system}.launchSearchablePursDocs { };
-        ctl-docs = cardano-transaction-lib.apps.${system}.docs;
+        # TODO: https://github.com/mlabs-haskell/cardano-racers/issues/27
+        # docs = self.offchain.project.${system}.launchSearchablePursDocs { };
+        # ctl-docs = cardano-transaction-lib.apps.${system}.docs;
 
         runtime = (nixpkgsFor system).launchCtlRuntime {};
         script-exporter = {
@@ -372,10 +379,12 @@
           type = "app";
           program = (onchain.script-exporter system).outPath;
         };
+        /* TODO: https://github.com/mlabs-haskell/cardano-racers/issues/28
         format = {
           type = "app";
           program = (formatCheckFor system).format.outPath;
         };
+        */
       });
     };
 }
