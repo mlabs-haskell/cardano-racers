@@ -32,6 +32,7 @@
   , "ordered-collections"
   , "parallel"
   , "partial"
+  , "plutus-types"
   , "posix-types"
   , "prelude"
   , "profunctor"

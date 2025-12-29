@@ -1,5 +1,6 @@
 module CardanoRacers.Helpers
-  ( wrapEncodeAeson
+  ( assetNameFromAsciiUnsafe
+  , wrapEncodeAeson
   , counterNonce
   , decodeWrappedAeson
   , paysToAddrConstraint
@@ -34,7 +35,8 @@ import Cardano.Plutus.Types.Credential
   )
 import Cardano.Plutus.Types.CurrencySymbol as CurrencySymbol
 import Cardano.Plutus.Types.Value as PlutusValue
-import Cardano.Types (Mint)
+import Cardano.Types (AssetName, Mint)
+import Cardano.Types.AssetName (mkAssetName)
 import Cardano.Types.BigInt as CTBigInt
 import Cardano.Types.BigNum (BigNum)
 import Cardano.Types.BigNum as BigNum
@@ -49,6 +51,7 @@ import Contract.TxConstraints as Constraints
 import Contract.Value (Value)
 import Data.BigInt as Data
 import Data.BigInt as DataBigInt
+import Data.ByteArray (byteArrayFromAscii)
 import Data.Time.Duration (class Duration, fromDuration)
 import Effect.Ref (Ref)
 import Effect.Ref (read, write) as Ref
@@ -149,3 +152,8 @@ mkPosixTimeUnsafe =
     <<< CTBigInt.fromNumber
     <<< unwrap
     <<< fromDuration
+
+assetNameFromAsciiUnsafe :: String -> AssetName
+assetNameFromAsciiUnsafe =
+  unsafePartial fromJust
+    <<< (mkAssetName <=< byteArrayFromAscii)

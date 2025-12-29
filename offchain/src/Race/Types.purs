@@ -1,7 +1,9 @@
 module CardanoRacers.Race.Types
-  ( RaceDatum(ValueEscrow, RaceState)
+  ( RaceDatum(ValueEscrow, RaceState, TokenBin)
   , RaceParams(RaceParams)
-  , RaceRedeemer(MoveL2, AnnounceDistribution, Distribute, ClaimTTL)
+  , RaceRedeemer(MoveL2, DistributeRewards, ClaimTTL, CleanupUsedTokens)
+  , raceStateTokenName
+  , valueEscrowTokenName
   ) where
 
 import Prelude
@@ -11,6 +13,7 @@ import Cardano.Plutus.Types.Address (Address) as Plutus
 import Cardano.Plutus.Types.Map (Map) as Plutus
 import Cardano.Plutus.Types.Value (Value) as Plutus
 import Cardano.Types (AssetName, Ed25519KeyHash, ScriptHash)
+import CardanoRacers.Helpers (assetNameFromAsciiUnsafe)
 import Contract.PlutusData
   ( class FromData
   , class HasPlutusSchema
@@ -28,13 +31,13 @@ import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe)
 import Data.Newtype (class Newtype)
 import Data.Show.Generic (genericShow)
-import Data.Tuple.Nested (type (/\))
 
 -- RaceParams
 
 newtype RaceParams = RaceParams
-  { stateAssetClass :: ScriptHash /\ AssetName
+  { stateCurrencySymbol :: ScriptHash
   , totalRewardValue :: Plutus.Value
+  , participants :: Array Plutus.Address
   , delegates :: Array Ed25519KeyHash
   , escrowTtl :: POSIXTime
   }
@@ -50,10 +53,12 @@ instance
   HasPlutusSchema RaceParams
     ( "RaceParams"
         :=
-          ( "stateAssetClass"
-              := I (ScriptHash /\ AssetName)
+          ( "stateCurrencySymbol"
+              := I ScriptHash
               :+ "totalRewardValue"
               := I Plutus.Value
+              :+ "participants"
+              := I (Array Plutus.Address)
               :+ "delegates"
               := I (Array Ed25519KeyHash)
               :+ "escrowTtl"
@@ -77,6 +82,7 @@ data RaceDatum
   | RaceState
       { distribution :: Maybe (Plutus.Map Plutus.Address Plutus.Value)
       }
+  | TokenBin
 
 derive instance Generic RaceDatum _
 derive instance Eq RaceDatum
@@ -96,6 +102,9 @@ instance
               :+ PNil
           )
         @@ (S Z)
+        :+ "TokenBin"
+        := PNil
+        @@ (S (S Z))
         :+ PNil
     )
 
@@ -107,7 +116,7 @@ instance FromData RaceDatum where
 
 -- RaceRedeemer
 
-data RaceRedeemer = MoveL2 | AnnounceDistribution | Distribute | ClaimTTL
+data RaceRedeemer = MoveL2 | DistributeRewards | ClaimTTL | CleanupUsedTokens
 
 derive instance Generic RaceRedeemer _
 derive instance Eq RaceRedeemer
@@ -120,13 +129,13 @@ instance
     ( "MoveL2"
         := PNil
         @@ Z
-        :+ "AnnounceDistribution"
+        :+ "DistributeRewards"
         := PNil
         @@ (S Z)
-        :+ "Distribute"
+        :+ "ClaimTTL"
         := PNil
         @@ (S (S Z))
-        :+ "ClaimTTL"
+        :+ "CleanupUsedTokens"
         := PNil
         @@ (S (S (S Z)))
         :+ PNil
@@ -137,3 +146,9 @@ instance ToData RaceRedeemer where
 
 instance FromData RaceRedeemer where
   fromData = genericFromData
+
+raceStateTokenName :: AssetName
+raceStateTokenName = assetNameFromAsciiUnsafe "RACE_STATE"
+
+valueEscrowTokenName :: AssetName
+valueEscrowTokenName = assetNameFromAsciiUnsafe "VALUE_ESCROW"

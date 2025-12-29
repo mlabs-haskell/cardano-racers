@@ -118,13 +118,15 @@ collectRegistryScriptLeftovers raceHash rgp outputsToCollect = do
     assetName = Asset (fst (unwrap rgp).slotAssetClass)
       (snd (unwrap rgp).slotAssetClass)
 
-  (burnConstraint /\ burnLookups) <- burnRaceSlotTokenConstraints raceHash $
-    ( unsafePartial
-        $ fromJust
-        $ BigInt.fromString
-        $ BigNum.toString
-        $ valueOf assetName registryValueToBurn
-    )
+  (burnConstraint /\ burnLookups) <- burnRaceSlotTokenConstraints raceHash
+    [ unwrap slotTokenName /\
+        ( unsafePartial
+            $ fromJust
+            $ BigInt.fromString
+            $ BigNum.toString
+            $ valueOf assetName registryValueToBurn
+        )
+    ]
 
   let
     collectRedeemer = wrap $ toData Collect
@@ -256,7 +258,8 @@ initRace raceHash entryNitroFee totalSlots utxoCount = do
 
   (slotConstraints /\ slotLookups) <- mintRaceSlotTokenConstraints
     raceHash
-    (BigInt.fromInt totalSlots)
+    [ unwrap slotTokenName /\ BigInt.fromInt totalSlots
+    ]
 
   (authTxi /\ authTxo) <- withContract (liftedM "could not find any auth utxo")
     findAnyAuthUtxo
@@ -322,7 +325,8 @@ supplyRegistrySlots
   -> Racers TransactionHash
 supplyRegistrySlots raceHash rgp slotCount utxoCount = do
   (slotConstraints /\ slotLookups) <- mintRaceSlotTokenConstraints raceHash
-    (BigInt.fromInt slotCount)
+    [ unwrap slotTokenName /\ BigInt.fromInt slotCount
+    ]
   registryVHash <- (hash <<< unwrap) <$> mkRaceRegistryScript rgp
 
   let

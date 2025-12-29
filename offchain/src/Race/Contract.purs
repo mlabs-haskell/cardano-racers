@@ -6,19 +6,31 @@ module CardanoRacers.Race.Contract
 import Contract.Prelude
 
 import Cardano.Plutus.ApplyArgs (applyArgs)
+import Cardano.Plutus.Types.Address (Address) as Plutus
 import Cardano.Plutus.Types.Value (fromCardano) as Plutus.Value
 import Cardano.ToData (toData)
-import Cardano.Types (Ed25519KeyHash, PlutusScript, TransactionHash, Value)
+import Cardano.Types
+  ( AssetName
+  , Ed25519KeyHash
+  , PlutusScript
+  , TransactionHash
+  , Value
+  )
 import Cardano.Types.BigNum (one) as BigNum
 import Cardano.Types.PlutusScript (hash) as PlutusScript
 import Cardano.Types.Value (singleton) as Value
 import CardanoRacers.Helpers (mkPosixTimeUnsafe)
-import CardanoRacers.Race.Types (RaceDatum(ValueEscrow, RaceState), RaceParams)
+import CardanoRacers.Race.Types
+  ( RaceDatum(ValueEscrow, RaceState)
+  , RaceParams
+  , raceStateTokenName
+  , valueEscrowTokenName
+  )
 import CardanoRacers.RaceSlot.Contract
   ( mintRaceSlotTokenConstraints
   , mkRaceSlotPolicy
   )
-import CardanoRacers.RaceSlot.Types (RaceHash, slotTokenName)
+import CardanoRacers.RaceSlot.Types (RaceHash)
 import CardanoRacers.ScriptsFFI (raceScript)
 import Contract.Chain (currentTime)
 import Contract.Monad (Contract, liftContractM)
@@ -30,7 +42,6 @@ import Contract.TxConstraints (mustPayToScript) as Constraints
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head) as Array
 import Data.Bifunctor (lmap)
-import Data.BigInt (fromInt) as BigInt
 import Data.Time.Duration (Days(Days))
 import Effect.Exception (error)
 import Partial.Unsafe (unsafePartial)
@@ -39,13 +50,13 @@ import Racers (Racers)
 startRace
   :: RaceHash
   -> Value
+  -> Array Plutus.Address
   -> Array Ed25519KeyHash
   -> Racers
        { txHash :: TransactionHash
        , raceParams :: RaceParams
        }
-startRace raceHash totalRewardValue delegates = do
-  -- mint 2 state tokens 
+startRace raceHash totalRewardValue participants delegates = do
   slotPolicy <- mkRaceSlotPolicy raceHash
 
   slotPolicyHash <-
@@ -56,25 +67,35 @@ startRace raceHash totalRewardValue delegates = do
 
   (slotConstraints /\ slotLookups) <- mintRaceSlotTokenConstraints
     raceHash
-    (BigInt.fromInt 2)
-  --
+    [ raceStateTokenName /\ one
+    , valueEscrowTokenName /\ one
+    ]
 
   nowTime <- lift currentTime
 
   let
     raceParams :: RaceParams
     raceParams = wrap
-      { stateAssetClass: slotPolicyHash /\ unwrap slotTokenName
+      { stateCurrencySymbol: slotPolicyHash
       , totalRewardValue: Plutus.Value.fromCardano totalRewardValue
+      , participants
       , delegates
       , escrowTtl: nowTime + mkPosixTimeUnsafe (Days 2.0)
       }
 
   raceValidatorHash <- lift $ PlutusScript.hash <$> mkRaceValidator raceParams
   let
-    stateTokenValue :: Value
-    stateTokenValue =
-      Value.singleton slotPolicyHash (unwrap slotTokenName) BigNum.one
+    mkStateTokenValue :: AssetName -> Value
+    mkStateTokenValue tn = Value.singleton slotPolicyHash tn BigNum.one
+
+    raceStateTokenValue :: Value
+    raceStateTokenValue = mkStateTokenValue raceStateTokenName
+
+    valueEscrowTokenValue :: Value
+    valueEscrowTokenValue = mkStateTokenValue valueEscrowTokenName
+
+    escrowValue :: Value
+    escrowValue = unsafePartial $ totalRewardValue <> valueEscrowTokenValue
 
     -- TODO: ensure totalRewardValue comes from the treasury wallet?
     constraints :: TxConstraints
@@ -83,12 +104,12 @@ startRace raceHash totalRewardValue delegates = do
 
       , Constraints.mustPayToScript raceValidatorHash (toData ValueEscrow)
           DatumInline
-          (unsafePartial $ totalRewardValue <> stateTokenValue)
+          escrowValue
 
       , Constraints.mustPayToScript raceValidatorHash
           (toData $ RaceState { distribution: Nothing })
           DatumInline
-          stateTokenValue
+          raceStateTokenValue
       ]
 
     lookups :: ScriptLookups

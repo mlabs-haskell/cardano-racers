@@ -1915,18 +1915,6 @@ let
         installPhase = "ln -s $src $out";
       };
 
-    "validation" = pkgs.stdenv.mkDerivation {
-        name = "validation";
-        version = "v6.0.0";
-        src = pkgs.fetchgit {
-          url = "https://github.com/purescript/purescript-validation.git";
-          rev = "a3d9ec2176a7a808d70a01fa7e6f16d10e05429a";
-          sha256 = "0i11y3qqarp6gkj6af4x8idaiq9sva8ajykpdxbbgmb79vlfyrn1";
-        };
-        phases = "installPhase";
-        installPhase = "ln -s $src $out";
-      };
-
     "variant" = pkgs.stdenv.mkDerivation {
         name = "variant";
         version = "v8.0.0";

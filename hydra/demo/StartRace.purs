@@ -5,6 +5,7 @@ module CardanoRacers.Hydra.Demo.StartRace
 import Prelude
 
 import Cardano.AsCbor (decodeCbor, encodeCbor)
+import Cardano.Plutus.Types.Address (Address) as Plutus
 import Cardano.ToData (toData)
 import Cardano.Types (Ed25519KeyHash, TransactionHash, Value)
 import Cardano.Types.BigNum (fromInt) as BigNum
@@ -80,6 +81,7 @@ main = do
                 racersParams <- createRacersParams nonceOref
                 { txHash, raceParams } <- runRacers racersParams $ startRace raceHashFixture
                   totalRewardValueFixture
+                  participantsFixture
                   delegatesFixture
                 liftEffect $ log $ "startRace success: " <> show txHash
                 resp <- liftAff $ hostRace txHash raceParams
@@ -117,11 +119,15 @@ raceHashFixture = unsafePartial fromJust $ byteArrayFromAscii "TestRaceHash"
 totalRewardValueFixture :: Value
 totalRewardValueFixture = lovelaceValueOf $ BigNum.fromInt 7_000_000
 
+-- TODO: Add participants
+participantsFixture :: Array Plutus.Address
+participantsFixture = []
+
 delegatesFixture :: Array Ed25519KeyHash
 delegatesFixture =
   keyHashFromHex <$>
-    [ "82ea701357af39f89ae46fac8cd497b34f25e42bfed16137af9b97f3"
-    , "91b60190201ef3eb42a2f7276f64be28531f04b58d228c928a4942e3"
+    [ "0e0607203c2ab6f2f729e2317502277191c681283637d5ee6b2a9933"
+    , "35c92e61b4f915ce7615ea8b8ece661843e6bc5f591fe99036d388a9"
     ]
 
 keyHashFromHex :: String -> Ed25519KeyHash
