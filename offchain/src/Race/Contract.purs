@@ -37,6 +37,7 @@ import CardanoRacers.Race.Types
   ( RaceDatum(ValueEscrow, RaceState, TokenBin)
   , RaceParams
   , RaceRedeemer(DistributeRewards)
+  , RewardDistribution
   , raceStateTokenName
   , valueEscrowTokenName
   )
@@ -63,6 +64,7 @@ import Contract.TxConstraints
   ) as Constraints
 import Contract.Utxos (utxosAt)
 import Control.Monad.Error.Class (liftMaybe, throwError)
+import Control.Monad.Reader.Class (asks)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (find, head) as Array
 import Data.Bifunctor (lmap)
@@ -78,7 +80,8 @@ import Partial.Unsafe (unsafePartial)
 import Racers (Racers)
 
 startRace
-  :: RaceHash
+  :: Maybe RewardDistribution -- should only be set in tests
+  -> RaceHash
   -> Value
   -> Array Plutus.Address
   -> Array Ed25519KeyHash
@@ -86,7 +89,7 @@ startRace
        { txHash :: TransactionHash
        , raceParams :: RaceParams
        }
-startRace raceHash totalRewardValue participants delegates = do
+startRace distribution raceHash totalRewardValue participants delegates = do
   slotPolicy <- mkRaceSlotPolicy raceHash
 
   slotPolicyHash <-
@@ -113,7 +116,7 @@ startRace raceHash totalRewardValue participants delegates = do
       , escrowTtl: nowTime + mkPosixTimeUnsafe (Days 2.0)
       }
 
-  raceValidatorHash <- lift $ PlutusScript.hash <$> mkRaceValidator raceParams
+  raceValidatorHash <- PlutusScript.hash <$> mkRaceValidator raceParams
   let
     mkStateTokenValue :: AssetName -> Value
     mkStateTokenValue tn = Value.singleton slotPolicyHash tn BigNum.one
@@ -137,7 +140,7 @@ startRace raceHash totalRewardValue participants delegates = do
           escrowValue
 
       , Constraints.mustPayToScript raceValidatorHash
-          (toData $ RaceState { distribution: Nothing })
+          (toData $ RaceState { distribution })
           DatumInline
           raceStateTokenValue
       ]
@@ -159,7 +162,7 @@ distributeRewards raceParams = do
     racersStateTxOut <- queryRacersState
 
   network <- lift getNetworkId
-  raceValidator <- lift $ mkRaceValidator raceParams
+  raceValidator <- mkRaceValidator raceParams
   let
     stateCurrencySymbol = (unwrap raceParams).stateCurrencySymbol
     raceValidatorHash = PlutusScript.hash raceValidator
@@ -293,11 +296,14 @@ decodeRaceDatum txOut =
         Nothing -> Nothing
     Nothing -> Nothing
 
-mkRaceValidator :: RaceParams -> Contract PlutusScript
+mkRaceValidator :: RaceParams -> Racers PlutusScript
 mkRaceValidator params = do
-  v2script <- liftContractM "Could not decode applied script" do
+  rp <- asks _.params
+  v2script <- lift $ liftContractM "Could not decode applied script" do
     envelope <- decodeTextEnvelope raceScript
     plutusScriptFromEnvelope envelope
   appliedScript <- liftEither $ lmap (error <<< show) $ applyArgs v2script
-    $ [ toData params ]
+    [ toData rp
+    , toData params
+    ]
   pure appliedScript
