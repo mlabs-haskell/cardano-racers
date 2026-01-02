@@ -19,6 +19,7 @@ import Cardano.Types
   )
 import Cardano.Types.Address (mkPaymentAddress)
 import Cardano.Types.PlutusScript (hash) as PlutusScript
+import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Hydra.Lib.Transaction
   ( appendTxSignatures
   , reSignTransaction
@@ -67,6 +68,7 @@ import HydraSdk.Types
   , mkFullCommitRequest
   , mkSimpleCommitRequest
   )
+import Racers (runRacers)
 import URI.Port (toInt) as Port
 
 commitCollateralToHydra :: AppM TransactionHash
@@ -78,10 +80,10 @@ commitCollateralToHydra = do
     liftContract $ fixCommitTx tx [ PlutusV3 ]
   liftContract $ submit commitTx
 
-commitRaceUtxoToHydra :: Utxo -> RaceParams -> AppM TransactionHash
-commitRaceUtxoToHydra raceUtxo raceParams = do
+commitRaceUtxoToHydra :: Utxo -> RacersParams -> RaceParams -> AppM TransactionHash
+commitRaceUtxoToHydra raceUtxo rp raceParams = do
   { collateralUtxo, config: { hydraNodeStartupParams: { hydraNodeApiAddress, peers } } } <- ask
-  blueprintTx <- liftContract $ mkBlueprintTx raceParams raceUtxo collateralUtxo
+  blueprintTx <- liftContract $ mkBlueprintTx rp raceParams raceUtxo collateralUtxo
   let req = mkFullCommitRequest blueprintTx $ Map.fromFoldable [ raceUtxo, collateralUtxo ]
   commitTx <- do
     tx <- liftAff $ queryCommitTx req hydraNodeApiAddress
@@ -159,9 +161,9 @@ multiSignCommitTx peers commitTx pkh = do
     peers
   pure $ appendTxSignatures signatures commitTx
 
-mkBlueprintTx :: RaceParams -> Utxo -> Utxo -> Contract Transaction
-mkBlueprintTx raceParams raceUtxo collateralUtxo = do
-  raceValidator <- mkRaceValidator raceParams
+mkBlueprintTx :: RacersParams -> RaceParams -> Utxo -> Utxo -> Contract Transaction
+mkBlueprintTx rp raceParams raceUtxo collateralUtxo = do
+  raceValidator <- runRacers rp $ mkRaceValidator raceParams
   network <- getNetworkId
   let
     validatorHash = PlutusScript.hash raceValidator

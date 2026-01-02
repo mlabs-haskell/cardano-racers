@@ -10,6 +10,7 @@ import Cardano.ToData (toData)
 import Cardano.Types (Ed25519KeyHash, TransactionHash, Value)
 import Cardano.Types.BigNum (fromInt) as BigNum
 import Cardano.Types.Value (lovelaceValueOf)
+import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Hydra.Handlers.HostRace
   ( HostRaceRequest
   , HostRaceResponse
@@ -35,7 +36,7 @@ import Data.Codec.Argonaut.Record (record) as CAR
 import Data.Either (Either(Left, Right))
 import Data.Log.Level (LogLevel(Trace))
 import Data.Map (toUnfoldable) as Map
-import Data.Maybe (Maybe(Just), fromJust)
+import Data.Maybe (Maybe(Just, Nothing), fromJust)
 import Data.Newtype (wrap)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
@@ -79,12 +80,13 @@ main = do
                   liftContractM "Could not get first utxo" $ Array.head $
                     Map.toUnfoldable utxos
                 racersParams <- createRacersParams nonceOref
-                { txHash, raceParams } <- runRacers racersParams $ startRace raceHashFixture
-                  totalRewardValueFixture
-                  participantsFixture
-                  delegatesFixture
+                { txHash, raceParams } <-
+                  runRacers racersParams $
+                    startRace Nothing raceHashFixture totalRewardValueFixture
+                      participantsFixture
+                      delegatesFixture
                 liftEffect $ log $ "startRace success: " <> show txHash
-                resp <- liftAff $ hostRace txHash raceParams
+                resp <- liftAff $ hostRace txHash racersParams raceParams
                 liftEffect case resp of
                   Left httpError ->
                     throw $ "host request failed: " <> show httpError
@@ -98,8 +100,12 @@ main = do
     _ ->
       throw "invalid command-line arguments"
 
-hostRace :: TransactionHash -> RaceParams -> Aff (Either HttpError HostRaceResponse)
-hostRace startRaceTxHash raceParams =
+hostRace
+  :: TransactionHash
+  -> RacersParams
+  -> RaceParams
+  -> Aff (Either HttpError HostRaceResponse)
+hostRace startRaceTxHash racersParams raceParams =
   handleResponse hostRaceResponseCodec <$>
     postRequest
       { url: "http://127.0.0.1:7010/hostRace"
@@ -110,6 +116,7 @@ hostRace startRaceTxHash raceParams =
   reqBody :: HostRaceRequest
   reqBody =
     { raceOref: wrap { transactionId: startRaceTxHash, index: zero }
+    , racersParams
     , raceParams: encodeCbor $ toData raceParams
     }
 
