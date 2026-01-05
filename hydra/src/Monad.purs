@@ -2,25 +2,35 @@ module CardanoRacers.Hydra.Monad
   ( AppLogger
   , AppM(AppM)
   , AppState
+  , RaceData
   , appLogger
   , cleanupApp
   , getAppLauncher
   , getAppRunner
+  , getHydraUtxos
   , initApp
   , initContractEnv
   , launchApp
   , liftContract
+  , liftContractNullCosts
   , readHeadStatus
+  , readHydraSnapshot
+  , readRaceData
   , runApp
   , setHeadStatus
+  , setHydraSnapshot
+  , setRaceData
   ) where
 
 import Prelude
 
-import Cardano.Types (NetworkId(MainnetId, TestnetId))
+import Cardano.Types (NetworkId(MainnetId, TestnetId), PlutusScript, UtxoMap)
+import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Hydra.Config (AppConfig)
 import CardanoRacers.Hydra.Contracts.Collateral (getCollateralUtxo)
+import CardanoRacers.Hydra.Lib.Contract (runContractNullCosts)
 import CardanoRacers.Hydra.Types.Common (Utxo)
+import CardanoRacers.Race.Types (RaceParams)
 import Contract.Config
   ( ContractParams
   , PrivatePaymentKeySource(PrivatePaymentKeyFile)
@@ -35,13 +45,7 @@ import Contract.Config
   , emptyHooks
   , mkBlockfrostBackendParams
   )
-import Contract.Monad
-  ( Contract
-  , ContractEnv
-  , mkContractEnv
-  , runContractInEnv
-  , stopContractEnv
-  )
+import Contract.Monad (Contract, ContractEnv, mkContractEnv, runContractInEnv, stopContractEnv)
 import Control.Monad.Error.Class (class MonadError, class MonadThrow, liftMaybe, throwError)
 import Control.Monad.Logger.Class (class MonadLogger)
 import Control.Monad.Logger.Trans (LoggerT(LoggerT), runLoggerT)
@@ -58,7 +62,7 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Effect.Aff (Aff, launchAff, runAff_)
 import Effect.Aff.AVar (AVar)
-import Effect.Aff.AVar (new, read) as AVar
+import Effect.Aff.AVar (empty, new, put, read) as AVar
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Console (log)
@@ -67,7 +71,10 @@ import Effect.Exception (message) as Error
 import HydraSdk.Lib (modify) as AVar
 import HydraSdk.Types
   ( HydraHeadStatus(HeadStatus_Unknown)
+  , HydraSnapshot
   , QueryLayer(Blockfrost, CardanoNode)
+  , emptySnapshot
+  , toUtxoMap
   )
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (readTextFile)
@@ -97,6 +104,14 @@ type AppState =
   , contractEnv :: ContractEnv
   , collateralUtxo :: Utxo
   , headStatus :: AVar HydraHeadStatus
+  , race :: AVar RaceData
+  , snapshot :: AVar HydraSnapshot
+  }
+
+type RaceData =
+  { racersParams :: RacersParams
+  , raceParams :: RaceParams
+  , raceValidator :: PlutusScript
   }
 
 runApp :: forall (a :: Type). AppState -> AppLogger -> AppM a -> Aff a
@@ -140,6 +155,11 @@ liftContract contract = do
   { contractEnv } <- ask
   liftAff $ runContractInEnv contractEnv contract
 
+liftContractNullCosts :: forall (a :: Type). Contract a -> AppM a
+liftContractNullCosts contract = do
+  { contractEnv } <- ask
+  liftAff $ runContractNullCosts contractEnv contract
+
 appLogger :: AppLogger
 appLogger message = do
   { config: { logLevel } } <- ask
@@ -152,6 +172,23 @@ readHeadStatus = (liftAff <<< AVar.read) =<< asks _.headStatus
 
 setHeadStatus :: HydraHeadStatus -> AppM Unit
 setHeadStatus status = (void <<< AVar.modify (const (pure status))) =<< asks _.headStatus
+
+readRaceData :: AppM RaceData
+readRaceData = (liftAff <<< AVar.read) =<< asks _.race
+
+setRaceData :: RaceData -> AppM Unit
+setRaceData rd = (liftAff <<< AVar.put rd) =<< asks _.race
+
+readHydraSnapshot :: AppM HydraSnapshot
+readHydraSnapshot = (liftAff <<< AVar.read) =<< asks _.snapshot
+
+getHydraUtxos :: AppM UtxoMap
+getHydraUtxos = do
+  snapshot <- readHydraSnapshot
+  pure $ toUtxoMap (unwrap snapshot).utxo
+
+setHydraSnapshot :: HydraSnapshot -> AppM Unit
+setHydraSnapshot snapshot = (void <<< AVar.modify (const (pure snapshot))) =<< asks _.snapshot
 
 initApp :: AppConfig -> Aff AppState
 initApp config@{ hydraNodeStartupParams } = do
@@ -168,11 +205,15 @@ initApp config@{ hydraNodeStartupParams } = do
       config.logLevel
   collateralUtxo <- runContractInEnv contractEnv getCollateralUtxo
   headStatus <- AVar.new HeadStatus_Unknown
+  race <- AVar.empty
+  snapshot <- AVar.new emptySnapshot
   pure
     { config
     , contractEnv
     , collateralUtxo
     , headStatus
+    , race
+    , snapshot
     }
 
 initContractEnv :: FilePath -> FilePath -> LogLevel -> Aff ContractEnv

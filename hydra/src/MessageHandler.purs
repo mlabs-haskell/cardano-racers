@@ -4,16 +4,23 @@ module CardanoRacers.Hydra.MessageHandler
 
 import Prelude
 
+import Cardano.Plutus.Types.Map (empty) as Plutus.Map
+import CardanoRacers.Hydra.Contracts.AnnounceDistr (announceRewardDistribution)
 import CardanoRacers.Hydra.Contracts.Commit (commitCollateralToHydra)
-import CardanoRacers.Hydra.Monad (AppM)
+import CardanoRacers.Hydra.Lib.Json (printJsonUsingCodec)
+import CardanoRacers.Hydra.Monad (AppM, setHydraSnapshot)
 import Contract.Log (logInfo', logWarn')
 import Control.Monad.Error.Class (try)
 import Data.Either (Either(Left, Right))
+import Data.Maybe (fromMaybe)
+import Data.Newtype (unwrap, wrap)
 import Effect.Class (liftEffect)
 import HydraSdk.NodeApi (HydraNodeApiWebSocket)
 import HydraSdk.Types
   ( HydraHeadStatus(HeadStatus_Idle)
-  , HydraNodeApi_InMessage(Greetings, Committed)
+  , HydraNodeApi_InMessage(Greetings, Committed, HeadIsOpen, SnapshotConfirmed)
+  , HydraSnapshot
+  , hydraSnapshotCodec
   )
 
 messageHandler
@@ -25,7 +32,12 @@ messageHandler ws =
     Left _rawMessage -> pure unit
     Right message ->
       case message of
-        Greetings { headStatus } ->
+        Greetings { headStatus, snapshotUtxo } -> do
+          setHydraSnapshot $ wrap
+            { snapshotNumber: zero -- FIXME: Should `Greetings` message include snapshot number?
+            , utxo: fromMaybe mempty snapshotUtxo
+            , confirmed: mempty
+            }
           -- TODO: ensure only one Head member calls initHead
           when (headStatus == HeadStatus_Idle) $
             liftEffect ws.initHead
@@ -39,4 +51,24 @@ messageHandler ws =
               Right txHash ->
                 logInfo' $ "Successfully commited collateral: "
                   <> show txHash
+        HeadIsOpen { utxo } -> do
+          setAndLogHydraSnapshot $ wrap
+            { snapshotNumber: zero
+            , utxo
+            , confirmed: mempty
+            }
+          -- FIXME: remove later
+          -- Submitting an empty reward distribution once the Head is open,
+          -- for testing purposes
+          announceRewardDistribution ws Plutus.Map.empty
+        SnapshotConfirmed { snapshot } -> do
+          setAndLogHydraSnapshot snapshot
+          when ((unwrap snapshot).snapshotNumber == 1) do
+            liftEffect ws.fanout
         _ -> pure unit
+
+setAndLogHydraSnapshot :: HydraSnapshot -> AppM Unit
+setAndLogHydraSnapshot snapshot = do
+  setHydraSnapshot snapshot
+  logInfo' $ "New confirmed snapshot: " <> printJsonUsingCodec hydraSnapshotCodec
+    snapshot

@@ -13,6 +13,7 @@ import Cardano.Types
   ( Credential(ScriptHashCredential)
   , Ed25519KeyHash
   , Language(PlutusV2, PlutusV3)
+  , PlutusScript
   , RedeemerDatum
   , Transaction
   , TransactionHash
@@ -80,10 +81,18 @@ commitCollateralToHydra = do
     liftContract $ fixCommitTx tx [ PlutusV3 ]
   liftContract $ submit commitTx
 
-commitRaceUtxoToHydra :: Utxo -> RacersParams -> RaceParams -> AppM TransactionHash
+commitRaceUtxoToHydra
+  :: Utxo
+  -> RacersParams
+  -> RaceParams
+  -> AppM
+       { txHash :: TransactionHash
+       , raceValidator :: PlutusScript
+       }
 commitRaceUtxoToHydra raceUtxo rp raceParams = do
   { collateralUtxo, config: { hydraNodeStartupParams: { hydraNodeApiAddress, peers } } } <- ask
-  blueprintTx <- liftContract $ mkBlueprintTx rp raceParams raceUtxo collateralUtxo
+  { tx: blueprintTx, raceValidator } <- liftContract $ mkBlueprintTx rp raceParams raceUtxo
+    collateralUtxo
   let req = mkFullCommitRequest blueprintTx $ Map.fromFoldable [ raceUtxo, collateralUtxo ]
   commitTx <- do
     tx <- liftAff $ queryCommitTx req hydraNodeApiAddress
@@ -92,7 +101,8 @@ commitRaceUtxoToHydra raceUtxo rp raceParams = do
     liftMaybe (error "commitRaceUtxoToHydra: could not get own pkh") =<<
       liftContract ownPaymentPubKeyHash
   signedCommitTx <- liftAff $ multiSignCommitTx peers commitTx $ unwrap pkh
-  liftContract $ submit signedCommitTx
+  txHash <- liftContract $ submit signedCommitTx
+  pure { txHash, raceValidator }
 
 queryCommitTx :: HydraCommitRequest -> HostPort -> Aff Transaction
 queryCommitTx req hydraNodeApiAddress = do
@@ -161,7 +171,15 @@ multiSignCommitTx peers commitTx pkh = do
     peers
   pure $ appendTxSignatures signatures commitTx
 
-mkBlueprintTx :: RacersParams -> RaceParams -> Utxo -> Utxo -> Contract Transaction
+mkBlueprintTx
+  :: RacersParams
+  -> RaceParams
+  -> Utxo
+  -> Utxo
+  -> Contract
+       { tx :: Transaction
+       , raceValidator :: PlutusScript
+       }
 mkBlueprintTx rp raceParams raceUtxo collateralUtxo = do
   raceValidator <- runRacers rp $ mkRaceValidator raceParams
   network <- getNetworkId
@@ -195,4 +213,4 @@ mkBlueprintTx rp raceParams raceUtxo collateralUtxo = do
       ]
 
   blueprintTx /\ _usedUtxos <- mkUnbalancedTx lookups constraints
-  pure blueprintTx
+  pure { tx: blueprintTx, raceValidator }

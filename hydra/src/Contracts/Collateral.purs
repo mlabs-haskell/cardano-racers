@@ -1,5 +1,6 @@
 module CardanoRacers.Hydra.Contracts.Collateral
   ( getCollateralUtxo
+  , isCollateralTxOut
   ) where
 
 import Contract.Prelude

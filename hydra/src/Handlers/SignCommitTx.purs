@@ -1,6 +1,5 @@
 module CardanoRacers.Hydra.Handlers.SignCommitTx
-  ( CommitTxSignature
-  , SignCommitTxError
+  ( SignCommitTxError
       ( CommitTxDecodingFailed
       , CommitTxSigningFailed
       )
@@ -17,22 +16,19 @@ import Prelude
 
 import Cardano.Types (Ed25519KeyHash, Transaction, Vkeywitness)
 import CardanoRacers.Hydra.Codec (vkeyWitnessCodec)
-import CardanoRacers.Hydra.Lib.Transaction (txSignatures)
+import CardanoRacers.Hydra.Lib.Transaction (signTxReturnSignature)
 import CardanoRacers.Hydra.Monad (AppM, liftContract)
 import CardanoRacers.Hydra.Types.ServerResponse
   ( ServerResponse(ServerResponseError, ServerResponseSuccess)
   , respCreatedOrBadRequest
   , serverResponseCodec
   )
-import Contract.Monad (Contract)
-import Contract.Transaction (signTransaction)
-import Data.Array (difference) as Array
 import Data.Codec.Argonaut (JsonCodec, object, printJsonDecodeError, string) as CA
 import Data.Codec.Argonaut.Record (record) as CAR
 import Data.Codec.Argonaut.Sum (sum) as CAS
 import Data.Either (Either(Left, Right))
 import Data.Generic.Rep (class Generic)
-import Data.Maybe (Maybe(Just, Nothing), maybe)
+import Data.Maybe (maybe)
 import Data.Show.Generic (genericShow)
 import HTTPure (Response) as HTTPure
 import HydraSdk.Lib (caDecodeString, ed25519KeyHashCodec, txCodec)
@@ -49,9 +45,7 @@ signCommitTxRequestPayloadCodec =
     , commitLeader: ed25519KeyHashCodec
     }
 
-type CommitTxSignature = Vkeywitness
-
-type SignCommitTxResponse = ServerResponse CommitTxSignature SignCommitTxError
+type SignCommitTxResponse = ServerResponse Vkeywitness SignCommitTxError
 
 signCommitTxResponseCodec :: CA.JsonCodec SignCommitTxResponse
 signCommitTxResponseCodec = serverResponseCodec vkeyWitnessCodec signCommitTxErrorCodec
@@ -62,7 +56,7 @@ signCommitTxHandler =
     <=< signCommitTxHandlerImpl
 
 signCommitTxHandlerImpl :: String -> AppM SignCommitTxResponse
-signCommitTxHandlerImpl bodyStr = do
+signCommitTxHandlerImpl bodyStr =
   case caDecodeString signCommitTxRequestPayloadCodec bodyStr of
     Left decodeErr ->
       pure $ ServerResponseError $ CommitTxDecodingFailed $
@@ -71,13 +65,6 @@ signCommitTxHandlerImpl bodyStr = do
       -- TODO: validation
       maybe (ServerResponseError CommitTxSigningFailed) ServerResponseSuccess <$>
         liftContract (signTxReturnSignature commitTx)
-
-signTxReturnSignature :: Transaction -> Contract (Maybe CommitTxSignature)
-signTxReturnSignature tx =
-  signTransaction tx <#> \signedTx ->
-    case Array.difference (txSignatures signedTx) (txSignatures tx) of
-      [ signature ] -> Just signature
-      _ -> Nothing
 
 ----------------------------------------------------------------------
 -- SignCommitTxError
