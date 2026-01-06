@@ -11,14 +11,15 @@ import CardanoRacers.Hydra.Lib.Json (printJsonUsingCodec)
 import CardanoRacers.Hydra.Monad (AppM, setHydraSnapshot)
 import Contract.Log (logInfo', logWarn')
 import Control.Monad.Error.Class (try)
+import Control.Monad.Reader.Class (ask)
 import Data.Either (Either(Left, Right))
 import Data.Maybe (fromMaybe)
-import Data.Newtype (unwrap, wrap)
+import Data.Newtype (wrap, unwrap)
 import Effect.Class (liftEffect)
 import HydraSdk.NodeApi (HydraNodeApiWebSocket)
 import HydraSdk.Types
   ( HydraHeadStatus(HeadStatus_Idle)
-  , HydraNodeApi_InMessage(Greetings, Committed, HeadIsOpen, SnapshotConfirmed)
+  , HydraNodeApi_InMessage(Greetings, Committed, HeadIsOpen, SnapshotConfirmed, ReadyToFanout)
   , HydraSnapshot
   , hydraSnapshotCodec
   )
@@ -27,8 +28,9 @@ messageHandler
   :: HydraNodeApiWebSocket AppM
   -> Either String HydraNodeApi_InMessage
   -> AppM Unit
-messageHandler ws =
-  case _ of
+messageHandler ws msg = do
+  { config: { isHeadLeader } } <- ask
+  case msg of
     Left _rawMessage -> pure unit
     Right message ->
       case message of
@@ -38,19 +40,19 @@ messageHandler ws =
             , utxo: fromMaybe mempty snapshotUtxo
             , confirmed: mempty
             }
-          -- TODO: ensure only one Head member calls initHead
-          when (headStatus == HeadStatus_Idle) $
+          when (isHeadLeader && headStatus == HeadStatus_Idle) $
             liftEffect ws.initHead
         Committed _ ->
           -- TODO: prevent double-committing, introduce "committed" flag / barrier
-          try commitCollateralToHydra >>=
-            case _ of
-              Left err ->
-                logWarn' $ "Could not commit collateral. Already committed? Error: "
-                  <> show err
-              Right txHash ->
-                logInfo' $ "Successfully commited collateral: "
-                  <> show txHash
+          unless isHeadLeader do
+            try commitCollateralToHydra >>=
+              case _ of
+                Left err ->
+                  logWarn' $ "Could not commit collateral. Already committed? Error: "
+                    <> show err
+                Right txHash ->
+                  logInfo' $ "Successfully commited collateral: "
+                    <> show txHash
         HeadIsOpen { utxo } -> do
           setAndLogHydraSnapshot $ wrap
             { snapshotNumber: zero
@@ -60,11 +62,14 @@ messageHandler ws =
           -- FIXME: remove later
           -- Submitting an empty reward distribution once the Head is open,
           -- for testing purposes
-          announceRewardDistribution ws Plutus.Map.empty
+          when isHeadLeader do
+            announceRewardDistribution ws Plutus.Map.empty
         SnapshotConfirmed { snapshot } -> do
           setAndLogHydraSnapshot snapshot
-          when ((unwrap snapshot).snapshotNumber == 1) do
-            liftEffect ws.fanout
+          when (isHeadLeader && (unwrap snapshot).snapshotNumber == 1) do
+            liftEffect ws.closeHead
+        ReadyToFanout _ ->
+          when isHeadLeader $ liftEffect ws.fanout
         _ -> pure unit
 
 setAndLogHydraSnapshot :: HydraSnapshot -> AppM Unit

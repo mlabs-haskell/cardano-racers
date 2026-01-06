@@ -28,6 +28,7 @@ import Cardano.Types (NetworkId(MainnetId, TestnetId), PlutusScript, UtxoMap)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Hydra.Config (AppConfig)
 import CardanoRacers.Hydra.Contracts.Collateral (getCollateralUtxo)
+import CardanoRacers.Hydra.Lib.AVar (readNow) as AVar
 import CardanoRacers.Hydra.Lib.Contract (runContractNullCosts)
 import CardanoRacers.Hydra.Types.Common (Utxo)
 import CardanoRacers.Race.Types (RaceParams)
@@ -62,7 +63,7 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Effect.Aff (Aff, launchAff, runAff_)
 import Effect.Aff.AVar (AVar)
-import Effect.Aff.AVar (empty, new, put, read) as AVar
+import Effect.Aff.AVar (new) as AVar
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Console (log)
@@ -104,7 +105,7 @@ type AppState =
   , contractEnv :: ContractEnv
   , collateralUtxo :: Utxo
   , headStatus :: AVar HydraHeadStatus
-  , race :: AVar RaceData
+  , race :: AVar (Maybe RaceData)
   , snapshot :: AVar HydraSnapshot
   }
 
@@ -168,19 +169,30 @@ appLogger message = do
     liftEffect $ log messageFormatted
 
 readHeadStatus :: AppM HydraHeadStatus
-readHeadStatus = (liftAff <<< AVar.read) =<< asks _.headStatus
+readHeadStatus =
+  AVar.readNow (error "readHeadStatus: empty avar")
+    =<< asks _.headStatus
 
 setHeadStatus :: HydraHeadStatus -> AppM Unit
-setHeadStatus status = (void <<< AVar.modify (const (pure status))) =<< asks _.headStatus
+setHeadStatus status =
+  (void <<< AVar.modify (const (pure status)))
+    =<< asks _.headStatus
 
 readRaceData :: AppM RaceData
-readRaceData = (liftAff <<< AVar.read) =<< asks _.race
+readRaceData =
+  liftMaybe (error "readRaceData: Nothing found")
+    =<< AVar.readNow (error "readRaceData: empty avar")
+    =<< asks _.race
 
 setRaceData :: RaceData -> AppM Unit
-setRaceData rd = (liftAff <<< AVar.put rd) =<< asks _.race
+setRaceData rd =
+  (void <<< AVar.modify (const (pure $ Just rd)))
+    =<< asks _.race
 
 readHydraSnapshot :: AppM HydraSnapshot
-readHydraSnapshot = (liftAff <<< AVar.read) =<< asks _.snapshot
+readHydraSnapshot =
+  AVar.readNow (error "readHydraSnapshot: empty avar")
+    =<< asks _.snapshot
 
 getHydraUtxos :: AppM UtxoMap
 getHydraUtxos = do
@@ -205,7 +217,7 @@ initApp config@{ hydraNodeStartupParams } = do
       config.logLevel
   collateralUtxo <- runContractInEnv contractEnv getCollateralUtxo
   headStatus <- AVar.new HeadStatus_Unknown
-  race <- AVar.empty
+  race <- AVar.new Nothing
   snapshot <- AVar.new emptySnapshot
   pure
     { config

@@ -5,6 +5,7 @@ module CardanoRacers.Hydra.Contracts.AnnounceDistr
 
 import Prelude
 
+import Cardano.AsCbor (encodeCbor)
 import Cardano.Provider (ServerConfig)
 import Cardano.Provider.ServerConfig (mkHttpUrl)
 import Cardano.ToData (toData)
@@ -21,6 +22,7 @@ import Cardano.Types
   )
 import Cardano.Types.Address (mkPaymentAddress)
 import Cardano.Types.PlutusScript (hash) as PlutusScript
+import Cardano.Types.Transaction (hash) as Transaction
 import CardanoRacers.Hydra.Contracts.Collateral (isCollateralTxOut)
 import CardanoRacers.Hydra.Lib.Transaction (appendTxSignatures, setExUnitsToMax, setTxValid)
 import CardanoRacers.Hydra.Monad
@@ -45,10 +47,13 @@ import CardanoRacers.Race.Types
 import Contract.Address (getNetworkId)
 import Contract.BalanceTxConstraints (BalancerConstraints)
 import Contract.BalanceTxConstraints
-  ( mustUseAdditionalUtxos
+  ( mustSendChangeToAddress
+  , mustUseAdditionalUtxos
   , mustUseCollateralUtxos
   , mustUseUtxosAtAddresses
   ) as BalancerConstraints
+import Contract.CborBytes (cborBytesToHex)
+import Contract.Log (logInfo')
 import Contract.Monad (Contract, liftedM)
 import Contract.Prelude (mconcat)
 import Contract.ScriptLookups (ScriptLookups)
@@ -86,6 +91,7 @@ announceRewardDistribution ws distr = do
   peerSignedTx <- liftAff $ multiSignAnnounceDistrTx peers tx ownAddress
   signedTx <- liftContract $ signTransaction peerSignedTx
   liftEffect $ ws.submitTxL2 signedTx
+  logInfo' "Successfully signed and submitted AnnounceRewardDistribution Tx"
 
 multiSignAnnounceDistrTx
   :: forall (r :: Row Type)
@@ -112,10 +118,10 @@ multiSignAnnounceDistrTx peers tx collateralAddress = do
         case resp of
           ServerResponseSuccess signature ->
             pure signature
-          ServerResponseError signCommitTxErr ->
+          ServerResponseError err ->
             throwError $ error $
               "multiSignAnnounceDistrTx: failed to get signature from peer: " <>
-                show signCommitTxErr
+                show err
     )
     peers
   pure $ appendTxSignatures signatures tx
@@ -124,9 +130,12 @@ mkAnnounceRewardDistributionTx :: Address -> RewardDistribution -> AppM Transact
 mkAnnounceRewardDistributionTx collateralAddr distr = do
   snapshotUtxos <- getHydraUtxos
   raceData <- readRaceData
-  liftContractNullCosts $ announceRewardDistributionContract snapshotUtxos collateralAddr
+  tx <- liftContractNullCosts $ announceRewardDistributionContract snapshotUtxos collateralAddr
     raceData
     distr
+  logInfo' $ "Successfully built AnnounceRewardDistribution Tx with hash: " <>
+    cborBytesToHex (encodeCbor $ Transaction.hash tx)
+  pure tx
 
 announceRewardDistributionContract
   :: UtxoMap
@@ -163,6 +172,7 @@ announceRewardDistributionContract snapshotUtxos collateralAddr raceData distr =
       [ BalancerConstraints.mustUseUtxosAtAddresses mempty
       , BalancerConstraints.mustUseCollateralUtxos $ Map.fromFoldable [ collateralUtxo ]
       , BalancerConstraints.mustUseAdditionalUtxos utxos
+      , BalancerConstraints.mustSendChangeToAddress collateralAddr
       ]
 
     constraints :: TxConstraints

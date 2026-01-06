@@ -5,7 +5,7 @@ module CardanoRacers.Hydra.Contracts.Commit
 
 import Prelude
 
-import Cardano.AsCbor (decodeCbor)
+import Cardano.AsCbor (decodeCbor, encodeCbor)
 import Cardano.Provider (ServerConfig)
 import Cardano.Provider.ServerConfig (mkHttpUrl)
 import Cardano.ToData (toData)
@@ -100,7 +100,7 @@ commitRaceUtxoToHydra raceUtxo rp raceParams = do
   pkh <-
     liftMaybe (error "commitRaceUtxoToHydra: could not get own pkh") =<<
       liftContract ownPaymentPubKeyHash
-  signedCommitTx <- liftAff $ multiSignCommitTx peers commitTx $ unwrap pkh
+  signedCommitTx <- liftAff $ multiSignCommitTx peers commitTx (unwrap pkh) rp raceParams
   txHash <- liftContract $ submit signedCommitTx
   pure { txHash, raceValidator }
 
@@ -145,14 +145,18 @@ multiSignCommitTx
    . Array { httpServer :: ServerConfig | r }
   -> Transaction
   -> Ed25519KeyHash
+  -> RacersParams
+  -> RaceParams
   -> Aff Transaction
-multiSignCommitTx peers commitTx pkh = do
+multiSignCommitTx peers commitTx pkh racersParams raceParams = do
   signatures <- parTraverse
     ( \{ httpServer } -> do
         eiResp <-
           signCommitTxRequest (mkHttpUrl httpServer)
             { commitTx
             , commitLeader: pkh
+            , racersParams
+            , raceParams: encodeCbor $ toData raceParams
             }
         resp <-
           either
