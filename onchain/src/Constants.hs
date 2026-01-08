@@ -4,6 +4,7 @@ module Constants (
   raceStateTokenName,
   slotTokenName,
   valueEscrowTokenName,
+  hydraGroupTokenName,
  ) where
 
 import Plutus.V2.Ledger.Api (TokenName (TokenName))
@@ -22,3 +23,6 @@ raceStateTokenName = TokenName "RACE_STATE"
 
 valueEscrowTokenName :: TokenName
 valueEscrowTokenName = TokenName "VALUE_ESCROW"
+
+hydraGroupTokenName :: TokenName
+hydraGroupTokenName = TokenName "HYDRA_GROUP"
