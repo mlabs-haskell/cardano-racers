@@ -1,5 +1,8 @@
 module CardanoRacers.HydraGroup.Contract
-  ( disbandHydraGroup
+  ( HydraGroupRegistryEntry
+  , RegisterHydraGroupResult
+  , disbandHydraGroup
+  , findHydraGroupById
   , queryHydraGroups
   , registerHydraGroup
   ) where
@@ -20,6 +23,7 @@ import Cardano.Types
   , TransactionHash
   , TransactionInput
   , TransactionOutput
+  , UtxoMap
   , Value
   )
 import Cardano.Types.Address (mkPaymentAddress)
@@ -52,22 +56,78 @@ import Contract.TxConstraints
 import Contract.Utxos (getUtxo, utxosAt)
 import Contract.Wallet (getWalletUtxos, ownPaymentPubKeyHash)
 import Control.Monad.Error.Class (liftMaybe, throwError)
-import Data.Array (catMaybes, elem, head) as Array
+import Data.Array (catMaybes, elem, head, length) as Array
 import Data.Bifunctor (lmap)
 import Data.Map (fromFoldable, singleton, toUnfoldable) as Map
 import Effect.Exception (error)
 
+type HydraGroupRegistryEntry =
+  { oref :: TransactionInput
+  , txOut :: TransactionOutput
+  , groupInfo :: HydraGroupInfo
+  }
+
+type RegisterHydraGroupResult =
+  { txHash :: TransactionHash
+  , groupId :: ScriptHash
+  }
+
+findHydraGroupById :: ScriptHash -> Contract (Maybe HydraGroupRegistryEntry)
+findHydraGroupById groupId = do
+  { utxos, registryValidatorHash } <- queryHydraGroupRegistryUtxos
+  results <- Array.catMaybes <$> traverse
+    ( \(oref /\ txOut) ->
+        getValidHydraGroupInfo registryValidatorHash txOut (Just groupId) <#>
+          \groupInfo ->
+            { oref, txOut, groupInfo: _ } <$> groupInfo
+    )
+    (Map.toUnfoldable utxos)
+  case results of
+    [ entry ] -> pure $ Just entry
+    [] -> pure Nothing
+    _ ->
+      throwError $ error $ "findHydraGroupById: unexpected number of results: "
+        <> show (Array.length results)
+        <> ", expected 0 or 1"
+
 -- NOTE: this query can be quite expensive when there are many entries locked
 -- at the registry validator
-queryHydraGroups
-  :: Contract
-       ( Array
-           { oref :: TransactionInput
-           , txOut :: TransactionOutput
-           , groupInfo :: HydraGroupInfo
-           }
-       )
+queryHydraGroups :: Contract (Array HydraGroupRegistryEntry)
 queryHydraGroups = do
+  { utxos, registryValidatorHash } <- queryHydraGroupRegistryUtxos
+  Array.catMaybes <$> traverse
+    ( \(oref /\ txOut) ->
+        getValidHydraGroupInfo registryValidatorHash txOut Nothing <#>
+          \groupInfo ->
+            { oref, txOut, groupInfo: _ } <$> groupInfo
+    )
+    (Map.toUnfoldable utxos)
+
+getValidHydraGroupInfo
+  :: ScriptHash
+  -> TransactionOutput
+  -> Maybe ScriptHash
+  -> Contract (Maybe HydraGroupInfo)
+getValidHydraGroupInfo registryValidatorHash txOut mGroupId =
+  case decodeHydraGroupInfoDatum txOut of
+    Just groupInfo@(HydraGroupInfo groupInfoRec)
+      | maybe true (eq groupInfoRec.hydraGroupUniqueId) mGroupId -> do
+          mp <- mkHydraGroupPolicy registryValidatorHash
+            groupInfoRec.hydraGroupNonceOref
+          let
+            mpHash = PlutusScript.hash mp
+          pure $
+            if groupInfoRec.hydraGroupUniqueId == mpHash then Just groupInfo
+            else Nothing
+    _ ->
+      pure Nothing
+
+queryHydraGroupRegistryUtxos
+  :: Contract
+       { utxos :: UtxoMap
+       , registryValidatorHash :: ScriptHash
+       }
+queryHydraGroupRegistryUtxos = do
   network <- getNetworkId
   registryValidator <- mkHydraGroupRegistryValidator
   let
@@ -80,34 +140,16 @@ queryHydraGroups = do
   -- TODO: This utxosAt call can (and will) become very expensive.
   -- Use pagination.
   utxos <- utxosAt registryAddr
-  Array.catMaybes <$> traverse
-    ( \(oref /\ txOut) ->
-        getValidGroupInfo registryValidatorHash txOut <#> \groupInfo ->
-          { oref, txOut, groupInfo: _ } <$> groupInfo
-    )
-    (Map.toUnfoldable utxos)
-  where
-  getValidGroupInfo
-    :: ScriptHash
-    -> TransactionOutput
-    -> Contract (Maybe HydraGroupInfo)
-  getValidGroupInfo registryValidatorHash txOut =
-    case decodeHydraGroupInfoDatum txOut of
-      Just groupInfo@(HydraGroupInfo groupInfoRec) -> do
-        mp <- mkHydraGroupPolicy registryValidatorHash
-          groupInfoRec.hydraGroupNonceOref
-        let mpHash = PlutusScript.hash mp
-        pure $
-          if groupInfoRec.hydraGroupUniqueId == mpHash then Just groupInfo
-          else Nothing
-      Nothing ->
-        pure Nothing
+  pure
+    { utxos
+    , registryValidatorHash
+    }
 
 registerHydraGroup
   :: Array Ed25519KeyHash
   -> Array String
   -> String
-  -> Contract TransactionHash
+  -> Contract RegisterHydraGroupResult
 registerHydraGroup masterKeys httpServers metadata = do
   ownPkh <- checkMasterKeys masterKeys
 
@@ -159,7 +201,10 @@ registerHydraGroup masterKeys httpServers metadata = do
 
   txHash <- submitTxFromConstraints lookups constraints
   awaitTxConfirmed txHash
-  pure txHash
+  pure
+    { txHash
+    , groupId
+    }
 
 disbandHydraGroup :: TransactionInput -> Contract TransactionHash
 disbandHydraGroup registryOref = do

@@ -7,7 +7,7 @@ import Prelude
 import Cardano.AsCbor (decodeCbor, encodeCbor)
 import Cardano.Plutus.Types.Address (Address) as Plutus
 import Cardano.ToData (toData)
-import Cardano.Types (Ed25519KeyHash, TransactionHash, Value)
+import Cardano.Types (Ed25519KeyHash, ScriptHash, TransactionHash, Value)
 import Cardano.Types.BigNum (fromInt) as BigNum
 import Cardano.Types.Value (lovelaceValueOf)
 import CardanoRacers.Common.Types (RacersParams)
@@ -22,14 +22,20 @@ import CardanoRacers.Hydra.Services.Utils (handleResponse, postRequest)
 import CardanoRacers.Hydra.Types.ServerResponse
   ( ServerResponse(ServerResponseError, ServerResponseSuccess)
   )
+import CardanoRacers.HydraGroup.Contract (disbandHydraGroup, findHydraGroupById)
+import CardanoRacers.HydraGroup.Contract (registerHydraGroup) as HydraGroup
+import CardanoRacers.HydraGroup.Types (HydraGroupInfo)
 import CardanoRacers.Nitro.Helpers (createRacersParams)
 import CardanoRacers.Race.Contract (startRace)
 import CardanoRacers.Race.Types (RaceParams)
 import CardanoRacers.RaceSlot.Types (RaceHash)
 import Contract.CborBytes (hexToCborBytes)
-import Contract.Monad (liftContractM, liftedM, runContractInEnv)
-import Contract.Wallet (getWalletUtxos)
-import Data.Array (head) as Array
+import Contract.Monad (Contract, liftContractM, liftedM, runContractInEnv)
+import Contract.Wallet (getWalletUtxos, ownPaymentPubKeyHash)
+import Control.Monad.Error.Class (liftMaybe)
+import Ctl.Internal.Contract.AwaitTxConfirmed (awaitTxConfirmed)
+import Ctl.Internal.Helpers ((<</>>))
+import Data.Array (head, singleton) as Array
 import Data.ByteArray (byteArrayFromAscii)
 import Data.Codec.Argonaut (JsonCodec, encode, object, printJsonDecodeError, string) as CA
 import Data.Codec.Argonaut.Record (record) as CAR
@@ -37,14 +43,14 @@ import Data.Either (Either(Left, Right))
 import Data.Log.Level (LogLevel(Trace))
 import Data.Map (toUnfoldable) as Map
 import Data.Maybe (Maybe(Just, Nothing), fromJust)
-import Data.Newtype (wrap)
+import Data.Newtype (unwrap, wrap)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
-import Effect.Aff (Aff, launchAff_)
+import Effect.Aff (launchAff_)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
-import Effect.Exception (throw)
+import Effect.Exception (error, throw)
 import HydraSdk.Lib (caDecodeFile)
 import HydraSdk.Types (HttpError)
 import Node.Path (FilePath)
@@ -75,18 +81,35 @@ main = do
             launchAff_ do
               contractEnv <- initContractEnv cfg.blockfrostApiKeyFile cfg.signingKeyFile Trace
               runContractInEnv contractEnv do
+                -- Register Hydra group
+                groupId <- registerHydraGroup
+                liftEffect $ log $ "Registered new Hydra group with ID: " <> show groupId
+
+                -- Create RacersParams
                 utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
                 (nonceOref /\ _) <-
                   liftContractM "Could not get first utxo" $ Array.head $
                     Map.toUnfoldable utxos
                 racersParams <- createRacersParams nonceOref
+
+                -- Start race
                 { txHash, raceParams } <-
                   runRacers racersParams $
                     startRace Nothing raceHashFixture totalRewardValueFixture
                       participantsFixture
                       delegatesFixture
                 liftEffect $ log $ "startRace success: " <> show txHash
-                resp <- liftAff $ hostRace txHash racersParams raceParams
+
+                -- Discover Hydra group
+                groupEntry@{ groupInfo } <- liftedM "Could not find Hydra group by ID" $
+                  findHydraGroupById groupId
+                liftEffect $ log $ "Found valid Hydra group with ID: "
+                  <> show groupId
+                  <> ", group info: "
+                  <> show groupInfo
+
+                -- Host L2 race
+                resp <- hostRace groupInfo txHash racersParams raceParams
                 liftEffect case resp of
                   Left httpError ->
                     throw $ "host request failed: " <> show httpError
@@ -94,21 +117,42 @@ main = do
                     throw $ "could not host race: " <> show hostRaceError
                   Right (ServerResponseSuccess { commitTxHash }) ->
                     log $ "hostRace success: " <> show commitTxHash
+
+                -- Disband Hydra group
+                disbandTxHash <- disbandHydraGroup groupEntry.oref
+                liftEffect $ log $ "Successfully disbanded Hydra group with ID: "
+                  <> show groupId
+                  <> ", TX hash: "
+                  <> show disbandTxHash
           Left decodeErr ->
             throw $ "could not decode config: " <>
               CA.printJsonDecodeError decodeErr
     _ ->
       throw "invalid command-line arguments"
 
+registerHydraGroup :: Contract ScriptHash
+registerHydraGroup = do
+  ownPkh <- unwrap <$> liftedM "Could not get own pkh" ownPaymentPubKeyHash
+  let
+    masterKeys = Array.singleton ownPkh
+    httpServers = Array.singleton "http://127.0.0.1:7010"
+    metadata = "Demo group"
+  { txHash, groupId } <- HydraGroup.registerHydraGroup masterKeys httpServers metadata
+  awaitTxConfirmed txHash
+  pure groupId
+
 hostRace
-  :: TransactionHash
+  :: HydraGroupInfo
+  -> TransactionHash
   -> RacersParams
   -> RaceParams
-  -> Aff (Either HttpError HostRaceResponse)
-hostRace startRaceTxHash racersParams raceParams =
-  handleResponse hostRaceResponseCodec <$>
+  -> Contract (Either HttpError HostRaceResponse)
+hostRace groupInfo startRaceTxHash racersParams raceParams = do
+  httpServer <- liftMaybe (error "Could not get httpServer") $ Array.head
+    (unwrap groupInfo).hydraGroupHttpServers
+  liftAff $ handleResponse hostRaceResponseCodec <$>
     postRequest
-      { url: "http://127.0.0.1:7010/hostRace"
+      { url: httpServer <</>> "hostRace"
       , content: Just $ CA.encode hostRaceRequestCodec reqBody
       , headers: mempty
       }

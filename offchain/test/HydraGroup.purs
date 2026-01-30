@@ -2,10 +2,11 @@ module Test.CardanoRacers.HydraGroup (suite) where
 
 import Prelude
 
-import Cardano.Types (TransactionHash)
 import Cardano.Types.BigNum (fromInt) as BigNum
 import CardanoRacers.HydraGroup.Contract
-  ( disbandHydraGroup
+  ( RegisterHydraGroupResult
+  , disbandHydraGroup
+  , findHydraGroupById
   , queryHydraGroups
   , registerHydraGroup
   )
@@ -15,26 +16,32 @@ import Contract.Test (ContractTest, InitialUTxOs, withKeyWallet, withWallets)
 import Contract.Test.Mote (TestPlanM)
 import Contract.Transaction (awaitTxConfirmed)
 import Contract.Wallet (ownPaymentPubKeyHash)
+import Control.Monad.Error.Class (throwError)
 import Data.Array (head, singleton) as Array
 import Data.Newtype (unwrap)
+import Effect.Exception (error)
 import Mote (group, test)
 
 suite :: TestPlanM ContractTest Unit
 suite =
   group "HydraGroup" do
-    test "RegisterGroup" do
+    test "Register new Hydra group" do
       withWallets distr \groupManager ->
         withKeyWallet groupManager do
-          txHash <- registerTestGroup
+          { txHash } <- registerTestGroup
           logInfo' $ "Success: " <> show txHash
 
-    test "DisbandGroup" do
+    test "Find and disband existing Hydra group" do
       withWallets distr \groupManager ->
         withKeyWallet groupManager do
-          registerTxHash <- registerTestGroup
+          { txHash: registerTxHash, groupId } <- registerTestGroup
           awaitTxConfirmed registerTxHash
-          { oref } <- liftedM "No Hydra groups found" $ Array.head <$>
+          entry@{ oref } <- liftedM "No Hydra groups found" $ Array.head <$>
             queryHydraGroups
+          entry' <- liftedM "Could not find Hydra Group by ID" $
+            findHydraGroupById groupId
+          when (entry /= entry') do
+            throwError $ error "Registry entries do not match"
           txHash <- disbandHydraGroup oref
           logInfo' $ "Success: " <> show txHash
   where
@@ -44,13 +51,13 @@ suite =
     , BigNum.fromInt 2_000_000_000
     ]
 
-registerTestGroup :: Contract TransactionHash
+registerTestGroup :: Contract RegisterHydraGroupResult
 registerTestGroup = do
   ownPkh <- unwrap <$> liftedM "Could not get own pkh" ownPaymentPubKeyHash
   let
     masterKeys = Array.singleton ownPkh
     httpServers = Array.singleton "httpServer!"
     metadata = "metadata!"
-  txHash <- registerHydraGroup masterKeys httpServers metadata
-  logInfo' $ "Success: " <> show txHash
-  pure txHash
+  res <- registerHydraGroup masterKeys httpServers metadata
+  logInfo' $ "Success: " <> show res.txHash
+  pure res
