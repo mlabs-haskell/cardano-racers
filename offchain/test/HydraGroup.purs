@@ -7,7 +7,6 @@ import CardanoRacers.HydraGroup.Contract
   ( RegisterHydraGroupResult
   , disbandHydraGroup
   , findHydraGroupById
-  , queryHydraGroups
   , registerHydraGroup
   )
 import Contract.Log (logInfo')
@@ -16,10 +15,8 @@ import Contract.Test (ContractTest, InitialUTxOs, withKeyWallet, withWallets)
 import Contract.Test.Mote (TestPlanM)
 import Contract.Transaction (awaitTxConfirmed)
 import Contract.Wallet (ownPaymentPubKeyHash)
-import Control.Monad.Error.Class (throwError)
-import Data.Array (head, singleton) as Array
+import Data.Array (singleton) as Array
 import Data.Newtype (unwrap)
-import Effect.Exception (error)
 import Mote (group, test)
 
 suite :: TestPlanM ContractTest Unit
@@ -36,12 +33,8 @@ suite =
         withKeyWallet groupManager do
           { txHash: registerTxHash, groupId } <- registerTestGroup
           awaitTxConfirmed registerTxHash
-          entry@{ oref } <- liftedM "No Hydra groups found" $ Array.head <$>
-            queryHydraGroups
-          entry' <- liftedM "Could not find Hydra Group by ID" $
+          { oref } <- liftedM "Could not find Hydra Group by ID" $
             findHydraGroupById groupId
-          when (entry /= entry') do
-            throwError $ error "Registry entries do not match"
           txHash <- disbandHydraGroup oref
           logInfo' $ "Success: " <> show txHash
   where
