@@ -1,5 +1,6 @@
 module CardanoRacers.HydraGroup.Contract
   ( disbandHydraGroup
+  , queryHydraGroups
   , registerHydraGroup
   ) where
 
@@ -9,7 +10,8 @@ import Cardano.FromData (fromData)
 import Cardano.Plutus.ApplyArgs (applyArgs)
 import Cardano.ToData (toData)
 import Cardano.Types
-  ( Ed25519KeyHash
+  ( Credential(ScriptHashCredential)
+  , Ed25519KeyHash
   , PaymentPubKeyHash
   , PlutusData
   , PlutusScript
@@ -18,18 +20,22 @@ import Cardano.Types
   , TransactionHash
   , TransactionInput
   , TransactionOutput
+  , Value
   )
+import Cardano.Types.Address (mkPaymentAddress)
+import Cardano.Types.BigNum (one) as BigNum
 import Cardano.Types.Int (negate, one) as CTInt
 import Cardano.Types.OutputDatum (outputDatumDatum)
 import Cardano.Types.PlutusScript (hash) as PlutusScript
 import Cardano.Types.RedeemerDatum (unit) as Redeemer
-import Cardano.Types.Value (empty) as Value
+import Cardano.Types.Value (singleton) as Value
 import CardanoRacers.HydraGroup.Types
   ( HydraGroupInfo(HydraGroupInfo)
   , HydraGroupRegistryRedeemer(DisbandGroup)
   , hydraGroupTokenName
   )
 import CardanoRacers.ScriptsFFI (hydraGroupPolicy, hydraGroupRegistryScript)
+import Contract.Address (getNetworkId)
 import Contract.Monad (Contract, liftedM)
 import Contract.ScriptLookups (ScriptLookups)
 import Contract.ScriptLookups (plutusMintingPolicy, unspentOutputs, validator) as Lookups
@@ -43,13 +49,59 @@ import Contract.TxConstraints
   , mustSpendPubKeyOutput
   , mustSpendScriptOutput
   ) as Constraints
-import Contract.Utxos (getUtxo)
+import Contract.Utxos (getUtxo, utxosAt)
 import Contract.Wallet (getWalletUtxos, ownPaymentPubKeyHash)
 import Control.Monad.Error.Class (liftMaybe, throwError)
-import Data.Array (elem, head) as Array
+import Data.Array (catMaybes, elem, head) as Array
 import Data.Bifunctor (lmap)
 import Data.Map (fromFoldable, singleton, toUnfoldable) as Map
 import Effect.Exception (error)
+
+-- NOTE: this query can be quite expensive when there are many entries locked
+-- at the registry validator
+queryHydraGroups
+  :: Contract
+       ( Array
+           { oref :: TransactionInput
+           , txOut :: TransactionOutput
+           , groupInfo :: HydraGroupInfo
+           }
+       )
+queryHydraGroups = do
+  network <- getNetworkId
+  registryValidator <- mkHydraGroupRegistryValidator
+  let
+    registryValidatorHash = PlutusScript.hash registryValidator
+    registryAddr =
+      mkPaymentAddress
+        network
+        (wrap $ ScriptHashCredential registryValidatorHash)
+        Nothing
+  -- TODO: This utxosAt call can (and will) become very expensive.
+  -- Use pagination.
+  utxos <- utxosAt registryAddr
+  Array.catMaybes <$> traverse
+    ( \(oref /\ txOut) ->
+        getValidGroupInfo registryValidatorHash txOut <#> \groupInfo ->
+          { oref, txOut, groupInfo: _ } <$> groupInfo
+    )
+    (Map.toUnfoldable utxos)
+  where
+  getValidGroupInfo
+    :: ScriptHash
+    -> TransactionOutput
+    -> Contract (Maybe HydraGroupInfo)
+  getValidGroupInfo registryValidatorHash txOut =
+    case decodeHydraGroupInfoDatum txOut of
+      Just groupInfo@(HydraGroupInfo groupInfoRec) -> do
+        mp <- mkHydraGroupPolicy registryValidatorHash
+          groupInfoRec.hydraGroupNonceOref
+        let mpHash = PlutusScript.hash mp
+        pure $
+          if groupInfoRec.hydraGroupUniqueId == mpHash then Just groupInfo
+          else Nothing
+      Nothing ->
+        pure Nothing
 
 registerHydraGroup
   :: Array Ed25519KeyHash
@@ -79,15 +131,21 @@ registerHydraGroup masterKeys httpServers metadata = do
         , hydraGroupNonceOref: nonceOref
         , hydraGroupMasterKeys: masterKeys
         , hydraGroupHttpServers: httpServers
+        , hydraGroupApiVersion: "0.1.0"
         , hydraGroupMetadata: metadata
         }
+
+    stateTokenValue :: Value
+    stateTokenValue =
+      Value.singleton (PlutusScript.hash mintingPolicy) hydraGroupTokenName
+        BigNum.one
 
     constraints :: TxConstraints
     constraints = mconcat
       [ Constraints.mustBeSignedBy ownPkh
       , Constraints.mustSpendPubKeyOutput nonceOref
       , Constraints.mustPayToScript validatorHash groupInfo DatumInline
-          Value.empty
+          stateTokenValue
       , Constraints.mustMintCurrencyWithRedeemer groupId Redeemer.unit
           hydraGroupTokenName
           CTInt.one

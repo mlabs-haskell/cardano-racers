@@ -32,6 +32,7 @@ newtype HydraGroupInfo = HydraGroupInfo
   , hydraGroupNonceOref :: TransactionInput
   , hydraGroupMasterKeys :: Array Ed25519KeyHash
   , hydraGroupHttpServers :: Array String
+  , hydraGroupApiVersion :: String
   , hydraGroupMetadata :: String
   }
 
@@ -54,6 +55,8 @@ instance
               := I (Array Ed25519KeyHash)
               :+ "hydraGroupHttpServers"
               := I (Array String)
+              :+ "hydraGroupApiVersion"
+              := I String
               :+ "hydraGroupMetadata"
               := I String
               :+ PNil

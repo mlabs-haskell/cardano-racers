@@ -18,7 +18,7 @@ import Plutus.V2.Ledger.Api (
   PubKeyHash,
   Script,
   ScriptContext (scriptContextTxInfo),
-  TxInInfo (txInInfoOutRef),
+  TxInInfo (txInInfoOutRef, txInInfoResolved),
   TxInfo (txInfoInputs, txInfoOutputs, txInfoMint),
   TxOut (txOutAddress, txOutValue),
   TxOutRef,
@@ -43,6 +43,7 @@ data HydraGroupInfo = HydraGroupInfo
   -- FIXME: `hydraGroupHttpServers :: [HydraPeerServerInfo]` causes
   -- "Reference to a name which is not a local, a builtin, or an external INLINABLE function"
   , hydraGroupHttpServers :: [BuiltinByteString]
+  , hydraGroupApiVersion :: BuiltinByteString
   , hydraGroupMetadata :: BuiltinByteString
   }
   deriving (Generic, Show)
@@ -51,32 +52,39 @@ PlutusTx.unstableMakeIsData ''HydraGroupInfo
 {-# INLINEABLE mkHydraGroupPolicy #-}
 mkHydraGroupPolicy :: ValidatorHash -> TxOutRef -> ScriptContext -> Bool
 mkHydraGroupPolicy registryValidatorHash nonceOref ctx = 
-  traceIfFalse "nonce utxo not spent" spendsNonceUtxo &&
-    case hydraGroupInfo of
-      Nothing ->
-        traceError "missing or invalid registry output"
-      Just groupInfo ->
-        and
-          [ traceIfFalse "nonce oref mismatch" $ hydraGroupNonceOref groupInfo == nonceOref
-          , traceIfFalse "group id mismatch" $ hydraGroupUniqueId groupInfo == cs
-          , traceIfFalse "unexpected token quantity minted or burned" mintsOrBurnsOneToken
-          , traceIfFalse "missing master signature" (txSignedByMasterKey groupInfo)
-          ]
+  case hydraGroupInfo of
+    Nothing ->
+      traceError "missing or invalid registry output"
+    Just (isBurning, groupInfo) ->
+      (isBurning || traceIfFalse "nonce utxo not spent" spendsNonceUtxo)
+        && traceIfFalse "nonce oref mismatch" (hydraGroupNonceOref groupInfo == nonceOref)
+        && traceIfFalse "group id mismatch" (hydraGroupUniqueId groupInfo == cs)
+        && traceIfFalse "missing master signature" (txSignedByMasterKey groupInfo)
   where
     txInfo :: TxInfo
     txInfo = scriptContextTxInfo ctx
 
     cs :: CurrencySymbol
     cs = ownCurrencySymbol ctx
-
+    
     spendsNonceUtxo :: Bool
     spendsNonceUtxo = isJust $ find ((==) nonceOref . txInInfoOutRef) $ txInfoInputs txInfo 
 
-    -- There should be exactly one output locked at the HydraGroupRegistry
-    -- validator, containing the newly minted NFT and a valid HydraGroupInfo
-    -- inline datum.
-    hydraGroupInfo :: Maybe HydraGroupInfo
-    hydraGroupInfo =
+    -- There must be exactly one output or input (depending on whether the state
+    -- token is minted or burned, respectively) locked at the HydraGroupRegistry
+    -- validator, containing the state token and a valid HydraGroupInfo inline
+    -- datum.
+    hydraGroupInfo :: Maybe (Bool, HydraGroupInfo)
+    hydraGroupInfo
+      | mintedQuantity == 1 =
+          (False,) <$> getHydraGroupInfo (txInfoOutputs txInfo)
+      | mintedQuantity == (-1) =
+          (True,) <$> getHydraGroupInfo (txInInfoResolved <$> txInfoInputs txInfo)
+      | otherwise =
+          Nothing
+
+    getHydraGroupInfo :: [TxOut] -> Maybe HydraGroupInfo
+    getHydraGroupInfo utxos =
       let
         found =
           filter
@@ -85,18 +93,14 @@ mkHydraGroupPolicy registryValidatorHash nonceOref ctx =
                   && txOutValue out `geq` Value.singleton cs hydraGroupTokenName 1
 
             )
-            (txInfoOutputs txInfo)
+            utxos
        in
         case found of
           [ registryOut ] -> getInlineDatumFromTxOut registryOut 
           _ -> Nothing
 
-    mintsOrBurnsOneToken :: Bool
-    mintsOrBurnsOneToken =
-      let
-        minted = valueOf (txInfoMint txInfo) cs hydraGroupTokenName
-       in
-        minted == 1 || minted == (-1)
+    mintedQuantity :: Integer
+    mintedQuantity = valueOf (txInfoMint txInfo) cs hydraGroupTokenName
 
     txSignedByMasterKey :: HydraGroupInfo -> Bool
     txSignedByMasterKey = any (txSignedBy txInfo) . hydraGroupMasterKeys 
