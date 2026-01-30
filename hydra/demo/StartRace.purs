@@ -4,7 +4,7 @@ module CardanoRacers.Hydra.Demo.StartRace
 
 import Prelude
 
-import Cardano.AsCbor (decodeCbor, encodeCbor)
+import Cardano.AsCbor (class AsCbor, decodeCbor, encodeCbor)
 import Cardano.Plutus.Types.Address (Address) as Plutus
 import Cardano.ToData (toData)
 import Cardano.Types (Ed25519KeyHash, ScriptHash, TransactionHash, Value)
@@ -29,7 +29,7 @@ import CardanoRacers.Nitro.Helpers (createRacersParams)
 import CardanoRacers.Race.Contract (startRace)
 import CardanoRacers.Race.Types (RaceParams)
 import CardanoRacers.RaceSlot.Types (RaceHash)
-import Contract.CborBytes (hexToCborBytes)
+import Contract.CborBytes (cborBytesToHex, hexToCborBytes)
 import Contract.Monad (Contract, liftContractM, liftedM, runContractInEnv)
 import Contract.Wallet (getWalletUtxos, ownPaymentPubKeyHash)
 import Control.Monad.Error.Class (liftMaybe)
@@ -44,10 +44,11 @@ import Data.Log.Level (LogLevel(Trace))
 import Data.Map (toUnfoldable) as Map
 import Data.Maybe (Maybe(Just, Nothing), fromJust)
 import Data.Newtype (unwrap, wrap)
+import Data.Time.Duration (Seconds(Seconds), convertDuration)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
-import Effect.Aff (launchAff_)
-import Effect.Aff.Class (liftAff)
+import Effect.Aff (delay, launchAff_)
+import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
 import Effect.Exception (error, throw)
@@ -83,7 +84,7 @@ main = do
               runContractInEnv contractEnv do
                 -- Register Hydra group
                 groupId <- registerHydraGroup
-                liftEffect $ log $ "Registered new Hydra group with ID: " <> show groupId
+                logAndDelay $ "Registered new Hydra group with ID: " <> toHex groupId
 
                 -- Create RacersParams
                 utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
@@ -98,13 +99,13 @@ main = do
                     startRace Nothing raceHashFixture totalRewardValueFixture
                       participantsFixture
                       delegatesFixture
-                liftEffect $ log $ "startRace success: " <> show txHash
+                logAndDelay $ "startRace success: " <> toHex txHash
 
                 -- Discover Hydra group
                 groupEntry@{ groupInfo } <- liftedM "Could not find Hydra group by ID" $
                   findHydraGroupById groupId
-                liftEffect $ log $ "Found valid Hydra group with ID: "
-                  <> show groupId
+                logAndDelay $ "Found valid Hydra group with ID: "
+                  <> toHex groupId
                   <> ", group info: "
                   <> show groupInfo
 
@@ -116,14 +117,14 @@ main = do
                   Right (ServerResponseError hostRaceError) ->
                     throw $ "could not host race: " <> show hostRaceError
                   Right (ServerResponseSuccess { commitTxHash }) ->
-                    log $ "hostRace success: " <> show commitTxHash
+                    log $ "hostRace success: " <> toHex commitTxHash
 
                 -- Disband Hydra group
                 disbandTxHash <- disbandHydraGroup groupEntry.oref
-                liftEffect $ log $ "Successfully disbanded Hydra group with ID: "
-                  <> show groupId
+                logAndDelay $ "Successfully disbanded Hydra group with ID: "
+                  <> toHex groupId
                   <> ", TX hash: "
-                  <> show disbandTxHash
+                  <> toHex disbandTxHash
           Left decodeErr ->
             throw $ "could not decode config: " <>
               CA.printJsonDecodeError decodeErr
@@ -135,7 +136,7 @@ registerHydraGroup = do
   ownPkh <- unwrap <$> liftedM "Could not get own pkh" ownPaymentPubKeyHash
   let
     masterKeys = Array.singleton ownPkh
-    httpServers = Array.singleton "http://127.0.0.1:7010"
+    httpServers = [ "http://127.0.0.1:7010", "http://127.0.0.1:7012" ]
     metadata = "Demo group"
   { txHash, groupId } <- HydraGroup.registerHydraGroup masterKeys httpServers metadata
   awaitTxConfirmed txHash
@@ -183,3 +184,11 @@ delegatesFixture =
 
 keyHashFromHex :: String -> Ed25519KeyHash
 keyHashFromHex str = unsafePartial fromJust $ decodeCbor =<< hexToCborBytes str
+
+logAndDelay :: forall (m :: Type -> Type). MonadAff m => String -> m Unit
+logAndDelay str = do
+  liftEffect $ log str
+  liftAff $ delay $ convertDuration $ Seconds 2.0
+
+toHex :: forall (a :: Type). AsCbor a => a -> String
+toHex = cborBytesToHex <<< encodeCbor
