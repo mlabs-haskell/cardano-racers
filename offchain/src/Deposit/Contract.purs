@@ -58,6 +58,7 @@ import Contract.Transaction
   ( TransactionInput
   , awaitTxConfirmed
   , createAdditionalUtxos
+  , defaultBalancer
   , signTransaction
   , submit
   , withBalancedTx
@@ -421,11 +422,11 @@ consumeAndRedeemRequests chunkSize mMaxRequests availableAssets generateNonce =
         Nothing -> pure acc
         Just { head: req, tail: rest } -> do
           let
-            balanceTxConstraints =
+            balancerConstraints =
               if null acc then mempty
               else BalanceTxConstraints.mustUseAdditionalUtxos additionalUtxos
           -- Create the unbalanced transaction by redeeming the current request.
-          (unbalancedTx /\ usedUtxos /\ assets) <- do
+          (unbalancedTx /\ extraUtxos /\ assets) <- do
             (authTxi /\ authTxo) <-
               liftContractM
                 "could not get auth UTxO containing token (RacersAdminNFT/BotNFT) in current wallet UTxOs"
@@ -434,7 +435,8 @@ consumeAndRedeemRequests chunkSize mMaxRequests availableAssets generateNonce =
             runReaderT (redeemTx (authTxi /\ Map.singleton authTxi authTxo) req)
               { params: rp }
 
-          withBalancedTx unbalancedTx usedUtxos balanceTxConstraints $ \balTx ->
+          withBalancedTx defaultBalancer unbalancedTx
+            { balancerConstraints, extraUtxos } $ \balTx ->
             do
               balSignedTx <- signTransaction balTx
               additionalUtxos_ <- createAdditionalUtxos balSignedTx

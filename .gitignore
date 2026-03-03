@@ -1,6 +1,7 @@
 .envrc
 .direnv
 result
+node_modules
 
 /offchain/output
 /offchain/.psc-package/

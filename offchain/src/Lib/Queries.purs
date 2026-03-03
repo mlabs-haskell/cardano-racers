@@ -4,27 +4,20 @@ import Contract.Prelude
 
 import Aeson (Aeson, encodeAeson)
 import Cardano.AsCbor (encodeCbor)
-import Cardano.Plutus.Types.Address as PlutusAddress
-import Cardano.Serialization.Lib
+import Cardano.Data.Lite
   ( address_toBech32
   , assetName_name
   , baseAddress_toAddress
   , byronAddress_toAddress
   , enterpriseAddress_toAddress
-  , pointerAddress_toAddress
   , rewardAddress_toAddress
   )
+import Cardano.Plutus.Types.Address as PlutusAddress
 import Cardano.Types (Asset(Asset), AssetName, Bech32String)
 import Cardano.Types.Address
-  ( Address
-      ( BaseAddress
-      , ByronAddress
-      , EnterpriseAddress
-      , RewardAddress
-      , PointerAddress
-      )
+  ( Address(BaseAddress, ByronAddress, EnterpriseAddress, RewardAddress)
   )
-import Cardano.Types.BaseAddress (toCsl) as BA
+import Cardano.Types.BaseAddress (toCdl) as BA
 import Cardano.Types.EnterpriseAddress as EA
 import Cardano.Types.Internal.Helpers (decodeUtf8)
 import Cardano.Types.PlutusScript as PlutusScript
@@ -174,19 +167,17 @@ registryEntryToAeson (AssetSelection par) = do
 
 -- TODO: check this
 toBech32 :: Address -> Bech32String
-toBech32 = toCsl >>> flip address_toBech32 (unsafeCoerce undefined)
+toBech32 = toCdl >>> flip address_toBech32 (unsafeCoerce undefined)
   where
-  toCsl = case _ of
+  toCdl = case _ of
     BaseAddress ba ->
-      baseAddress_toAddress $ BA.toCsl ba
+      baseAddress_toAddress $ BA.toCdl ba
     ByronAddress ba ->
       byronAddress_toAddress $ unwrap ba
     EnterpriseAddress ea ->
-      enterpriseAddress_toAddress $ EA.toCsl ea
+      enterpriseAddress_toAddress $ EA.toCdl ea
     RewardAddress ra ->
-      rewardAddress_toAddress $ RA.toCsl ra
-    PointerAddress pc ->
-      pointerAddress_toAddress $ unwrap pc
+      rewardAddress_toAddress $ RA.toCdl ra
 
 queryRaceRegistry :: Race -> Racers (Array Aeson)
 queryRaceRegistry race = do

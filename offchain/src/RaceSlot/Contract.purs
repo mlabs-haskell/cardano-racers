@@ -3,10 +3,11 @@ module CardanoRacers.RaceSlot.Contract where
 import Contract.Prelude
 
 import Cardano.Plutus.ApplyArgs (applyArgs)
+import Cardano.Types (AssetName)
 import Cardano.Types.Int (fromString) as Int
 import Cardano.Types.Mint (Mint, singleton) as Mint
 import Cardano.Types.PlutusScript (hash) as PlutusScript
-import CardanoRacers.RaceSlot.Types (RaceHash, slotTokenName)
+import CardanoRacers.RaceSlot.Types (RaceHash)
 import CardanoRacers.ScriptsFFI (raceSlotPolicy)
 import Common.ContractHelpers (findAnyAuthUtxo)
 import Contract.Monad (liftContractM)
@@ -20,32 +21,32 @@ import Contract.Transaction
   , submitTxFromConstraints
   )
 import Contract.TxConstraints as Constraints
+import Control.Monad.Error.Class (throwError)
 import Control.Monad.Reader.Trans (asks)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (head)
+import Data.Array (null) as Array
 import Data.BigInt (BigInt)
 import Data.BigInt as BigInt
 import Data.Map (singleton) as Map
 import Data.Profunctor.Choice (left)
 import Effect.Exception (error)
+import Partial.Unsafe (unsafePartial)
 import Racers (Racers)
 
 mintRaceSlotTokenConstraints
   :: RaceHash
-  -> BigInt
+  -> Array (AssetName /\ BigInt)
   -> Racers
        (Constraints.TxConstraints /\ Lookups.ScriptLookups)
-mintRaceSlotTokenConstraints rch slotCount = do
-  slotPolicy <- mkRaceSlotPolicy rch
+mintRaceSlotTokenConstraints raceHash tokens = do
+  when (Array.null tokens) $ throwError $ error "Empty token array"
+
+  slotPolicy <- mkRaceSlotPolicy raceHash
 
   (authTxi /\ authTxo) <-
     findAnyAuthUtxo >>=
-      (lift <<< liftContractM "could not find admin or bot utxo in wallet")
-
-  slotCountI <- lift
-    $ liftContractM "Could not convert slotCount to integer"
-    $ Int.fromString
-    $ BigInt.toString slotCount
+      (lift <<< liftContractM "Could not find admin or bot utxo in wallet")
 
   slotPolicyHash <- lift
     $ liftContractM "Could not get race slot token script hash"
@@ -53,10 +54,16 @@ mintRaceSlotTokenConstraints rch slotCount = do
     $ map PlutusScript.hash
     $ (unwrap slotPolicy).plutusMintingPolicies
 
+  tokens' <- lift
+    $ liftContractM "Could not convert token quantities to Cardano.Types.Int"
+    $ traverse (traverse (Int.fromString <<< BigInt.toString)) tokens
+
   let
     amountToMint :: Mint.Mint
-    amountToMint = Mint.singleton slotPolicyHash (unwrap slotTokenName)
-      slotCountI
+    amountToMint =
+      unsafePartial $
+        foldMap (\(tn /\ quantity) -> Mint.singleton slotPolicyHash tn quantity)
+          tokens'
 
     constraints :: Constraints.TxConstraints
     constraints = Constraints.mustSpendPubKeyOutput authTxi
@@ -70,18 +77,18 @@ mintRaceSlotTokenConstraints rch slotCount = do
 
 burnRaceSlotTokenConstraints
   :: RaceHash
-  -> BigInt
+  -> Array (AssetName /\ BigInt)
   -> Racers
        (Constraints.TxConstraints /\ Lookups.ScriptLookups)
-burnRaceSlotTokenConstraints rch slotCount =
-  mintRaceSlotTokenConstraints rch (negate slotCount)
+burnRaceSlotTokenConstraints raceHash tokens =
+  mintRaceSlotTokenConstraints raceHash (map negate <$> tokens)
 
 mintRaceSlotToken
   :: RaceHash
-  -> BigInt
+  -> Array (AssetName /\ BigInt)
   -> Racers TransactionHash
-mintRaceSlotToken rch slotCount = do
-  (constraints /\ lookups) <- mintRaceSlotTokenConstraints rch slotCount
+mintRaceSlotToken raceHash tokens = do
+  (constraints /\ lookups) <- mintRaceSlotTokenConstraints raceHash tokens
   lift do
     txId <- submitTxFromConstraints lookups constraints
     awaitTxConfirmed txId

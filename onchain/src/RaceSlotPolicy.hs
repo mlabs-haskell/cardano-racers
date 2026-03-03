@@ -17,6 +17,8 @@ import Plutus.V2.Ledger.Api (
 import Plutus.V2.Ledger.Contexts (valueSpent)
 import PlutusTx qualified (compile, unsafeFromBuiltinData)
 
+-- TODO: Give this policy a more generic name or define a separate policy
+-- for RaceScript state tokens
 mkSlotPolicy :: RacersParams -> ScriptContext -> Bool
 mkSlotPolicy RacersParams {adminToken, botToken} ctx = inputContainsBotNft || inputContainsAdminNft
   where

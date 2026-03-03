@@ -1,21 +1,33 @@
 {
   inputs = {
-    plutip.url = "github:mlabs-haskell/plutip/8364c43ac6bc9ea140412af9a23c691adf67a18b";
+    nixpkgs.follows = "cardano-transaction-lib/nixpkgs";
+
+    # offchain
     cardano-transaction-lib = {
       type = "github";
       owner = "Plutonomicon";
       repo = "cardano-transaction-lib";
-      rev = "be434c41d80bb10d25825ed247d81f630f2d6b89";
+      rev = "2f7751724f703f4c480df3d50204020932f64b83";
     };
-    nixpkgs.follows = "cardano-transaction-lib/nixpkgs";
+    cardano-node.follows = "cardano-transaction-lib/cardano-node";
+    hydra.follows = "hydra-sdk/hydra";
+    hydra-sdk = {
+      url = "github:mlabs-haskell/purescript-hydra-sdk/dshuiski/revive";
+      inputs.ctl.follows = "cardano-transaction-lib";
+    };
+
+    # onchain
+    # TODO: https://github.com/mlabs-haskell/cardano-racers/issues/22
+    plutip.url = "github:mlabs-haskell/plutip/8364c43ac6bc9ea140412af9a23c691adf67a18b";
+    haskell-nix.follows = "plutip/haskell-nix";
+    iohk-nix.follows = "plutip/iohk-nix";
     plutonomy = {
       url = "github:well-typed/plutonomy/6c01302ba8cf3be4f71617e106cd5ef7ed10fc63";
       flake = false;
     };
-    haskell-nix.follows = "plutip/haskell-nix";
   };
 
-  outputs = inputs@{ self, nixpkgs, haskell-nix, plutip, cardano-transaction-lib, ... }:
+  outputs = inputs@{ self, nixpkgs, haskell-nix, hydra, iohk-nix, cardano-transaction-lib, plutip, ... }:
     let
       # GENERAL
       # supportedSystems = with nixpkgs.lib.systems.supported; tier1 ++ tier2 ++ tier3;
@@ -25,17 +37,9 @@
       nixpkgsFor = system: import nixpkgs {
         inherit system;
         overlays = [
-          haskell-nix.overlay
           cardano-transaction-lib.overlays.purescript
           cardano-transaction-lib.overlays.runtime
           cardano-transaction-lib.overlays.spago
-	  (_: _: {
-	    # FIXME The used nixpkgs version doesn't contain `nodejs_18` required by easy_purescript-nix
-	    # but updating it to thel latest version leads to other errors
-	    inherit ((builtins.getFlake "github:NixOS/nixpkgs/25039823dc7a2f0e8a1711fe84307be97855c781").legacyPackages.${system})
-              nodejs_18
-              nodejs-18_x;
-	  })
         ];
         inherit (haskell-nix) config;
       };
@@ -86,7 +90,10 @@
           ];
           inherit (haskell-nix) config;
         };
-        nixpkgsFor' = system: import nixpkgs { inherit system; inherit (haskell-nix) config; };
+        nixpkgsFor' = system: import nixpkgs {
+          inherit system;
+          inherit (haskell-nix) config;
+        };
 
         projectFor = system:
           let
@@ -166,6 +173,46 @@
             '';
       };
 
+      # HYDRA
+
+      hydraApp = {
+        projectFor = system:
+          let
+            pkgs = nixpkgsFor system;
+            exporter = ((onchain.projectFor system).flake { }).packages."cardano-racers-onchain:exe:exporter";
+          in
+          pkgs.purescriptProject {
+            inherit pkgs;
+            projectName = "cardano-racers-hydra";
+            strictComp = true;
+            src = pkgs.runCommandLocal "generated-source" { }
+              ''
+                set -e
+                cp -r ${./hydra} $out
+                chmod -R +w $out
+                ${exporter}/bin/exporter $out/src
+              '';
+            packageJson = ./hydra/package.json;
+            packageLock = ./hydra/package-lock.json;
+            nodejs = pkgs.nodejs-18_x;
+            shell = {
+              withRuntime = true;
+              packageLockOnly = true;
+              packages = with pkgs; [
+                fd
+                hydra.packages.${system}.hydra-node
+                nodePackages.eslint
+                nodePackages.prettier
+                nodePackages.purs-tidy
+              ];
+              shellHook =
+                ''
+                  echo "hydra-node version: $(hydra-node --version)"
+                '';
+            };
+          };
+      };
+
       # OFFCHAIN / Testnet, Cardano, ...
 
       offchain = {
@@ -176,7 +223,7 @@
           in
           pkgs.purescriptProject {
             inherit pkgs;
-            projectName = "cardano-racers-project";
+            projectName = "cardano-racers-offchain";
             strictComp = false; # TODO: this should be eventually removed
             src = pkgs.runCommandLocal "generated-source" { }
               ''
@@ -198,8 +245,8 @@
                 nodePackages.eslint
                 nodePackages.prettier
                 ogmios
-                plutip-server
                 postgresql
+                zip
               ];
               shellHook =
                 ''
@@ -210,92 +257,6 @@
             };
           };
       };
-
-      # This bundle method is no longer working. CTL bundle process changed,
-      # and we do some changes on the entrypoint to make it easier for the client
-      # to integrate.
-      bundlesFor = system:
-      let
-        pkgs = nixpkgsFor system;
-        project = (offchain.projectFor system);
-        builtPursProject = project.buildPursProject {};
-        createEntrypoint = eName: pkgs.writeText "${eName}-text" ''
-          "use strict";
-          import("./output.js").then(m => window.racers${eName} = m);
-          console.log("racers${eName} ready");
-        '';
-        wrapWithCustomEntrypoint = eName: b: b.overrideAttrs (_: prev: {
-          buildCommand = ''
-            cp ${(createEntrypoint eName)} ${pkgs.lib.toLower eName}-entry.js
-            ${prev.buildCommand}
-          '';
-        });
-        adminBundledPursProject = wrapWithCustomEntrypoint "Admin" (project.bundlePursProjectWebpack {
-          main = "Lib.CardanoRacers.AdminFFI";
-          psEntrypoint = "admin-entry.js";
-          browserRuntime = true;
-        });
-        clientBundledPursProject = wrapWithCustomEntrypoint "Client" (project.bundlePursProjectWebpack {
-          main = "Lib.CardanoRacers.ClientFFI";
-          psEntrypoint = "client-entry.js";
-          browserRuntime = true;
-        });
-
-	in pkgs.runCommand "admin-bundle-cmd" {
-          buildInputs = [
-            pkgs.nodejs
-            project.nodeModules
-            builtPursProject
-          ];
-          nativeBuildInputs = [
-            project.purs
-            pkgs.easy-ps.spago
-          ];
-        }
-        ''
-        export HOME=$TMP
-        export NODE_PATH="${project.nodeModules}/lib/node_modules"
-        export PATH="${project.nodeModules}/bin:$PATH"
-
-        mkdir -p $out/dist/racers-admin $out/dist/racers-client $out/dist/racers-bot
-        cp -r ${adminBundledPursProject}/* $out/dist/racers-admin
-        cp -r ${clientBundledPursProject}/* $out/dist/racers-client
-
-        cp ${./offchain/index.html} $out/dist/racers-client/index.html
-        cp ${./offchain/index.html} $out/dist/racers-admin/index.html
-
-        cp -r ${builtPursProject}/output $out/dist/racers-bot/
-        cp ${./offchain/build/package.json} $out/dist/racers-bot/package.json
-        cp ${./offchain/build/package-lock.json} $out/dist/racers-bot/package-lock.json
-        cp ${./offchain/build/index.js} $out/dist/racers-bot/index.js
-        cp ${./offchain/build/index.d.ts} $out/dist/racers-bot/index.d.ts
-        '';
-
-      gzippedBundlesForOg = system:
-        let
-          pkgs = nixpkgsFor system;
-          bundles = bundlesFor system;
-        in pkgs.runCommand "gzipped-bundles-og" {
-            buildInputs = [
-              pkgs.gnutar
-              pkgs.zip
-              bundles
-            ];
-          }
-          ''
-            mkdir -p $out
-            mkdir -p ./admin
-            mkdir -p ./client
-            mkdir -p ./bot
-            cp -r ${bundles}/dist/racers-admin/* ./admin
-            cp -r ${bundles}/dist/racers-client/* ./client
-            cp -r ${bundles}/dist/racers-bot/* ./bot
-            chmod -R 755 ./admin ./client ./bot
-            tar -czf $out/admin-browser-bundle.tar.gz -C ./admin .
-            tar -czf $out/client-browser-bundle.tar.gz -C ./client .
-            tar -czf $out/bot-bundle.tar.gz -C ./bot .
-            zip -j $out/bundles.zip $out/admin-browser-bundle.tar.gz $out/bot-bundle.tar.gz $out/client-browser-bundle.tar.gz
-          '';
 
       gzippedBundlesFor = system:
         let
@@ -376,29 +337,41 @@
         flake = perSystem (system: (offchain.projectFor system).flake { });
       };
 
+      hydraApp = {
+        project = perSystem hydraApp.projectFor;
+        flake = perSystem (system: (hydraApp.projectFor system).flake { });
+      };
+
       packages = perSystem (system:
         {
           script-exporter = onchain.script-exporter system;
           exported-scripts = onchain.exported-scripts system;
-          # bundles = bundlesFor system;
           gzipped-bundles = gzippedBundlesFor system;
         }
       );
+
       checks = perSystem (system:
         self.onchain.flake.${system}.checks
         // {
-          cardano-racers = self.offchain.project.${system}.runPlutipTest { testMain = "Test"; };
+          cardano-racers-offchain-localnet-tests = self.offchain.project.${system}.runLocalTestnetTest {
+            testMain = "Test.CardanoRacers.Main";
+          };
+          cardano-racers-offchain-unit-tests = self.offchain.project.${system}.runPursTest {
+            testMain = "Test.CardanoRacers.Unit";
+          };
         }
       );
 
       devShells = perSystem (system: {
         onchain = self.onchain.flake.${system}.devShell;
         offchain = self.offchain.project.${system}.devShell;
+        hydra = self.hydraApp.project.${system}.devShell;
       });
 
       apps = perSystem (system: {
-        docs = self.offchain.project.${system}.launchSearchablePursDocs { };
-        ctl-docs = cardano-transaction-lib.apps.${system}.docs;
+        # TODO: https://github.com/mlabs-haskell/cardano-racers/issues/27
+        # docs = self.offchain.project.${system}.launchSearchablePursDocs { };
+        # ctl-docs = cardano-transaction-lib.apps.${system}.docs;
 
         runtime = (nixpkgsFor system).launchCtlRuntime {};
         script-exporter = {
@@ -406,10 +379,12 @@
           type = "app";
           program = (onchain.script-exporter system).outPath;
         };
+        /* TODO: https://github.com/mlabs-haskell/cardano-racers/issues/28
         format = {
           type = "app";
           program = (formatCheckFor system).format.outPath;
         };
+        */
       });
     };
 }

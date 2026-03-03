@@ -1,0 +1,4 @@
+{
+  "blockfrostApiKeyFile": "data/blockfrost.txt",
+  "signingKeyFile": "data/cardano.sk"
+}

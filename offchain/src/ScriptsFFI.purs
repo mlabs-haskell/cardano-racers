@@ -7,6 +7,9 @@ module CardanoRacers.ScriptsFFI
   , gameAssetPolicy
   , raceSlotPolicy
   , raceRegistryScript
+  , raceScript
+  , hydraGroupPolicy
+  , hydraGroupRegistryScript
   ) where
 
 foreign import nitroMintingPolicyScript :: String
@@ -17,3 +20,6 @@ foreign import assetRequestPolicy :: String
 foreign import gameAssetPolicy :: String
 foreign import raceSlotPolicy :: String
 foreign import raceRegistryScript :: String
+foreign import raceScript :: String
+foreign import hydraGroupPolicy :: String
+foreign import hydraGroupRegistryScript :: String

@@ -17,20 +17,18 @@ module CardanoRacers.GameAsset.Types
 import Contract.Prelude
 
 import Aeson (class DecodeAeson, class EncodeAeson, encodeAeson, (.:))
+import Cardano.Data.Lite (toBytes)
 import Cardano.FromMetadata (class FromMetadata, fromMetadata)
 import Cardano.Plutus.DataSchema (S, Z)
 import Cardano.Plutus.Types.Address (Address)
 import Cardano.Plutus.Types.MintingPolicyHash (MintingPolicyHash)
 import Cardano.Plutus.Types.TokenName (TokenName, mkTokenName)
-import Cardano.Serialization.Lib (toBytes)
 import Cardano.ToMetadata (class ToMetadata, toMetadata)
 import Cardano.Types (TransactionMetadatum)
 import Cardano.Types.AssetName (unAssetName)
 import Cardano.Types.BigNum as BigNum
 import Cardano.Types.Int as Int
-import Cardano.Types.TransactionMetadatum
-  ( TransactionMetadatum(Int, Map)
-  ) as TxMetadatum
+import Cardano.Types.TransactionMetadatum (TransactionMetadatum(Int, Map)) as TxMetadatum
 import CardanoRacers.Helpers
   ( decodeAesonString
   , decodeWrappedAeson

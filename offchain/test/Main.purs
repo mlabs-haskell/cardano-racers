@@ -20,8 +20,10 @@ import Effect.Aff
   )
 import Test.CardanoRacers.AssetRequest (suite) as AssetRequest
 import Test.CardanoRacers.Deposit (suite) as Deposit
+import Test.CardanoRacers.HydraGroup (suite) as HydraGroup
 import Test.CardanoRacers.Nft (suite) as Nft
 import Test.CardanoRacers.Nitro.Contract (suite) as Nitro
+import Test.CardanoRacers.Race (suite) as Race
 import Test.CardanoRacers.RaceRegistry (suite) as RaceRegistry
 import Test.CardanoRacers.RacersState.Contract (suite) as RacersState
 import Test.Spec.Runner (defaultConfig)
@@ -36,6 +38,8 @@ main = interruptOnSignal SIGINT =<< launchAff do
 
 suite :: TestPlanM ContractTest Unit
 suite = do
+  HydraGroup.suite
+  Race.suite
   Nft.suite
   Nitro.suite
   RacersState.suite
@@ -60,7 +64,7 @@ config =
       , path: Nothing
       }
   , customLogger: Nothing
-  , suppressLogs: false
+  , suppressLogs: true
   , hooks: emptyHooks
   , clusterConfig:
       { slotLength: Seconds 0.05

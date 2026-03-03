@@ -5,11 +5,10 @@ import Prelude
 
 import Contract.Config
   ( ContractParams
-  , KnownWallet(Nami, Gero, Flint, Eternl, Lode, Lace, NuFi)
+  , KnownWallet(Gero, Eternl, Lode, Lace, NuFi)
   , WalletSpec(ConnectToGenericCip30)
   , blockfrostPublicPreprodServerConfig
   , blockfrostPublicPreviewServerConfig
-  , mainnetConfig
   , mkBlockfrostBackendParams
   , testnetConfig
   , walletName
@@ -40,11 +39,7 @@ main = do
         if isNothing mbApiKey then Map.empty
         else
           ( Map.fromFoldable
-              [ "blockfrost-nami-preview"
-                  /\ (mkBlockfrostPreviewConfig mbApiKey)
-                    { walletSpec = connectTo Nami }
-                  /\ Nothing
-              , "blockfrost-gero-preview"
+              [ "blockfrost-gero-preview"
                   /\ (mkBlockfrostPreviewConfig mbApiKey)
                     { walletSpec = connectTo Gero }
                   /\ Nothing
@@ -56,10 +51,6 @@ main = do
                   /\ (mkBlockfrostPreviewConfig mbApiKey)
                     { walletSpec = connectTo Lode }
                   /\ Nothing
-              , "blockfrost-flint-preview"
-                  /\ (mkBlockfrostPreviewConfig mbApiKey)
-                    { walletSpec = connectTo Flint }
-                  /\ Nothing
               , "blockfrost-nufi-preview"
                   /\ (mkBlockfrostPreviewConfig mbApiKey)
                     { walletSpec = connectTo NuFi }
@@ -67,10 +58,6 @@ main = do
               , "blockfrost-lace-preview"
                   /\ (mkBlockfrostPreviewConfig mbApiKey)
                     { walletSpec = connectTo Lace }
-                  /\ Nothing
-              , "blockfrost-nami-preprod"
-                  /\ (mkBlockfrostPreprodConfig mbApiKey)
-                    { walletSpec = connectTo Nami }
                   /\ Nothing
               , "blockfrost-gero-preprod"
                   /\ (mkBlockfrostPreprodConfig mbApiKey)
@@ -83,10 +70,6 @@ main = do
               , "blockfrost-lode-preprod"
                   /\ (mkBlockfrostPreprodConfig mbApiKey)
                     { walletSpec = connectTo Lode }
-                  /\ Nothing
-              , "blockfrost-flint-preprod"
-                  /\ (mkBlockfrostPreprodConfig mbApiKey)
-                    { walletSpec = connectTo Flint }
                   /\ Nothing
               , "blockfrost-nufi-preprod"
                   /\ (mkBlockfrostPreprodConfig mbApiKey)
@@ -114,18 +97,12 @@ getBlockfrostApiKey = do
 
 wallets :: Map E2EConfigName (ContractParams /\ Maybe String)
 wallets = map (map walletName) <$> Map.fromFoldable
-  [ "nami" /\ testnetConfig' Nami /\ Nothing
-  , "gero" /\ testnetConfig' Gero /\ Nothing
+  [ "gero" /\ testnetConfig' Gero /\ Nothing
   , "lode" /\ testnetConfig' Lode /\ Nothing
-  , "nami-mainnet" /\ mainnetNamiConfig /\ Nothing
-  , "nami-mock" /\ testnetConfig' Nami /\ Just Nami
   , "gero-mock" /\ testnetConfig' Gero /\ Just Gero
-  , "flint-mock" /\ testnetConfig' Flint /\ Just Flint
   , "lode-mock" /\ testnetConfig' Lode /\ Just Lode
   -- Testnet cluster's network ID is set to mainnet:
-  , "plutip-nami-mock" /\ testnetConfig' Nami /\ Just Nami
   , "plutip-gero-mock" /\ testnetConfig' Gero /\ Just Gero
-  , "plutip-flint-mock" /\ testnetConfig' Flint /\ Just Flint
   , "plutip-lode-mock" /\ testnetConfig' Lode /\ Just Lode
   ]
   where
@@ -134,13 +111,6 @@ wallets = map (map walletName) <$> Map.fromFoldable
     testnetConfig
       { walletSpec =
           Just $ ConnectToGenericCip30 (walletName wallet) { cip95: false }
-      }
-
-  mainnetNamiConfig :: ContractParams
-  mainnetNamiConfig =
-    mainnetConfig
-      { walletSpec =
-          Just $ ConnectToGenericCip30 (walletName Nami) { cip95: false }
       }
 
 mkBlockfrostPreviewConfig :: Maybe String -> ContractParams

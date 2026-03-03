@@ -3,8 +3,8 @@ module Lib.CardanoRacers.Client where
 import Contract.Prelude
 
 import Cardano.AsCbor (decodeCbor, encodeCbor)
+import Cardano.Data.Lite (toBytes)
 import Cardano.Plutus.Types.Address as PlutusAddress
-import Cardano.Serialization.Lib (toBytes)
 import Cardano.Types.AssetName (mkAssetName)
 import CardanoRacers.AssetRequest.Contract (requestAssetByRarity)
 import CardanoRacers.Common.Types (RacersParams)
