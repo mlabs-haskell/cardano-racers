@@ -22,8 +22,9 @@ import Cardano.AsCbor (decodeCbor)
 import Cardano.FromData (fromData)
 import Cardano.Types (CborBytes, TransactionHash, TransactionInput)
 import CardanoRacers.Common.Types (RacersParams)
+import CardanoRacers.Hydra.Codec (racersParamsCodec)
 import CardanoRacers.Hydra.Contracts.Commit (commitRaceUtxoToHydra)
-import CardanoRacers.Hydra.Monad (AppM, liftContract, readHeadStatus)
+import CardanoRacers.Hydra.Monad (AppM, liftContract, readHeadStatus, setRaceData)
 import CardanoRacers.Hydra.Types.ServerResponse
   ( ServerResponse
   , fromEither
@@ -45,7 +46,7 @@ import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
 import Data.Tuple.Nested ((/\))
 import HTTPure (Response) as HTTPure
-import HydraSdk.Lib (aesonCodec, caDecodeString, cborBytesCodec, txHashCodec)
+import HydraSdk.Lib (caDecodeString, cborBytesCodec, txHashCodec)
 import HydraSdk.Lib (orefCodec) as HydraSdk
 import HydraSdk.Types (HydraHeadStatus(HeadStatus_Initializing), headStatusCodec)
 
@@ -71,10 +72,15 @@ hostRaceHandlerImpl bodyStr =
         }
     raceOut <- liftContract (getUtxo reqBody.raceOref) !? CouldNotResolveRaceOref
     raceParams <- (fromData =<< decodeCbor reqBody.raceParams) ?? CouldNotDecodeRaceParams
-    txHash <- lift $ commitRaceUtxoToHydra (reqBody.raceOref /\ raceOut)
+    { txHash, raceValidator } <- lift $ commitRaceUtxoToHydra (reqBody.raceOref /\ raceOut)
       reqBody.racersParams
       raceParams
-    logInfo' $ "Successfully commited RaceValidator utxo: " <> show txHash
+    logInfo' $ "Successfully commited RaceState utxo: " <> show txHash
+    lift $ setRaceData
+      { racersParams: reqBody.racersParams
+      , raceParams
+      , raceValidator
+      }
     pure
       { commitTxHash: txHash
       }
@@ -94,9 +100,6 @@ hostRaceRequestCodec =
     , racersParams: racersParamsCodec
     , raceParams: cborBytesCodec
     }
-
-racersParamsCodec :: CA.JsonCodec RacersParams
-racersParamsCodec = aesonCodec "RacersParams"
 
 -- Response
 

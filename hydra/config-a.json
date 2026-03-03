@@ -35,5 +35,6 @@
     ]
   },
   "serverPort": 7010,
-  "logLevel": "trace"
+  "logLevel": "trace",
+  "isHeadLeader": true
 }

@@ -13,6 +13,7 @@
   , "cardano-types"
   , "codec-aeson"
   , "console"
+  , "datetime"
   , "effect"
   , "either"
   , "errors"

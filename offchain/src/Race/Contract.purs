@@ -127,6 +127,11 @@ startRace distribution raceHash totalRewardValue participants delegates = do
     valueEscrowTokenValue :: Value
     valueEscrowTokenValue = mkStateTokenValue valueEscrowTokenName
 
+    raceStateValue :: Value
+    raceStateValue =
+      unsafePartial $ raceStateTokenValue <> lovelaceValueOf
+        (BigNum.fromInt 5_000_000)
+
     escrowValue :: Value
     escrowValue = unsafePartial $ totalRewardValue <> valueEscrowTokenValue
 
@@ -142,7 +147,7 @@ startRace distribution raceHash totalRewardValue participants delegates = do
       , Constraints.mustPayToScript raceValidatorHash
           (toData $ RaceState { distribution })
           DatumInline
-          raceStateTokenValue
+          raceStateValue
       ]
 
     lookups :: ScriptLookups
