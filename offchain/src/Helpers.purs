@@ -1,5 +1,6 @@
 module CardanoRacers.Helpers
-  ( wrapEncodeAeson
+  ( assetNameFromAsciiUnsafe
+  , wrapEncodeAeson
   , counterNonce
   , decodeWrappedAeson
   , paysToAddrConstraint
@@ -13,6 +14,7 @@ module CardanoRacers.Helpers
   , fromJSBIToInt
   , fromJSBIToBigNum
   , mkMint
+  , mkPosixTimeUnsafe
   ) where
 
 import Contract.Prelude
@@ -33,7 +35,8 @@ import Cardano.Plutus.Types.Credential
   )
 import Cardano.Plutus.Types.CurrencySymbol as CurrencySymbol
 import Cardano.Plutus.Types.Value as PlutusValue
-import Cardano.Types (Mint)
+import Cardano.Types (AssetName, Mint)
+import Cardano.Types.AssetName (mkAssetName)
 import Cardano.Types.BigInt as CTBigInt
 import Cardano.Types.BigNum (BigNum)
 import Cardano.Types.BigNum as BigNum
@@ -42,11 +45,14 @@ import Cardano.Types.Int as CTInt
 import Cardano.Types.Int as Int
 import Cardano.Types.Mint as Mint
 import Cardano.Types.PlutusData (unit) as PlutusData
+import Contract.Time (POSIXTime)
 import Contract.TxConstraints (DatumPresence(DatumWitness))
 import Contract.TxConstraints as Constraints
 import Contract.Value (Value)
 import Data.BigInt as Data
 import Data.BigInt as DataBigInt
+import Data.ByteArray (byteArrayFromAscii)
+import Data.Time.Duration (class Duration, fromDuration)
 import Effect.Ref (Ref)
 import Effect.Ref (read, write) as Ref
 import Foreign.Object (singleton)
@@ -138,3 +144,16 @@ fromBIToDataBI = unsafePartial fromJust <<< DataBigInt.fromString <<<
 
 mkInt :: JSBigInt.BigInt -> Int.Int
 mkInt a = unsafePartial $ fromJust $ Int.fromBigInt a
+
+mkPosixTimeUnsafe :: forall (a :: Type). Duration a => a -> POSIXTime
+mkPosixTimeUnsafe =
+  unsafePartial fromJust
+    <<< map wrap
+    <<< CTBigInt.fromNumber
+    <<< unwrap
+    <<< fromDuration
+
+assetNameFromAsciiUnsafe :: String -> AssetName
+assetNameFromAsciiUnsafe =
+  unsafePartial fromJust
+    <<< (mkAssetName <=< byteArrayFromAscii)

@@ -10,7 +10,10 @@ import CardanoRacers.AssetRequest.Contract (requestAssetByRarity)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
 import CardanoRacers.Nitro.Contract (buyNitroContract)
-import CardanoRacers.RaceRegistry.Contract (confirmAssetSelection, registerPositionInRace)
+import CardanoRacers.RaceRegistry.Contract
+  ( confirmAssetSelection
+  , registerPositionInRace
+  )
 import Contract.CborBytes (cborBytesToHex, hexToCborBytes)
 import Contract.Config (ContractParams, WalletSpec)
 import Contract.Monad (liftContractM, liftedM, runContract, throwContractError)
@@ -25,8 +28,21 @@ import Data.Int (fromString) as Int
 import Data.String (Pattern(..))
 import Data.String as String
 import Data.UInt (fromInt) as UInt
-import Effect.Aff.Compat (EffectFn1, EffectFn2, EffectFn3, mkEffectFn1, mkEffectFn2, mkEffectFn3)
-import Lib.CardanoRacers.Common (Nitro, Race, TransactionHashFFI, createRegistryParams, fromJsBigInt)
+import Effect.Aff.Compat
+  ( EffectFn1
+  , EffectFn2
+  , EffectFn3
+  , mkEffectFn1
+  , mkEffectFn2
+  , mkEffectFn3
+  )
+import Lib.CardanoRacers.Common
+  ( Nitro
+  , Race
+  , TransactionHashFFI
+  , createRegistryParams
+  , fromJsBigInt
+  )
 import Lib.CardanoRacers.Queries (Queries, mkQueries)
 import Racers (Racers, runRacers)
 import Record (merge)

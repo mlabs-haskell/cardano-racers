@@ -4,7 +4,8 @@ let upstream =
         sha256:738a4057532f0dc140978b02964432d281011514e7ab9482053adaef4e4e7027
 
 let additions =
-      { aeson =
+      { cardano-racers-offchain = ../offchain/spago.dhall as Location
+      , aeson =
         { dependencies =
           [ "aff"
           , "argonaut"
@@ -40,6 +41,31 @@ let additions =
           ]
         , repo = "https://github.com/mlabs-haskell/purescript-aeson.git"
         , version = "e7bfc24a941e1d73de88de3f4a034e1da33cc8ae"
+        }
+      , cardano-data-lite =
+        { dependencies =
+          [ "aeson"
+          , "aff"
+          , "argonaut"
+          , "bifunctors"
+          , "bytearrays"
+          , "effect"
+          , "either"
+          , "enums"
+          , "maybe"
+          , "newtype"
+          , "nullable"
+          , "ordered-collections"
+          , "partial"
+          , "prelude"
+          , "profunctor"
+          , "spec"
+          , "transformers"
+          , "tuples"
+          , "unsafe-coerce"
+          ]
+        , repo = "https://github.com/mlabs-haskell/purescript-cardano-data-lite"
+        , version = "2ccb31011e2e00c94aac6303dff3f16087560adb"
         }
       , cardano-transaction-lib =
         { dependencies =
@@ -250,6 +276,7 @@ let additions =
           , "profunctor"
           , "quickcheck"
           , "record"
+          , "record-extra"
           , "safely"
           , "spec"
           , "strings"
@@ -261,7 +288,7 @@ let additions =
           , "uuid"
           ]
         , repo = "https://github.com/mlabs-haskell/purescript-hydra-sdk"
-        , version = "2059acaaf11b8bc45172bd68bc6140d385e90bf3"
+        , version = "18b8390370e1f4fd39a826cbce81dcedf3dd0992"
         }
       }
 

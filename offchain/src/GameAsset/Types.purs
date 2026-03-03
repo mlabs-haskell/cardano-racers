@@ -29,8 +29,23 @@ import Cardano.Types.AssetName (unAssetName)
 import Cardano.Types.BigNum as BigNum
 import Cardano.Types.Int as Int
 import Cardano.Types.TransactionMetadatum (TransactionMetadatum(Int, Map)) as TxMetadatum
-import CardanoRacers.Helpers (decodeAesonString, decodeWrappedAeson, wrapEncodeAeson)
-import Contract.PlutusData (class FromData, class HasPlutusSchema, class ToData, type (:+), type (:=), type (@@), I, PNil, genericFromData, genericToData)
+import CardanoRacers.Helpers
+  ( decodeAesonString
+  , decodeWrappedAeson
+  , wrapEncodeAeson
+  )
+import Contract.PlutusData
+  ( class FromData
+  , class HasPlutusSchema
+  , class ToData
+  , type (:+)
+  , type (:=)
+  , type (@@)
+  , I
+  , PNil
+  , genericFromData
+  , genericToData
+  )
 import Contract.Prim.ByteArray (ByteArray, byteArrayToHex)
 import Contract.Value (CurrencySymbol)
 import Control.Alt ((<|>))
@@ -42,7 +57,11 @@ import Data.Map (fromFoldable, toUnfoldable, union) as Map
 import Data.Profunctor.Strong ((***))
 import JS.BigInt (BigInt, fromInt) as JSBigInt
 import Partial.Unsafe (unsafePartial)
-import Racers.Metadata.Cip25.Cip25String (Cip25String, fromMetadataString, toMetadataString)
+import Racers.Metadata.Cip25.Cip25String
+  ( Cip25String
+  , fromMetadataString
+  , toMetadataString
+  )
 import Racers.Metadata.Cip25.Common (Cip25TokenName)
 import Racers.Metadata.Helpers (lookupMetadata)
 

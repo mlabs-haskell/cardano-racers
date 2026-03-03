@@ -4,7 +4,9 @@ import Contract.Prelude
 
 import Aeson (decodeJsonString)
 import Cardano.Data.Lite (toBytes)
-import Cardano.Plutus.Types.MintingPolicyHash (MintingPolicyHash(MintingPolicyHash))
+import Cardano.Plutus.Types.MintingPolicyHash
+  ( MintingPolicyHash(MintingPolicyHash)
+  )
 import Cardano.Types (NetworkId(TestnetId, MainnetId), PrivateKey)
 import Cardano.Types.AssetName (unAssetName)
 import Cardano.Types.BigInt as JSBigInt
@@ -19,10 +21,29 @@ import CardanoRacers.RaceRegistry.Types (RegistryParams)
 import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
 import CardanoRacers.RaceSlot.Types (slotTokenName)
 import CardanoRacers.RacersState.Contract (modifyRacersStateContract)
-import Contract.Config (ContractParams, KnownWallet(Gero, Eternl, Lode, Lace, NuFi), PrivatePaymentKeySource(PrivatePaymentKeyValue), PrivateStakeKeySource(PrivateStakeKeyValue), ProviderBackendParams, ServerConfig, StakeKeyPresence(WithStakeKey, WithoutStakeKey), WalletSpec(UseKeys, ConnectToGenericCip30), mkBlockfrostBackendParams, mkCtlBackendParams, testnetConfig, walletName)
+import Contract.Config
+  ( ContractParams
+  , KnownWallet(Gero, Eternl, Lode, Lace, NuFi)
+  , PrivatePaymentKeySource(PrivatePaymentKeyValue)
+  , PrivateStakeKeySource(PrivateStakeKeyValue)
+  , ProviderBackendParams
+  , ServerConfig
+  , StakeKeyPresence(WithStakeKey, WithoutStakeKey)
+  , WalletSpec(UseKeys, ConnectToGenericCip30)
+  , mkBlockfrostBackendParams
+  , mkCtlBackendParams
+  , testnetConfig
+  , walletName
+  )
 import Contract.Keys (privateKeyFromBytes)
 import Contract.Monad (liftContractM)
-import Contract.Prim.ByteArray (ByteArray, RawBytes(RawBytes), byteArrayToHex, byteArrayToIntArray, hexToByteArray)
+import Contract.Prim.ByteArray
+  ( ByteArray
+  , RawBytes(RawBytes)
+  , byteArrayToHex
+  , byteArrayToIntArray
+  , hexToByteArray
+  )
 import Contract.ScriptLookups (ScriptLookups)
 import Contract.Value (TokenName)
 import Contract.Wallet (WalletExtension, WalletSpec)
@@ -44,10 +65,26 @@ import Data.String (Pattern(Pattern), stripPrefix)
 import Data.String.CodeUnits (fromCharArray)
 import Data.Time.Duration (Seconds(Seconds))
 import Data.UInt (fromInt) as UInt
-import Effect.Aff.Compat (EffectFn1, EffectFn2, EffectFn3, mkEffectFn1, mkEffectFn2, mkEffectFn3)
+import Effect.Aff.Compat
+  ( EffectFn1
+  , EffectFn2
+  , EffectFn3
+  , mkEffectFn1
+  , mkEffectFn2
+  , mkEffectFn3
+  )
 import Effect.Exception (error)
 import Effect.Uncurried (EffectFn4, mkEffectFn4)
-import Foreign (Foreign, ForeignError(ForeignError), MultipleErrors, readBoolean, readInt, readNumber, readString, renderForeignError)
+import Foreign
+  ( Foreign
+  , ForeignError(ForeignError)
+  , MultipleErrors
+  , readBoolean
+  , readInt
+  , readNumber
+  , readString
+  , renderForeignError
+  )
 import Foreign.Index (readProp)
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable) as Object
