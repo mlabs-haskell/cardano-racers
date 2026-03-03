@@ -68,6 +68,8 @@ library
     , DepositScript
     , RacersStateScript
     , RaceScript
+    , HydraGroupPolicy
+    , HydraGroupRegistryScript
                  
   other-modules:
     , Utils

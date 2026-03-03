@@ -20,6 +20,7 @@ import Effect.Aff
   )
 import Test.CardanoRacers.AssetRequest (suite) as AssetRequest
 import Test.CardanoRacers.Deposit (suite) as Deposit
+import Test.CardanoRacers.HydraGroup (suite) as HydraGroup
 import Test.CardanoRacers.Nft (suite) as Nft
 import Test.CardanoRacers.Nitro.Contract (suite) as Nitro
 import Test.CardanoRacers.Race (suite) as Race
@@ -37,6 +38,7 @@ main = interruptOnSignal SIGINT =<< launchAff do
 
 suite :: TestPlanM ContractTest Unit
 suite = do
+  HydraGroup.suite
   Race.suite
   Nft.suite
   Nitro.suite
