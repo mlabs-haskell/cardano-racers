@@ -4,6 +4,7 @@ module CardanoRacers.Hydra.Lib.Transaction
   , setAuxDataHash
   , setExUnitsToMax
   , setTxValid
+  , signTxReturnSignature
   , txSignatures
   ) where
 
@@ -18,8 +19,10 @@ import Contract.Monad (Contract)
 import Contract.ProtocolParameters (getProtocolParameters)
 import Contract.Transaction (signTransaction)
 import Ctl.Internal.Transaction (setScriptDataHash)
+import Data.Array (difference) as Array
 import Data.Lens (view, (%~), (.~), (<>~), (^.))
 import Data.Map (filterKeys) as Map
+import Data.Maybe (Maybe(Just, Nothing))
 import Data.Newtype (modify, unwrap)
 import Effect.Class (liftEffect)
 
@@ -55,3 +58,10 @@ txSignatures = view (_witnessSet <<< _vkeys)
 appendTxSignatures :: Array Vkeywitness -> Transaction -> Transaction
 appendTxSignatures signatures =
   _witnessSet <<< _vkeys <>~ signatures
+
+signTxReturnSignature :: Transaction -> Contract (Maybe Vkeywitness)
+signTxReturnSignature tx =
+  signTransaction tx <#> \signedTx ->
+    case Array.difference (txSignatures signedTx) (txSignatures tx) of
+      [ signature ] -> Just signature
+      _ -> Nothing

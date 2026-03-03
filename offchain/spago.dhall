@@ -9,6 +9,7 @@
   , "bigints"
   , "bytearrays"
   , "cardano-data-lite"
+  , "cardano-key-wallet"
   , "cardano-plutus-data-schema"
   , "cardano-transaction-lib"
   , "cardano-types"

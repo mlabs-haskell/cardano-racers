@@ -2,6 +2,7 @@ module CardanoRacers.Race.Types
   ( RaceDatum(ValueEscrow, RaceState, TokenBin)
   , RaceParams(RaceParams)
   , RaceRedeemer(MoveL2, DistributeRewards, ClaimTTL, CleanupUsedTokens)
+  , RewardDistribution
   , raceStateTokenName
   , valueEscrowTokenName
   ) where
@@ -77,10 +78,12 @@ instance FromData RaceParams where
 
 -- RaceDatum
 
+type RewardDistribution = Plutus.Map Plutus.Address Plutus.Value
+
 data RaceDatum
   = ValueEscrow
   | RaceState
-      { distribution :: Maybe (Plutus.Map Plutus.Address Plutus.Value)
+      { distribution :: Maybe RewardDistribution
       }
   | TokenBin
 

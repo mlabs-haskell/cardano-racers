@@ -10,7 +10,7 @@ import Prelude
 import Cardano.Provider (ServerConfig)
 import CardanoRacers.Hydra.Codec (serverConfigCodec)
 import Contract.Config (LogLevel)
-import Data.Codec.Argonaut (JsonCodec, JPropCodec, object, printJsonDecodeError) as CA
+import Data.Codec.Argonaut (JPropCodec, JsonCodec, boolean, object, printJsonDecodeError) as CA
 import Data.Codec.Argonaut.Record (record) as CAR
 import Data.Either (either)
 import Effect (Effect)
@@ -25,6 +25,7 @@ type AppConfig =
   { hydraNodeStartupParams :: HydraNodeStartupParams PeerExtraConfig
   , serverPort :: Port
   , logLevel :: LogLevel
+  , isHeadLeader :: Boolean
   }
 
 appConfigCodec :: CA.JsonCodec AppConfig
@@ -33,6 +34,7 @@ appConfigCodec =
     { hydraNodeStartupParams: hydraNodeStartupParamsCodec peerExtraCodec
     , serverPort: portCodec
     , logLevel: logLevelCodec
+    , isHeadLeader: CA.boolean
     }
 
 type PeerExtraConfig =

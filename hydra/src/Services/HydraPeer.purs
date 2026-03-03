@@ -1,9 +1,16 @@
 module CardanoRacers.Hydra.Services.HydraPeer
-  ( signCommitTxRequest
+  ( signAnnounceDistrTxRequest
+  , signCommitTxRequest
   ) where
 
 import Prelude
 
+import CardanoRacers.Hydra.Handlers.SignAnnounceDistrTx.Types
+  ( SignAnnounceDistrTxRequestPayload
+  , SignAnnounceDistrTxResponse
+  , signAnnounceDistrTxRequestPayloadCodec
+  , signAnnounceDistrTxResponseCodec
+  )
 import CardanoRacers.Hydra.Handlers.SignCommitTx
   ( SignCommitTxRequestPayload
   , SignCommitTxResponse
@@ -27,5 +34,17 @@ signCommitTxRequest httpServer reqBody =
     postRequest
       { url: httpServer <</>> "signCommitTx"
       , content: Just $ CA.encode signCommitTxRequestPayloadCodec reqBody
+      , headers: mempty
+      }
+
+signAnnounceDistrTxRequest
+  :: String
+  -> SignAnnounceDistrTxRequestPayload
+  -> Aff (Either HttpError SignAnnounceDistrTxResponse)
+signAnnounceDistrTxRequest httpServer reqBody =
+  handleResponse signAnnounceDistrTxResponseCodec <$>
+    postRequest
+      { url: httpServer <</>> "signAnnounceDistrTx"
+      , content: Just $ CA.encode signAnnounceDistrTxRequestPayloadCodec reqBody
       , headers: mempty
       }

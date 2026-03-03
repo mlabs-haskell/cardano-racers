@@ -6,6 +6,7 @@ module CardanoRacers.Hydra.Server
 import Prelude
 
 import CardanoRacers.Hydra.Handlers.HostRace (hostRaceHandler)
+import CardanoRacers.Hydra.Handlers.SignAnnounceDistrTx (signAnnounceDistrTxHandler)
 import CardanoRacers.Hydra.Handlers.SignCommitTx (signCommitTxHandler)
 import CardanoRacers.Hydra.Monad (AppLogger, AppM, AppState, runApp)
 import Data.Newtype (unwrap)
@@ -54,6 +55,10 @@ routerCors { body, method: Post, path: [ "hostRace" ] } = do
 routerCors { body, method: Post, path: [ "signCommitTx" ] } = do
   bodyStr <- liftAff $ HTTPure.toString body
   signCommitTxHandler bodyStr
+
+routerCors { body, method: Post, path: [ "signAnnounceDistrTx" ] } = do
+  bodyStr <- liftAff $ HTTPure.toString body
+  signAnnounceDistrTxHandler bodyStr
 
 routerCors _ = HTTPure.notFound
 
