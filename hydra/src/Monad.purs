@@ -2,6 +2,7 @@ module CardanoRacers.Hydra.Monad
   ( AppLogger
   , AppM(AppM)
   , AppState
+  , PlayerResults
   , RaceData
   , appLogger
   , cleanupApp
@@ -24,6 +25,7 @@ module CardanoRacers.Hydra.Monad
 
 import Prelude
 
+import Cardano.Plutus.Types.Address (Address) as Plutus
 import Cardano.Types (NetworkId(MainnetId, TestnetId), PlutusScript, UtxoMap)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Hydra.Config (AppConfig)
@@ -56,6 +58,7 @@ import Data.Either (either)
 import Data.Log.Formatter.Pretty (prettyFormatter)
 import Data.Log.Level (LogLevel)
 import Data.Log.Message (Message)
+import Data.Map (Map)
 import Data.Maybe (Maybe(Just, Nothing))
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.String (take, trim) as String
@@ -63,7 +66,7 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Effect.Aff (Aff, launchAff, runAff_)
 import Effect.Aff.AVar (AVar)
-import Effect.Aff.AVar (new) as AVar
+import Effect.Aff.AVar (empty, new) as AVar
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Console (log)
@@ -105,9 +108,12 @@ type AppState =
   , contractEnv :: ContractEnv
   , collateralUtxo :: Utxo
   , headStatus :: AVar HydraHeadStatus
-  , race :: AVar (Maybe RaceData)
   , snapshot :: AVar HydraSnapshot
+  , race :: AVar (Maybe RaceData)
+  , resultSlots :: AVar PlayerResults
   }
+
+type PlayerResults = Map Plutus.Address (AVar (Maybe Number))
 
 type RaceData =
   { racersParams :: RacersParams
@@ -217,15 +223,17 @@ initApp config@{ hydraNodeStartupParams } = do
       config.logLevel
   collateralUtxo <- runContractInEnv contractEnv getCollateralUtxo
   headStatus <- AVar.new HeadStatus_Unknown
-  race <- AVar.new Nothing
   snapshot <- AVar.new emptySnapshot
+  race <- AVar.new Nothing
+  resultSlots <- AVar.empty
   pure
     { config
     , contractEnv
     , collateralUtxo
     , headStatus
-    , race
     , snapshot
+    , race
+    , resultSlots
     }
 
 initContractEnv :: FilePath -> FilePath -> LogLevel -> Aff ContractEnv

@@ -8,6 +8,7 @@ import Prelude
 import CardanoRacers.Hydra.Handlers.HostRace (hostRaceHandler)
 import CardanoRacers.Hydra.Handlers.SignAnnounceDistrTx (signAnnounceDistrTxHandler)
 import CardanoRacers.Hydra.Handlers.SignCommitTx (signCommitTxHandler)
+import CardanoRacers.Hydra.Handlers.SubmitPlayerInput (submitPlayerInputHandler)
 import CardanoRacers.Hydra.Monad (AppLogger, AppM, AppState, runApp)
 import Data.Newtype (unwrap)
 import Data.Tuple.Nested ((/\))
@@ -59,6 +60,10 @@ routerCors { body, method: Post, path: [ "signCommitTx" ] } = do
 routerCors { body, method: Post, path: [ "signAnnounceDistrTx" ] } = do
   bodyStr <- liftAff $ HTTPure.toString body
   signAnnounceDistrTxHandler bodyStr
+
+routerCors { body, method: Post, path: [ "submitPlayerInput" ] } = do
+  bodyStr <- liftAff $ HTTPure.toString body
+  submitPlayerInputHandler bodyStr
 
 routerCors _ = HTTPure.notFound
 
