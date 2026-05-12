@@ -1,5 +1,6 @@
 module CardanoRacers.Hydra.Codec
-  ( racersParamsCodec
+  ( ed25519SignatureCodec
+  , racersParamsCodec
   , serverConfigCodec
   , uintCodec
   , vkeyWitnessCodec
@@ -9,7 +10,7 @@ import Prelude
 
 import Cardano.AsCbor (class AsCbor, decodeCbor, encodeCbor)
 import Cardano.Provider (ServerConfig)
-import Cardano.Types (Vkeywitness)
+import Cardano.Types (Ed25519Signature, Vkeywitness)
 import CardanoRacers.Common.Types (RacersParams)
 import Data.Codec.Argonaut (JsonCodec, boolean, int, object, prismaticCodec, string) as CA
 import Data.Codec.Argonaut.Compat (maybe) as CA
@@ -23,6 +24,9 @@ asCborCodec :: forall a. AsCbor a => String -> CA.JsonCodec a
 asCborCodec name =
   CA.prismaticCodec name decodeCbor encodeCbor
     cborBytesCodec
+
+ed25519SignatureCodec :: CA.JsonCodec Ed25519Signature
+ed25519SignatureCodec = asCborCodec "Ed25519Signature"
 
 racersParamsCodec :: CA.JsonCodec RacersParams
 racersParamsCodec = aesonCodec "RacersParams"

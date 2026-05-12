@@ -3,9 +3,16 @@ module CardanoRacers.Hydra.Handlers.SubmitPlayerInput where
 import Prelude
 
 import Aeson (stringifyAeson)
+import Cardano.AsCbor (encodeCbor)
 import Cardano.Plutus.Types.Address (Address) as Plutus
 import Cardano.Plutus.Types.Credential (Credential(PubKeyCredential)) as Plutus
-import Cardano.Types (Ed25519KeyHash)
+import Cardano.Types (Address, Ed25519KeyHash, Ed25519Signature, PublicKey, ScriptHash)
+import Cardano.Types.Address (getPaymentCredential)
+import Cardano.Types.Credential (asPubKeyHash)
+import Cardano.Types.PublicKey (hash, verify) as PublicKey
+import CardanoRacers.Hydra.Codec (ed25519SignatureCodec)
+import CardanoRacers.Hydra.Lib.Cose (mkSigStruct)
+import CardanoRacers.Hydra.Lib.Hash (blake2b256Hash)
 import CardanoRacers.Hydra.Monad (AppM, getAppRunner, readRaceData)
 import CardanoRacers.Hydra.RaceSimulator
   ( RaceSimulationError
@@ -27,37 +34,46 @@ import Data.Either (Either, either)
 import Data.Generic.Rep (class Generic)
 import Data.Map (lookup) as Map
 import Data.Maybe (Maybe(Just, Nothing), isJust)
-import Data.Newtype (unwrap)
+import Data.Newtype (unwrap, wrap)
 import Data.Show.Generic (genericShow)
 import Data.Traversable (traverse)
 import Effect.Aff (bracket)
 import Effect.Aff.AVar (put, tryPut, tryRead, tryTake) as AVar
 import Effect.Aff.Class (liftAff)
+import Effect.Class (liftEffect)
 import HTTPure (Response) as HTTPure
 import HTTPure (Status, created, response)
-import HTTPure.Status (badRequest, conflict, forbidden, internalServerError) as Status
-import HydraSdk.Lib (byteArrayCodec, caDecodeString, ed25519KeyHashCodec)
+import HTTPure.Status (badRequest, conflict, forbidden, internalServerError, unauthorized) as Status
+import HydraSdk.Lib (addressCodec, caDecodeString, publicKeyCodec)
 
 -- TODO:
 -- 1. Parse and validate CSV
 -- 2. DONE - Verify that the user is a race participant
 -- 3. DONE - Ensure this participant has not already submitted input
--- 4. Verify the signature
+-- 4. DONE - Verify the signature
 -- 5. DONE - Run the simulation
 -- 6. Forward player input to peer delegates
 -- 7. DONE - Store the simulation result for the player if delegate consensus is achieved
+-- 8. Pass provided CSV to the simulator
 type PlayerInput =
   { csv :: String
-  , player :: Ed25519KeyHash
-  , signature :: ByteArray
+  , auth ::
+      { vk :: PublicKey
+      , addr :: Address
+      , signature :: Ed25519Signature
+      }
   }
 
 playerInputCodec :: CA.JsonCodec PlayerInput
 playerInputCodec =
   CA.object "PlayerInput" $ CAR.record
     { csv: CA.string
-    , player: ed25519KeyHashCodec
-    , signature: byteArrayCodec
+    , auth:
+        CA.object "PlayerInput:auth" $ CAR.record
+          { vk: publicKeyCodec
+          , addr: addressCodec
+          , signature: ed25519SignatureCodec
+          }
     }
 
 submitPlayerInputHandler :: String -> AppM HTTPure.Response
@@ -76,13 +92,21 @@ submitPlayerInputHandlerReturningErrors bodyStr =
       liftEither $
         lmap (CouldNotDecodeReqBody <<< { decodeError: _ } <<< CA.printJsonDecodeError)
           (caDecodeString playerInputCodec bodyStr)
-    { raceParams: RaceParams { participants } } <- lift readRaceData
-    addr <- liftMaybe MustBeRaceParticipant $ getParticipantAddress reqBody.player participants
+    { raceParams: RaceParams { stateCurrencySymbol: raceId, participants } } <-
+      lift readRaceData
+    let pkh = PublicKey.hash reqBody.auth.vk
+    addr <- liftMaybe MustBeRaceParticipant $ getParticipantAddress pkh participants
     { resultSlots } <- ask
     resultSlots' <-
       liftMaybe PlayerInputSubmittedTooEarly =<<
         liftAff (AVar.tryRead resultSlots)
     slot <- liftMaybe ResultSlotsMisconfigured $ Map.lookup addr resultSlots'
+    unless
+      (((asPubKeyHash <<< unwrap) =<< getPaymentCredential reqBody.auth.addr) == Just pkh)
+      (throwError VkAddressMismatch)
+    sigStruct <- liftEffect $ mkSigStruct reqBody.auth.addr $ mkSigMessage reqBody.csv raceId
+    unless (PublicKey.verify reqBody.auth.vk (wrap sigStruct) reqBody.auth.signature) $
+      throwError InvalidSignature
     appRunner <- lift getAppRunner
     ExceptT $ liftAff $ bracket
       (AVar.tryTake slot)
@@ -99,9 +123,11 @@ submitPlayerInputHandlerReturningErrors bodyStr =
                   runSimulator "simulator/input.csv"
                 liftAff $ AVar.put (Just simResult) slot
       )
-    pure unit
 
 -- Helpers
+
+mkSigMessage :: String -> ScriptHash -> ByteArray
+mkSigMessage userInput raceId = unwrap (encodeCbor raceId) <> blake2b256Hash userInput
 
 getParticipantAddress :: Ed25519KeyHash -> Array Plutus.Address -> Maybe Plutus.Address
 getParticipantAddress player participants =
@@ -120,6 +146,8 @@ data SubmitPlayerInputError
   | MustBeRaceParticipant
   | PlayerInputSubmittedTooEarly
   | ResultSlotsMisconfigured
+  | VkAddressMismatch
+  | InvalidSignature
   | ConcurrentSimulationInProgress
   | SimResultAlreadyExistsForParticipant
   | RaceSimulationFailed { simError :: RaceSimulationError }
@@ -140,6 +168,8 @@ submitPlayerInputErrorCodec =
     , "MustBeRaceParticipant": unit
     , "PlayerInputSubmittedTooEarly": unit
     , "ResultSlotsMisconfigured": unit
+    , "VkAddressMismatch": unit
+    , "InvalidSignature": unit
     , "ConcurrentSimulationInProgress": unit
     , "SimResultAlreadyExistsForParticipant": unit
     , "RaceSimulationFailed":
@@ -159,6 +189,10 @@ errorStatus =
       Status.conflict
     ResultSlotsMisconfigured ->
       Status.internalServerError
+    VkAddressMismatch ->
+      Status.badRequest
+    InvalidSignature ->
+      Status.unauthorized
     ConcurrentSimulationInProgress ->
       Status.conflict
     SimResultAlreadyExistsForParticipant ->

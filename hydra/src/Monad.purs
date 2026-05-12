@@ -59,9 +59,12 @@ import Data.Log.Formatter.Pretty (prettyFormatter)
 import Data.Log.Level (LogLevel)
 import Data.Log.Message (Message)
 import Data.Map (Map)
+import Data.Map (fromFoldable) as Map
 import Data.Maybe (Maybe(Just, Nothing))
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.String (take, trim) as String
+import Data.Traversable (traverse)
+import Data.Tuple (Tuple(Tuple))
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Effect.Aff (Aff, launchAff, runAff_)
@@ -191,9 +194,16 @@ readRaceData =
     =<< asks _.race
 
 setRaceData :: RaceData -> AppM Unit
-setRaceData rd =
-  (void <<< AVar.modify (const (pure $ Just rd)))
-    =<< asks _.race
+setRaceData rd = do
+  { race, resultSlots } <- ask
+  slots <-
+    Map.fromFoldable <$>
+      traverse
+        (\addr -> Tuple addr <$> liftAff (AVar.new Nothing))
+        (unwrap rd.raceParams).participants
+  -- TODO: ensure this is not prone to race conditions
+  void $ AVar.modify (const (pure $ Just rd)) race
+  void $ AVar.modify (const (pure slots)) resultSlots
 
 readHydraSnapshot :: AppM HydraSnapshot
 readHydraSnapshot =
