@@ -2,8 +2,8 @@ module CardanoRacers.Hydra.Monad
   ( AppLogger
   , AppM(AppM)
   , AppState
-  , PlayerResults
   , RaceData
+  , RaceResultSlots
   , appLogger
   , cleanupApp
   , getAppLauncher
@@ -25,6 +25,7 @@ module CardanoRacers.Hydra.Monad
 
 import Prelude
 
+import Aeson (Finite)
 import Cardano.Plutus.Types.Address (Address) as Plutus
 import Cardano.Types (NetworkId(MainnetId, TestnetId), PlutusScript, UtxoMap)
 import CardanoRacers.Common.Types (RacersParams)
@@ -75,6 +76,8 @@ import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Console (log)
 import Effect.Exception (Error, error)
 import Effect.Exception (message) as Error
+import Effect.Ref (Ref)
+import Effect.Ref (new) as Ref
 import HydraSdk.Lib (modify) as AVar
 import HydraSdk.Types
   ( HydraHeadStatus(HeadStatus_Unknown)
@@ -113,10 +116,11 @@ type AppState =
   , headStatus :: AVar HydraHeadStatus
   , snapshot :: AVar HydraSnapshot
   , race :: AVar (Maybe RaceData)
-  , resultSlots :: AVar PlayerResults
+  , resultSlots :: AVar RaceResultSlots
+  , acceptingPlayerInputs :: Ref Boolean
   }
 
-type PlayerResults = Map Plutus.Address (AVar (Maybe Number))
+type RaceResultSlots = Map Plutus.Address (AVar (Maybe (Finite Number)))
 
 type RaceData =
   { racersParams :: RacersParams
@@ -236,6 +240,7 @@ initApp config@{ hydraNodeStartupParams } = do
   snapshot <- AVar.new emptySnapshot
   race <- AVar.new Nothing
   resultSlots <- AVar.empty
+  acceptingPlayerInputs <- liftEffect $ Ref.new false
   pure
     { config
     , contractEnv
@@ -244,6 +249,7 @@ initApp config@{ hydraNodeStartupParams } = do
     , snapshot
     , race
     , resultSlots
+    , acceptingPlayerInputs
     }
 
 initContractEnv :: FilePath -> FilePath -> LogLevel -> Aff ContractEnv

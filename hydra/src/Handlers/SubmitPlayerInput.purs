@@ -46,15 +46,14 @@ import HTTPure (Status, created, response)
 import HTTPure.Status (badRequest, conflict, forbidden, internalServerError, unauthorized) as Status
 import HydraSdk.Lib (addressCodec, caDecodeString, publicKeyCodec)
 
--- TODO:
--- 1. Parse and validate CSV
+-- 1. TODO - Parse and validate CSV
 -- 2. DONE - Verify that the user is a race participant
 -- 3. DONE - Ensure this participant has not already submitted input
 -- 4. DONE - Verify the signature
 -- 5. DONE - Run the simulation
--- 6. Forward player input to peer delegates
+-- 6. NOT PLANNED - Forward player input to peer delegates
 -- 7. DONE - Store the simulation result for the player if delegate consensus is achieved
--- 8. Pass provided CSV to the simulator
+-- 8. DONE - Pass provided CSV to the simulator
 type PlayerInput =
   { csv :: String
   , auth ::
@@ -120,7 +119,7 @@ submitPlayerInputHandlerReturningErrors bodyStr =
                 when (isJust currentResult) do
                   throwError SimResultAlreadyExistsForParticipant
                 simResult <- ExceptT $ lmap (RaceSimulationFailed <<< { simError: _ }) <$>
-                  runSimulator "simulator/input.csv"
+                  runSimulator reqBody.csv
                 liftAff $ AVar.put (Just simResult) slot
       )
 

@@ -5,6 +5,7 @@ module CardanoRacers.Hydra.Server
 
 import Prelude
 
+import CardanoRacers.Hydra.Handlers.GetRaceResults (getRaceResultsHandler)
 import CardanoRacers.Hydra.Handlers.HostRace (hostRaceHandler)
 import CardanoRacers.Hydra.Handlers.SignAnnounceDistrTx (signAnnounceDistrTxHandler)
 import CardanoRacers.Hydra.Handlers.SignCommitTx (signCommitTxHandler)
@@ -28,7 +29,7 @@ import HTTPure
   , serve
   , toString
   ) as HTTPure
-import HTTPure (Method(Post, Options), (!?), (!@))
+import HTTPure (Method(Get, Post, Options), (!?), (!@))
 import HTTPure.Status (ok) as HTTPureStatus
 import URI.Port (toInt) as Port
 
@@ -61,9 +62,12 @@ routerCors { body, method: Post, path: [ "signAnnounceDistrTx" ] } = do
   bodyStr <- liftAff $ HTTPure.toString body
   signAnnounceDistrTxHandler bodyStr
 
-routerCors { body, method: Post, path: [ "submitPlayerInput" ] } = do
+routerCors { body, method: Post, path: [ "playerInput" ] } = do
   bodyStr <- liftAff $ HTTPure.toString body
   submitPlayerInputHandler bodyStr
+
+routerCors { method: Get, path: [ "raceResults" ] } =
+  getRaceResultsHandler
 
 routerCors _ = HTTPure.notFound
 

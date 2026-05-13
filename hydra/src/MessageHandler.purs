@@ -4,18 +4,19 @@ module CardanoRacers.Hydra.MessageHandler
 
 import Prelude
 
-import Cardano.Plutus.Types.Map (empty) as Plutus.Map
-import CardanoRacers.Hydra.Contracts.AnnounceDistr (announceRewardDistribution)
 import CardanoRacers.Hydra.Contracts.Commit (commitCollateralToHydra)
 import CardanoRacers.Hydra.Lib.Json (printJsonUsingCodec)
-import CardanoRacers.Hydra.Monad (AppM, setHydraSnapshot)
-import Contract.Log (logInfo', logWarn')
+import CardanoRacers.Hydra.Monad (AppM, getAppLauncher, setHydraSnapshot)
+import CardanoRacers.Hydra.ResultsConsensus (confirmResultsByConsensus)
+import Contract.Log (logError', logInfo', logWarn')
 import Control.Monad.Error.Class (try)
 import Control.Monad.Reader.Class (ask)
 import Data.Either (Either(Left, Right))
 import Data.Maybe (fromMaybe)
 import Data.Newtype (wrap, unwrap)
 import Effect.Class (liftEffect)
+import Effect.Ref (write) as Ref
+import Effect.Timer (setTimeout)
 import HydraSdk.NodeApi (HydraNodeApiWebSocket)
 import HydraSdk.Types
   ( HydraHeadStatus(HeadStatus_Idle)
@@ -59,11 +60,27 @@ messageHandler ws msg = do
             , utxo
             , confirmed: mempty
             }
-          -- FIXME: remove later
-          -- Submitting an empty reward distribution once the Head is open,
-          -- for testing purposes
-          when isHeadLeader do
-            announceRewardDistribution ws Plutus.Map.empty
+          { acceptingPlayerInputs } <- ask
+          liftEffect $ Ref.write true acceptingPlayerInputs
+          launchApp <- getAppLauncher
+          -- TODO: extract function
+          -- TODO: timeout should be configurable
+          liftEffect $ void $ setTimeout 600000 {- 10 min -}  $ launchApp do
+            liftEffect $ Ref.write false acceptingPlayerInputs
+            { resultSlots, config: { hydraNodeStartupParams: { peers } } } <- ask
+            confirmResultsByConsensus resultSlots (_.httpServer <$> peers) >>=
+              case _ of
+                Left err ->
+                  -- TODO: close Head?
+                  logError' $ "Could not confirm race results. Error: "
+                    <> show err
+                Right _finalResults ->
+                  -- 1. TODO: calculate reward distribution
+                  -- 2. TODO: store reward distribution in app state
+                  -- 3. TODO: if Head leader, post AnnounceRewardDistribution Tx
+                  pure unit
+        -- when isHeadLeader do
+        --   announceRewardDistribution ws Plutus.Map.empty
         SnapshotConfirmed { snapshot } -> do
           setAndLogHydraSnapshot snapshot
           when (isHeadLeader && (unwrap snapshot).snapshotNumber == 1) do

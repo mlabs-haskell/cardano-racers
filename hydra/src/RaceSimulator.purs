@@ -10,6 +10,7 @@ module CardanoRacers.Hydra.RaceSimulator
 
 import Prelude
 
+import Aeson (Finite, finiteNumber)
 import Contract.Log (logTrace')
 import Control.Monad.Error.Class (class MonadError, throwError, try)
 import Control.Monad.Logger.Class (class MonadLogger)
@@ -36,7 +37,7 @@ import Effect.Console (log)
 import Effect.Exception (Error, error)
 import Node.ChildProcess (defaultSpawnOptions, kill, spawn, stdout)
 import Node.Encoding (Encoding(UTF8))
-import Node.FS.Aff (readTextFile)
+import Node.FS.Aff (readTextFile, writeTextFile)
 import Node.FS.Sync (exists)
 import Node.Path (FilePath)
 import Node.Stream (onDataString)
@@ -60,14 +61,17 @@ runSimulator
    . MonadAff m
   => MonadError Error m
   => MonadLogger m
-  => FilePath
-  -> m (Either RaceSimulationError Number)
-runSimulator inputCsvPath = do
+  => String
+  -> m (Either RaceSimulationError (Finite Number))
+runSimulator userInput = do
   tmpdir <- tmpdirUnique "cr-sim"
-  let simResultPath = tmpdir <</>> "sim-result.txt"
+  let
+    inputCsvPath = tmpdir <</>> "user-input.csv"
+    simResultPath = tmpdir <</>> "sim-result.txt"
+  liftAff $ writeTextFile UTF8 inputCsvPath userInput
   child <- liftEffect $ spawn "steam-run"
     ( "simulator/CardanoRacersSimulator_Linux_v1.0.1.x86_64"
-        : args simResultPath
+        : args { inputCsvPath, simResultPath }
     )
     defaultSpawnOptions
   liftEffect $ onDataString (stdout child) UTF8 \str -> log $ "[simulator] " <> str
@@ -78,7 +82,7 @@ runSimulator inputCsvPath = do
     resultRaw <- liftAff $ readTextFile UTF8 simResultPath
     pure case String.stripPrefix (Pattern "SIM_RESULT") (String.trim resultRaw) of
       Just resultTimeStr ->
-        note CouldNotConvertResultToNumber $ Number.fromString
+        note CouldNotConvertResultToNumber $ finiteNumber =<< Number.fromString
           resultTimeStr
       Nothing ->
         Left ResultStringHasUnexpectedPrefix
@@ -108,8 +112,8 @@ runSimulator inputCsvPath = do
   option :: String -> String -> Array String
   option name val = [ "--" <> name, val ]
 
-  args :: FilePath -> Array String
-  args simResultPath = Array.concat
+  args :: { inputCsvPath :: FilePath, simResultPath :: FilePath } -> Array String
+  args { inputCsvPath, simResultPath } = Array.concat
     [ [ "-batchmode" ]
     , [ "-logFile", "-" ]
     , option "csv" inputCsvPath

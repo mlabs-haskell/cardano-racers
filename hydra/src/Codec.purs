@@ -1,5 +1,6 @@
 module CardanoRacers.Hydra.Codec
   ( ed25519SignatureCodec
+  , plutusAddressCodec
   , racersParamsCodec
   , serverConfigCodec
   , uintCodec
@@ -9,6 +10,7 @@ module CardanoRacers.Hydra.Codec
 import Prelude
 
 import Cardano.AsCbor (class AsCbor, decodeCbor, encodeCbor)
+import Cardano.Plutus.Types.Address (Address) as Plutus
 import Cardano.Provider (ServerConfig)
 import Cardano.Types (Ed25519Signature, Vkeywitness)
 import CardanoRacers.Common.Types (RacersParams)
@@ -27,6 +29,9 @@ asCborCodec name =
 
 ed25519SignatureCodec :: CA.JsonCodec Ed25519Signature
 ed25519SignatureCodec = asCborCodec "Ed25519Signature"
+
+plutusAddressCodec :: CA.JsonCodec Plutus.Address
+plutusAddressCodec = aesonCodec "Plutus.Address"
 
 racersParamsCodec :: CA.JsonCodec RacersParams
 racersParamsCodec = aesonCodec "RacersParams"
