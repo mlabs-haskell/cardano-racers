@@ -8,6 +8,7 @@
   , "avar"
   , "bifunctors"
   , "bytearrays"
+  , "cardano-key-wallet"
   , "cardano-provider"
   , "cardano-racers-offchain"
   , "cardano-transaction-lib"

@@ -65,7 +65,8 @@ messageHandler ws msg = do
           launchApp <- getAppLauncher
           -- TODO: extract function
           -- TODO: timeout should be configurable
-          liftEffect $ void $ setTimeout 600000 {- 10 min -}  $ launchApp do
+          liftEffect $ void $ setTimeout 300000 {- 5 min -}  $ launchApp do
+            logInfo' "Finalizing race results..."
             liftEffect $ Ref.write false acceptingPlayerInputs
             { resultSlots, config: { hydraNodeStartupParams: { peers } } } <- ask
             confirmResultsByConsensus resultSlots (_.httpServer <$> peers) >>=
@@ -74,7 +75,9 @@ messageHandler ws msg = do
                   -- TODO: close Head?
                   logError' $ "Could not confirm race results. Error: "
                     <> show err
-                Right _finalResults ->
+                Right finalResults -> do
+                  logInfo' $ "Final race results reached by consensus: " <>
+                    show finalResults
                   -- 1. TODO: calculate reward distribution
                   -- 2. TODO: store reward distribution in app state
                   -- 3. TODO: if Head leader, post AnnounceRewardDistribution Tx

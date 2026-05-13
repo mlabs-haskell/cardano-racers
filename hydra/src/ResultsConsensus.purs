@@ -28,8 +28,8 @@ import Data.Maybe (Maybe(Nothing))
 import Data.Show.Generic (genericShow)
 import Data.Traversable (traverse)
 import Data.Tuple.Nested ((/\))
-import Effect.Aff.AVar (AVar)
 import Effect.Aff.Class (class MonadAff, liftAff)
+import Effect.Ref (Ref)
 import HydraSdk.Types (HttpError)
 
 data ConfirmResultsError
@@ -44,7 +44,7 @@ instance Show ConfirmResultsError where
 confirmResultsByConsensus
   :: forall (m :: Type -> Type)
    . MonadAff m
-  => AVar RaceResultSlots
+  => Ref (Maybe RaceResultSlots)
   -> Array ServerConfig
   -> m (Either ConfirmResultsError (RaceResults Identity))
 confirmResultsByConsensus resultSlots peers =

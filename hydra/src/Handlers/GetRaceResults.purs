@@ -31,9 +31,10 @@ import Data.Maybe (Maybe)
 import Data.Show.Generic (genericShow)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(Tuple))
-import Effect.Aff.AVar (AVar)
-import Effect.Aff.AVar (tryRead) as AVar
-import Effect.Aff.Class (class MonadAff, liftAff)
+import Effect.Aff.Class (class MonadAff)
+import Effect.Class (liftEffect)
+import Effect.Ref (Ref)
+import Effect.Ref (read) as Ref
 import HTTPure (Response) as HTTPure
 import HTTPure (Status, ok, response)
 import HTTPure.Status (conflict, internalServerError) as Status
@@ -76,11 +77,11 @@ getRaceResultsHandler = do
 getRaceResults
   :: forall (m :: Type -> Type)
    . MonadAff m
-  => AVar RaceResultSlots
+  => Ref (Maybe RaceResultSlots)
   -> m (Either GetRaceResultsError (RaceResults Maybe))
 getRaceResults resultSlots =
   runExceptT do
-    slots <- Map.toUnfoldable <$> liftAff (AVar.tryRead resultSlots) !?
+    slots <- Map.toUnfoldable <$> liftEffect (Ref.read resultSlots) !?
       RaceResultsNotAvailable
     traverse
       ( \(Tuple participant slot) ->

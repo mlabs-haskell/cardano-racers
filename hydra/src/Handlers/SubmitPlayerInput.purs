@@ -38,11 +38,12 @@ import Data.Newtype (unwrap, wrap)
 import Data.Show.Generic (genericShow)
 import Data.Traversable (traverse)
 import Effect.Aff (bracket)
-import Effect.Aff.AVar (put, tryPut, tryRead, tryTake) as AVar
+import Effect.Aff.AVar (put, tryPut, tryTake) as AVar
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
+import Effect.Ref (read) as Ref
 import HTTPure (Response) as HTTPure
-import HTTPure (Status, created, response)
+import HTTPure (Status, ok, response)
 import HTTPure.Status (badRequest, conflict, forbidden, internalServerError, unauthorized) as Status
 import HydraSdk.Lib (addressCodec, caDecodeString, publicKeyCodec)
 
@@ -79,7 +80,8 @@ submitPlayerInputHandler :: String -> AppM HTTPure.Response
 submitPlayerInputHandler =
   either
     (\e -> response (errorStatus e) (stringifyAeson $ CA.encode submitPlayerInputErrorCodec e))
-    (const created)
+    (const $ ok "null") -- FIXME: use `created`
+
     <=< submitPlayerInputHandlerReturningErrors
 
 -- Handler
@@ -95,11 +97,13 @@ submitPlayerInputHandlerReturningErrors bodyStr =
       lift readRaceData
     let pkh = PublicKey.hash reqBody.auth.vk
     addr <- liftMaybe MustBeRaceParticipant $ getParticipantAddress pkh participants
-    { resultSlots } <- ask
-    resultSlots' <-
-      liftMaybe PlayerInputSubmittedTooEarly =<<
-        liftAff (AVar.tryRead resultSlots)
-    slot <- liftMaybe ResultSlotsMisconfigured $ Map.lookup addr resultSlots'
+    { resultSlots, acceptingPlayerInputs } <- ask
+    liftEffect (Ref.read acceptingPlayerInputs) >>= \p ->
+      unless p $
+        throwError PlayerInputSubmitWindowNotActive
+    slot <- do
+      slots <- liftEffect $ Ref.read resultSlots
+      liftMaybe ResultSlotsMisconfigured $ Map.lookup addr =<< slots
     unless
       (((asPubKeyHash <<< unwrap) =<< getPaymentCredential reqBody.auth.addr) == Just pkh)
       (throwError VkAddressMismatch)
@@ -143,7 +147,7 @@ getParticipantAddress player participants =
 data SubmitPlayerInputError
   = CouldNotDecodeReqBody { decodeError :: String }
   | MustBeRaceParticipant
-  | PlayerInputSubmittedTooEarly
+  | PlayerInputSubmitWindowNotActive
   | ResultSlotsMisconfigured
   | VkAddressMismatch
   | InvalidSignature
@@ -165,7 +169,7 @@ submitPlayerInputErrorCodec =
           { decodeError: CA.string
           }
     , "MustBeRaceParticipant": unit
-    , "PlayerInputSubmittedTooEarly": unit
+    , "PlayerInputSubmitWindowNotActive": unit
     , "ResultSlotsMisconfigured": unit
     , "VkAddressMismatch": unit
     , "InvalidSignature": unit
@@ -184,7 +188,7 @@ errorStatus =
       Status.badRequest
     MustBeRaceParticipant ->
       Status.forbidden
-    PlayerInputSubmittedTooEarly ->
+    PlayerInputSubmitWindowNotActive ->
       Status.conflict
     ResultSlotsMisconfigured ->
       Status.internalServerError

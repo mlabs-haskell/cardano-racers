@@ -70,14 +70,14 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Effect.Aff (Aff, launchAff, runAff_)
 import Effect.Aff.AVar (AVar)
-import Effect.Aff.AVar (empty, new) as AVar
+import Effect.Aff.AVar (new, read) as AVar
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Console (log)
 import Effect.Exception (Error, error)
 import Effect.Exception (message) as Error
 import Effect.Ref (Ref)
-import Effect.Ref (new) as Ref
+import Effect.Ref (new, write) as Ref
 import HydraSdk.Lib (modify) as AVar
 import HydraSdk.Types
   ( HydraHeadStatus(HeadStatus_Unknown)
@@ -109,6 +109,7 @@ derive newtype instance MonadRec AppM
 
 type AppLogger = Message -> ReaderT AppState Aff Unit
 
+-- TODO: some AVars here could probably just be Refs
 type AppState =
   { config :: AppConfig
   , contractEnv :: ContractEnv
@@ -116,7 +117,7 @@ type AppState =
   , headStatus :: AVar HydraHeadStatus
   , snapshot :: AVar HydraSnapshot
   , race :: AVar (Maybe RaceData)
-  , resultSlots :: AVar RaceResultSlots
+  , resultSlots :: Ref (Maybe RaceResultSlots)
   , acceptingPlayerInputs :: Ref Boolean
   }
 
@@ -182,9 +183,7 @@ appLogger message = do
     liftEffect $ log messageFormatted
 
 readHeadStatus :: AppM HydraHeadStatus
-readHeadStatus =
-  AVar.readNow (error "readHeadStatus: empty avar")
-    =<< asks _.headStatus
+readHeadStatus = liftAff <<< AVar.read =<< asks _.headStatus
 
 setHeadStatus :: HydraHeadStatus -> AppM Unit
 setHeadStatus status =
@@ -207,7 +206,7 @@ setRaceData rd = do
         (unwrap rd.raceParams).participants
   -- TODO: ensure this is not prone to race conditions
   void $ AVar.modify (const (pure $ Just rd)) race
-  void $ AVar.modify (const (pure slots)) resultSlots
+  liftEffect $ Ref.write (Just slots) resultSlots
 
 readHydraSnapshot :: AppM HydraSnapshot
 readHydraSnapshot =
@@ -239,7 +238,7 @@ initApp config@{ hydraNodeStartupParams } = do
   headStatus <- AVar.new HeadStatus_Unknown
   snapshot <- AVar.new emptySnapshot
   race <- AVar.new Nothing
-  resultSlots <- AVar.empty
+  resultSlots <- liftEffect $ Ref.new Nothing
   acceptingPlayerInputs <- liftEffect $ Ref.new false
   pure
     { config
