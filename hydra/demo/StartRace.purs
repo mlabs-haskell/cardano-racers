@@ -26,7 +26,7 @@ import CardanoRacers.Hydra.Handlers.HostRace
   )
 import CardanoRacers.Hydra.Handlers.SubmitPlayerInput (mkSigMessage, playerInputCodec)
 import CardanoRacers.Hydra.Lib.Cose (getCoseSign1Signature)
-import CardanoRacers.Hydra.Lib.Retry (retryOnFalse)
+import CardanoRacers.Hydra.Lib.Retry (retryOnAnyError, retryOnFalse)
 import CardanoRacers.Hydra.Monad (initContractEnv)
 import CardanoRacers.Hydra.Services.Utils (handleResponse, postRequest)
 import CardanoRacers.Hydra.Types.ServerResponse
@@ -36,7 +36,7 @@ import CardanoRacers.HydraGroup.Contract (findHydraGroupById)
 import CardanoRacers.HydraGroup.Contract (registerHydraGroup) as HydraGroup
 import CardanoRacers.HydraGroup.Types (HydraGroupInfo)
 import CardanoRacers.Nitro.Helpers (createRacersParams)
-import CardanoRacers.Race.Contract (startRace)
+import CardanoRacers.Race.Contract (distributeRewards, startRace)
 import CardanoRacers.Race.Types (RaceParams)
 import CardanoRacers.RaceSlot.Types (RaceHash)
 import Contract.CborBytes (cborBytesToHex, hexToCborBytes)
@@ -125,12 +125,13 @@ main = do
                   participants = Array.singleton plutusAddr -- one participant
                   rewardWeights = [ 50_000, 30_000, 20_000 ] <#> wrap <<< { numerator: _ } <<<
                     BigInt.fromInt
-                { txHash, raceParams } <-
+                { txHash: startRaceTxHash, raceParams } <-
                   runRacers racersParams $
                     startRace Nothing raceHashFixture totalRewardValueFixture rewardWeights
                       participants
                       delegatesFixture
-                logAndDelay $ "startRace success: " <> toHex txHash
+                logAndDelay $ "startRace success: "
+                  <> toHex startRaceTxHash
 
                 -- Discover Hydra group
                 _groupEntry@{ groupInfo } <- liftedM "Could not find Hydra group by ID" $
@@ -141,7 +142,7 @@ main = do
                   <> show groupInfo
 
                 -- Host L2 race
-                resp <- hostRace groupInfo txHash racersParams raceParams
+                resp <- hostRace groupInfo startRaceTxHash racersParams raceParams
                 liftEffect case resp of
                   Left httpError ->
                     throw $ "host request failed: " <> show httpError
@@ -165,14 +166,24 @@ main = do
                       )
                   unless submitted $ throwError $ error
                     "Failed to submit player input after multiple attempts"
-          {-
-          -- Disband Hydra group
-          disbandTxHash <- disbandHydraGroup groupEntry.oref
-          logAndDelay $ "Successfully disbanded Hydra group with ID: "
-            <> toHex groupId
-            <> ", TX hash: "
-            <> toHex disbandTxHash
-          -}
+
+                -- Distribute rewards
+                do
+                  txHash <-
+                    retryOnAnyError
+                      "distributeRewards"
+                      { timeout: Minutes 15.0, delay: Seconds 30.0 }
+                      (runRacers racersParams $ distributeRewards raceParams)
+                  logAndDelay $ "distributeRewards success: "
+                    <> toHex txHash
+
+                -- Disband Hydra group
+                -- disbandTxHash <- disbandHydraGroup groupEntry.oref
+                -- logAndDelay $ "Successfully disbanded Hydra group with ID: "
+                -- <> toHex groupId
+                -- <> ", TX hash: "
+                -- <> toHex disbandTxHash
+                pure unit
           Left decodeErr ->
             throw $ "could not decode config: " <>
               CA.printJsonDecodeError decodeErr

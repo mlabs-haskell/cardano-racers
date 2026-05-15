@@ -8,15 +8,15 @@ import CardanoRacers.Hydra.Contracts.AnnounceDistr (announceRewardDistribution)
 import CardanoRacers.Hydra.Contracts.Commit (commitCollateralToHydra)
 import CardanoRacers.Hydra.Lib.Json (printJsonUsingCodec)
 import CardanoRacers.Hydra.Lib.Retry (RetryConfig, retryOnAnyError, retryOnNothing)
-import CardanoRacers.Hydra.Monad (AppM, getAppLauncher, setHydraSnapshot)
+import CardanoRacers.Hydra.Monad (AppM, getAppLauncher, readHeadStatus, setHydraSnapshot)
 import CardanoRacers.Hydra.RewardDistribution (distributeRewards)
 import CardanoRacers.Hydra.State.RaceStatus
   ( setRaceStatusAccepting
   , setRaceStatusDistributing
   , setRaceStatusFinalizing
   )
-import Contract.Log (logInfo', logWarn')
-import Control.Monad.Error.Class (liftMaybe, throwError, try)
+import Contract.Log (logError', logInfo', logWarn')
+import Control.Monad.Error.Class (catchError, liftMaybe, throwError, try)
 import Control.Monad.Reader.Class (ask)
 import Data.Either (Either(Left, Right))
 import Data.Int (round) as Int
@@ -28,10 +28,11 @@ import Effect.Exception (error)
 import Effect.Timer (setTimeout)
 import HydraSdk.NodeApi (HydraNodeApiWebSocket)
 import HydraSdk.Types
-  ( HydraHeadStatus(HeadStatus_Idle)
+  ( HydraHeadStatus(HeadStatus_Idle, HeadStatus_Initializing, HeadStatus_Open)
   , HydraNodeApi_InMessage(Greetings, Committed, HeadIsOpen, SnapshotConfirmed, ReadyToFanout)
   , HydraSnapshot
   , hydraSnapshotCodec
+  , printHeadStatus
   )
 
 messageHandler
@@ -40,7 +41,7 @@ messageHandler
   -> AppM Unit
 messageHandler ws msg = do
   { config: { isHeadLeader } } <- ask
-  case msg of
+  abortOrFanoutOnException ws case msg of
     Left _rawMessage -> pure unit
     Right message ->
       case message of
@@ -69,7 +70,6 @@ messageHandler ws msg = do
             , utxo
             , confirmed: mempty
             }
-          -- TODO: handle fatal errors gracefully: close Head, etc.
           { raceData } <-
             liftMaybe (error "Could not advance race status to AcceptingPlayerInputs") =<<
               setRaceStatusAccepting
@@ -87,15 +87,31 @@ messageHandler ws msg = do
             when isHeadLeader do
               let rewardDistr = distributeRewards finalResults raceData.raceParams
               logInfo' $ "Reward distribution: " <> show rewardDistr
-              retryOnAnyError defaultRetryConfig $
+              retryOnAnyError "announceRewardDistribution" defaultRetryConfig $
                 announceRewardDistribution ws rewardDistr
         SnapshotConfirmed { snapshot } -> do
           setAndLogHydraSnapshot snapshot
-          when (isHeadLeader && (unwrap snapshot).snapshotNumber == one) do
+          when ((unwrap snapshot).snapshotNumber == one) do
             liftEffect ws.closeHead
         ReadyToFanout _ ->
-          when isHeadLeader $ liftEffect ws.fanout
+          liftEffect ws.fanout
         _ -> pure unit
+
+abortOrFanoutOnException :: HydraNodeApiWebSocket AppM -> AppM Unit -> AppM Unit
+abortOrFanoutOnException ws action = do
+  action `catchError` \err -> do
+    headStatus <- readHeadStatus
+    logError' $ "Got unrecoverable exception. Head status: " <>
+      printHeadStatus headStatus
+    case headStatus of
+      HeadStatus_Initializing -> do
+        logError' "Aborting the Head to return all commited funds to mainchain..."
+        liftEffect ws.abortHead
+      HeadStatus_Open -> do
+        logError' "Closing the Head to \"fan out\" the current Hydra snapshot to mainchain..."
+        liftEffect ws.closeHead
+      _ ->
+        throwError err
 
 setAndLogHydraSnapshot :: HydraSnapshot -> AppM Unit
 setAndLogHydraSnapshot snapshot = do
