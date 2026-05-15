@@ -19,6 +19,7 @@ import CardanoRacers.Hydra.RaceSimulator
   , raceSimulationErrorCodec
   , runSimulator
   )
+import CardanoRacers.Hydra.Types.RaceStatus (RaceStatus(AcceptingPlayerInputs))
 import CardanoRacers.Race.Types (RaceParams(RaceParams))
 import Control.Monad.Error.Class (liftEither, liftMaybe, throwError)
 import Control.Monad.Except (ExceptT(ExceptT), runExceptT)
@@ -93,17 +94,19 @@ submitPlayerInputHandlerReturningErrors bodyStr =
       liftEither $
         lmap (CouldNotDecodeReqBody <<< { decodeError: _ } <<< CA.printJsonDecodeError)
           (caDecodeString playerInputCodec bodyStr)
+    { raceStatusRef } <- ask
+    resultSlots <-
+      liftEffect (Ref.read raceStatusRef) >>=
+        case _ of
+          AcceptingPlayerInputs slots ->
+            pure slots
+          _ ->
+            throwError PlayerInputSubmitWindowNotActive
     { raceParams: RaceParams { stateCurrencySymbol: raceId, participants } } <-
       lift readRaceData
     let pkh = PublicKey.hash reqBody.auth.vk
     addr <- liftMaybe MustBeRaceParticipant $ getParticipantAddress pkh participants
-    { resultSlots, acceptingPlayerInputs } <- ask
-    liftEffect (Ref.read acceptingPlayerInputs) >>= \p ->
-      unless p $
-        throwError PlayerInputSubmitWindowNotActive
-    slot <- do
-      slots <- liftEffect $ Ref.read resultSlots
-      liftMaybe ResultSlotsMisconfigured $ Map.lookup addr =<< slots
+    slot <- liftMaybe ResultSlotsMisconfigured $ Map.lookup addr resultSlots
     unless
       (((asPubKeyHash <<< unwrap) =<< getPaymentCredential reqBody.auth.addr) == Just pkh)
       (throwError VkAddressMismatch)

@@ -4,18 +4,26 @@ module CardanoRacers.Hydra.MessageHandler
 
 import Prelude
 
+import Cardano.Plutus.Types.Map (empty) as Plutus.Map
+import CardanoRacers.Hydra.Contracts.AnnounceDistr (announceRewardDistribution)
 import CardanoRacers.Hydra.Contracts.Commit (commitCollateralToHydra)
 import CardanoRacers.Hydra.Lib.Json (printJsonUsingCodec)
+import CardanoRacers.Hydra.Lib.Retry (retryBool)
 import CardanoRacers.Hydra.Monad (AppM, getAppLauncher, setHydraSnapshot)
-import CardanoRacers.Hydra.ResultsConsensus (confirmResultsByConsensus)
-import Contract.Log (logError', logInfo', logWarn')
-import Control.Monad.Error.Class (try)
+import CardanoRacers.Hydra.State.RaceStatus
+  ( setRaceStatusAccepting
+  , setRaceStatusDistributing
+  , setRaceStatusFinalizing
+  )
+import Contract.Log (logInfo', logWarn')
+import Control.Monad.Error.Class (throwError, try)
 import Control.Monad.Reader.Class (ask)
 import Data.Either (Either(Left, Right))
 import Data.Maybe (fromMaybe)
 import Data.Newtype (wrap, unwrap)
+import Data.Time.Duration (Minutes(Minutes), Seconds(Seconds))
 import Effect.Class (liftEffect)
-import Effect.Ref (write) as Ref
+import Effect.Exception (error)
 import Effect.Timer (setTimeout)
 import HydraSdk.NodeApi (HydraNodeApiWebSocket)
 import HydraSdk.Types
@@ -60,30 +68,28 @@ messageHandler ws msg = do
             , utxo
             , confirmed: mempty
             }
-          { acceptingPlayerInputs } <- ask
-          liftEffect $ Ref.write true acceptingPlayerInputs
+          do
+            success <- setRaceStatusAccepting
+            -- TODO: handle fatal errors gracefully: close Head, etc.
+            unless success do
+              throwError $ error "Could not advance race status to AcceptingPlayerInputs"
           launchApp <- getAppLauncher
-          -- TODO: extract function
-          -- TODO: timeout should be configurable
+          -- TODO: time params should be configurable
           liftEffect $ void $ setTimeout 300000 {- 5 min -}  $ launchApp do
             logInfo' "Finalizing race results..."
-            liftEffect $ Ref.write false acceptingPlayerInputs
-            { resultSlots, config: { hydraNodeStartupParams: { peers } } } <- ask
-            confirmResultsByConsensus resultSlots (_.httpServer <$> peers) >>=
-              case _ of
-                Left err ->
-                  -- TODO: close Head?
-                  logError' $ "Could not confirm race results. Error: "
-                    <> show err
-                Right finalResults -> do
-                  logInfo' $ "Final race results reached by consensus: " <>
-                    show finalResults
-                  -- 1. TODO: calculate reward distribution
-                  -- 2. TODO: store reward distribution in app state
-                  -- 3. TODO: if Head leader, post AnnounceRewardDistribution Tx
-                  pure unit
-        -- when isHeadLeader do
-        --   announceRewardDistribution ws Plutus.Map.empty
+            do
+              success <- setRaceStatusFinalizing
+              unless success do
+                throwError $ error "Could not advance race status to FinalizingResults"
+            do
+              success <-
+                retryBool { timeout: Minutes 5.0, delay: Seconds 10.0 }
+                  setRaceStatusDistributing
+              unless success do
+                throwError $ error "Could not advance race status to DistributingRewards"
+            when isHeadLeader do
+              -- TODO: build reward distribution
+              announceRewardDistribution ws Plutus.Map.empty
         SnapshotConfirmed { snapshot } -> do
           setAndLogHydraSnapshot snapshot
           when (isHeadLeader && (unwrap snapshot).snapshotNumber == 1) do

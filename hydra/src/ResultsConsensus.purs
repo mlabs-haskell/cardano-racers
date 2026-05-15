@@ -7,14 +7,9 @@ import Prelude
 
 import Cardano.Provider (ServerConfig)
 import Cardano.Provider.ServerConfig (mkHttpUrl)
-import CardanoRacers.Hydra.Handlers.GetRaceResults
-  ( GetRaceResultsError
-  , RaceResults
-  , getRaceResults
-  , raceResultsToMap
-  )
-import CardanoRacers.Hydra.Monad (RaceResultSlots)
+import CardanoRacers.Hydra.Handlers.GetRaceResults (GetRaceResultsError)
 import CardanoRacers.Hydra.Services.HydraPeer (getRaceResultsRequest)
+import CardanoRacers.Hydra.Types.RaceStatus (RaceResults, raceResultsToMap)
 import Control.Monad.Except (ExceptT(ExceptT), runExceptT)
 import Data.Array ((:))
 import Data.Array (catMaybes, sortWith) as Array
@@ -29,7 +24,6 @@ import Data.Show.Generic (genericShow)
 import Data.Traversable (traverse)
 import Data.Tuple.Nested ((/\))
 import Effect.Aff.Class (class MonadAff, liftAff)
-import Effect.Ref (Ref)
 import HydraSdk.Types (HttpError)
 
 data ConfirmResultsError
@@ -44,13 +38,12 @@ instance Show ConfirmResultsError where
 confirmResultsByConsensus
   :: forall (m :: Type -> Type)
    . MonadAff m
-  => Ref (Maybe RaceResultSlots)
+  => RaceResults Maybe
   -> Array ServerConfig
   -> m (Either ConfirmResultsError (RaceResults Identity))
-confirmResultsByConsensus resultSlots peers =
+confirmResultsByConsensus localResults peers =
   runExceptT do
-    ownResultMap <- ExceptT $ bimap CouldNotGetOwnResults raceResultsToMap <$> getRaceResults
-      resultSlots
+    let localResultMap = raceResultsToMap localResults
     peerResultMaps <- traverse
       ( \httpServer ->
           ExceptT $ liftAff $ bimap CouldNotGetPeerResults raceResultsToMap <$>
@@ -58,16 +51,16 @@ confirmResultsByConsensus resultSlots peers =
       )
       peers
     let
-      resultMaps = ownResultMap : peerResultMaps
+      resultMaps = localResultMap : peerResultMaps
       finalResults =
         foldl
           (Map.unionWith (\x y -> if x == y then x else Nothing))
           Map.empty
           resultMaps
     pure $ Array.sortWith _.result $ Array.catMaybes
-      ( Map.toUnfoldableUnordered finalResults <#> \(participant /\ mResult) ->
+      ( Map.toUnfoldableUnordered finalResults <#> \(addr /\ mResult) ->
           mResult <#> \result ->
-            { participant
+            { addr
             , result: Identity result
             }
       )

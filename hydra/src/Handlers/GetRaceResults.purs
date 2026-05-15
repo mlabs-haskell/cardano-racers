@@ -1,73 +1,38 @@
 module CardanoRacers.Hydra.Handlers.GetRaceResults
-  ( RaceParticipantResult
-  , GetRaceResultsError(RaceResultsNotAvailable, EmptyResultSlot)
-  , RaceResults
-  , getRaceResults
+  ( GetRaceResultsError(RaceResultsNotAvailable)
+  , getRaceResultsErrorCodec
   , getRaceResultsHandler
-  , raceParticipantResultCodec
-  , raceResultsCodec
-  , raceResultsToMap
   ) where
 
 import Prelude
 
-import Aeson (Finite, stringifyAeson)
-import Cardano.Plutus.Types.Address (Address) as Plutus
-import CardanoRacers.Hydra.Codec (plutusAddressCodec)
-import CardanoRacers.Hydra.Lib.AVar (readNow) as AVar
-import CardanoRacers.Hydra.Monad (AppM, RaceResultSlots)
-import Control.Error.Util ((!?))
+import Aeson (stringifyAeson)
+import CardanoRacers.Hydra.Monad (AppM)
+import CardanoRacers.Hydra.Types.RaceStatus
+  ( RaceResults
+  , RaceStatus(FinalizingResults, DistributingRewards)
+  , raceResultsCodec
+  )
+import Control.Monad.Error.Class (throwError)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Reader (ask)
-import Data.Codec.Argonaut (JsonCodec, array, encode, number, object) as CA
-import Data.Codec.Argonaut.Compat (maybe) as CACompat
-import Data.Codec.Argonaut.Record (record) as CAR
+import Data.Codec.Argonaut (JsonCodec, encode) as CA
 import Data.Codec.Argonaut.Sum (sumFlat) as CAS
 import Data.Either (Either(Left, Right))
 import Data.Generic.Rep (class Generic)
-import Data.Map (Map)
-import Data.Map (fromFoldable, toUnfoldable) as Map
 import Data.Maybe (Maybe)
 import Data.Show.Generic (genericShow)
-import Data.Traversable (traverse)
-import Data.Tuple (Tuple(Tuple))
-import Effect.Aff.Class (class MonadAff)
-import Effect.Class (liftEffect)
+import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Ref (Ref)
 import Effect.Ref (read) as Ref
 import HTTPure (Response) as HTTPure
 import HTTPure (Status, ok, response)
-import HTTPure.Status (conflict, internalServerError) as Status
-
-type RaceResults (f :: Type -> Type) = Array (RaceParticipantResult f)
-
-raceResultsCodec :: CA.JsonCodec (RaceResults Maybe)
-raceResultsCodec = CA.array raceParticipantResultCodec
-
-raceResultsToMap
-  :: forall (f :: Type -> Type)
-   . RaceResults f
-  -> Map Plutus.Address (f (Finite Number))
-raceResultsToMap =
-  Map.fromFoldable
-    <<< map (\{ participant, result } -> Tuple participant result)
-
-type RaceParticipantResult (f :: Type -> Type) =
-  { participant :: Plutus.Address
-  , result :: f (Finite Number)
-  }
-
-raceParticipantResultCodec :: CA.JsonCodec (RaceParticipantResult Maybe)
-raceParticipantResultCodec =
-  CA.object "RaceParticipantResult" $ CAR.record
-    { participant: plutusAddressCodec
-    , result: CACompat.maybe CA.number
-    }
+import HTTPure.Status (conflict) as Status
 
 getRaceResultsHandler :: AppM HTTPure.Response
 getRaceResultsHandler = do
-  { resultSlots } <- ask
-  getRaceResults resultSlots >>=
+  { raceStatusRef } <- ask
+  getRaceResults raceStatusRef >>=
     case _ of
       Left err ->
         response (errorStatus err) $ stringifyAeson $ CA.encode getRaceResultsErrorCodec err
@@ -76,27 +41,20 @@ getRaceResultsHandler = do
 
 getRaceResults
   :: forall (m :: Type -> Type)
-   . MonadAff m
-  => Ref (Maybe RaceResultSlots)
+   . MonadEffect m
+  => Ref RaceStatus
   -> m (Either GetRaceResultsError (RaceResults Maybe))
-getRaceResults resultSlots =
+getRaceResults raceStatusRef =
   runExceptT do
-    slots <- Map.toUnfoldable <$> liftEffect (Ref.read resultSlots) !?
-      RaceResultsNotAvailable
-    traverse
-      ( \(Tuple participant slot) ->
-          AVar.readNow EmptyResultSlot slot <#> \result ->
-            { participant
-            , result
-            }
-      )
-      slots
+    raceStatus <- liftEffect $ Ref.read raceStatusRef
+    case raceStatus of
+      FinalizingResults raceResults -> pure raceResults
+      DistributingRewards { localResults } -> pure localResults
+      _ -> throwError RaceResultsNotAvailable
 
 -- Errors
 
-data GetRaceResultsError
-  = RaceResultsNotAvailable
-  | EmptyResultSlot
+data GetRaceResultsError = RaceResultsNotAvailable
 
 derive instance Generic GetRaceResultsError _
 derive instance Eq GetRaceResultsError
@@ -108,7 +66,6 @@ getRaceResultsErrorCodec :: CA.JsonCodec GetRaceResultsError
 getRaceResultsErrorCodec =
   CAS.sumFlat "GetRaceResultsError"
     { "RaceResultsNotAvailable": unit
-    , "EmptyResultSlot": unit
     }
 
 errorStatus :: GetRaceResultsError -> Status
@@ -116,5 +73,3 @@ errorStatus =
   case _ of
     RaceResultsNotAvailable ->
       Status.conflict
-    EmptyResultSlot ->
-      Status.internalServerError

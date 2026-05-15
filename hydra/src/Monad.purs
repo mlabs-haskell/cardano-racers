@@ -34,6 +34,7 @@ import CardanoRacers.Hydra.Contracts.Collateral (getCollateralUtxo)
 import CardanoRacers.Hydra.Lib.AVar (readNow) as AVar
 import CardanoRacers.Hydra.Lib.Contract (runContractNullCosts)
 import CardanoRacers.Hydra.Types.Common (Utxo)
+import CardanoRacers.Hydra.Types.RaceStatus (RaceStatus(Initializing))
 import CardanoRacers.Race.Types (RaceParams)
 import Contract.Config
   ( ContractParams
@@ -60,12 +61,9 @@ import Data.Log.Formatter.Pretty (prettyFormatter)
 import Data.Log.Level (LogLevel)
 import Data.Log.Message (Message)
 import Data.Map (Map)
-import Data.Map (fromFoldable) as Map
 import Data.Maybe (Maybe(Just, Nothing))
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.String (take, trim) as String
-import Data.Traversable (traverse)
-import Data.Tuple (Tuple(Tuple))
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Effect.Aff (Aff, launchAff, runAff_)
@@ -77,7 +75,7 @@ import Effect.Console (log)
 import Effect.Exception (Error, error)
 import Effect.Exception (message) as Error
 import Effect.Ref (Ref)
-import Effect.Ref (new, write) as Ref
+import Effect.Ref (new, read, write) as Ref
 import HydraSdk.Lib (modify) as AVar
 import HydraSdk.Types
   ( HydraHeadStatus(HeadStatus_Unknown)
@@ -116,9 +114,8 @@ type AppState =
   , collateralUtxo :: Utxo
   , headStatus :: AVar HydraHeadStatus
   , snapshot :: AVar HydraSnapshot
-  , race :: AVar (Maybe RaceData)
-  , resultSlots :: Ref (Maybe RaceResultSlots)
-  , acceptingPlayerInputs :: Ref Boolean
+  , raceDataRef :: Ref (Maybe RaceData)
+  , raceStatusRef :: Ref RaceStatus
   }
 
 type RaceResultSlots = Map Plutus.Address (AVar (Maybe (Finite Number)))
@@ -191,22 +188,15 @@ setHeadStatus status =
     =<< asks _.headStatus
 
 readRaceData :: AppM RaceData
-readRaceData =
-  liftMaybe (error "readRaceData: Nothing found")
-    =<< AVar.readNow (error "readRaceData: empty avar")
-    =<< asks _.race
+readRaceData = do
+  { raceDataRef } <- ask
+  raceData <- liftEffect $ Ref.read raceDataRef
+  liftMaybe (error "readRaceData: Nothing found") raceData
 
 setRaceData :: RaceData -> AppM Unit
 setRaceData rd = do
-  { race, resultSlots } <- ask
-  slots <-
-    Map.fromFoldable <$>
-      traverse
-        (\addr -> Tuple addr <$> liftAff (AVar.new Nothing))
-        (unwrap rd.raceParams).participants
-  -- TODO: ensure this is not prone to race conditions
-  void $ AVar.modify (const (pure $ Just rd)) race
-  liftEffect $ Ref.write (Just slots) resultSlots
+  { raceDataRef } <- ask
+  liftEffect $ Ref.write (Just rd) raceDataRef
 
 readHydraSnapshot :: AppM HydraSnapshot
 readHydraSnapshot =
@@ -237,18 +227,16 @@ initApp config@{ hydraNodeStartupParams } = do
   collateralUtxo <- runContractInEnv contractEnv getCollateralUtxo
   headStatus <- AVar.new HeadStatus_Unknown
   snapshot <- AVar.new emptySnapshot
-  race <- AVar.new Nothing
-  resultSlots <- liftEffect $ Ref.new Nothing
-  acceptingPlayerInputs <- liftEffect $ Ref.new false
+  raceDataRef <- liftEffect $ Ref.new Nothing
+  raceStatusRef <- liftEffect $ Ref.new Initializing
   pure
     { config
     , contractEnv
     , collateralUtxo
     , headStatus
     , snapshot
-    , race
-    , resultSlots
-    , acceptingPlayerInputs
+    , raceDataRef
+    , raceStatusRef
     }
 
 initContractEnv :: FilePath -> FilePath -> LogLevel -> Aff ContractEnv

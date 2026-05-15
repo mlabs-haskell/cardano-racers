@@ -11,8 +11,9 @@ module CardanoRacers.Hydra.RaceSimulator
 import Prelude
 
 import Aeson (Finite, finiteNumber)
+import CardanoRacers.Hydra.Lib.Retry (retryBool)
 import Contract.Log (logTrace')
-import Control.Monad.Error.Class (class MonadError, throwError, try)
+import Control.Monad.Error.Class (class MonadError, try)
 import Control.Monad.Logger.Class (class MonadLogger)
 import Ctl.Internal.Helpers ((<</>>))
 import Ctl.Internal.Testnet.Utils (tmpdirUnique)
@@ -20,7 +21,7 @@ import Data.Array ((:))
 import Data.Array (concat) as Array
 import Data.Codec.Argonaut (JsonCodec) as CA
 import Data.Codec.Argonaut.Generic (nullarySum) as CAG
-import Data.Either (Either(Left), isRight, note)
+import Data.Either (Either(Left), note)
 import Data.Generic.Rep (class Generic)
 import Data.Int (toNumber) as Int
 import Data.Maybe (Maybe(Just, Nothing))
@@ -31,10 +32,9 @@ import Data.String (Pattern(Pattern))
 import Data.String (stripPrefix, trim) as String
 import Data.Time.Duration (Seconds(Seconds))
 import Effect.Aff.Class (class MonadAff, liftAff)
-import Effect.Aff.Retry (constantDelay, limitRetriesByCumulativeDelay, recovering)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
-import Effect.Exception (Error, error)
+import Effect.Exception (Error)
 import Node.ChildProcess (defaultSpawnOptions, kill, spawn, stdout)
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (readTextFile, writeTextFile)
@@ -75,7 +75,7 @@ runSimulator userInput = do
     )
     defaultSpawnOptions
   liftEffect $ onDataString (stdout child) UTF8 \str -> log $ "[simulator] " <> str
-  resultAvailable <- isRight <$> try (awaitResult simResultPath)
+  resultAvailable <- awaitResult simResultPath
   logTrace' "Killing simulator child process..."
   void $ try $ liftEffect $ kill SIGTERM child
   if resultAvailable then do
@@ -89,24 +89,22 @@ runSimulator userInput = do
   else
     pure $ Left NoResultFileAvailableAfterTimeout
   where
-  awaitResult :: FilePath -> m Unit
+  awaitResult :: FilePath -> m Boolean
   awaitResult fp = do
     let
       delaySec = 5
       timeoutSec = 60
     logTrace' $ "Simulator child process will be killed in " <> show timeoutSec <> " seconds"
-    recovering
-      ( limitRetriesByCumulativeDelay (Seconds $ Int.toNumber timeoutSec) $ constantDelay
-          (Seconds $ Int.toNumber delaySec)
-      )
-      ([ \_ _ -> pure true ])
-      ( \_ -> do
+    retryBool
+      { timeout: Seconds $ Int.toNumber timeoutSec
+      , delay: Seconds $ Int.toNumber delaySec
+      }
+      ( do
           success <- liftEffect $ exists fp
           unless success do
             logTrace' $ fp <> " does not exist yet, retrying in " <> show delaySec
               <> " seconds..."
-            throwError $ error "retry"
-          pure unit
+          pure success
       )
 
   option :: String -> String -> Array String

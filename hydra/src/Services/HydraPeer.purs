@@ -6,7 +6,6 @@ module CardanoRacers.Hydra.Services.HydraPeer
 
 import Prelude
 
-import CardanoRacers.Hydra.Handlers.GetRaceResults (RaceResults, raceResultsCodec)
 import CardanoRacers.Hydra.Handlers.SignAnnounceDistrTx.Types
   ( SignAnnounceDistrTxRequestPayload
   , SignAnnounceDistrTxResponse
@@ -20,6 +19,7 @@ import CardanoRacers.Hydra.Handlers.SignCommitTx
   , signCommitTxResponseCodec
   )
 import CardanoRacers.Hydra.Services.Utils (getRequest, handleResponse, postRequest)
+import CardanoRacers.Hydra.Types.RaceStatus (RaceResults, raceResultsCodec)
 import Ctl.Internal.Helpers ((<</>>))
 import Data.Codec.Argonaut (encode) as CA
 import Data.Either (Either)
