@@ -49,6 +49,7 @@ import CardanoRacers.RaceSlot.Types (RaceHash)
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.RacersState.Types (RacersState(RacersState))
 import CardanoRacers.ScriptsFFI (raceScript)
+import CardanoRacers.Types.FixedDecimal (FixedDecimal, N5)
 import Contract.Address (getNetworkId)
 import Contract.Chain (currentTime)
 import Contract.Monad (Contract, liftContractM)
@@ -83,13 +84,20 @@ startRace
   :: Maybe RewardDistribution -- should only be set in tests
   -> RaceHash
   -> Value
+  -> Array (FixedDecimal N5)
   -> Array Plutus.Address
   -> Array Ed25519KeyHash
   -> Racers
        { txHash :: TransactionHash
        , raceParams :: RaceParams
        }
-startRace distribution raceHash totalRewardValue participants delegates = do
+startRace
+  distribution
+  raceHash
+  totalRewardValue
+  rewardWeights
+  participants
+  delegates = do
   slotPolicy <- mkRaceSlotPolicy raceHash
 
   slotPolicyHash <-
@@ -114,6 +122,7 @@ startRace distribution raceHash totalRewardValue participants delegates = do
       , participants
       , delegates
       , escrowTtl: nowTime + mkPosixTimeUnsafe (Days 2.0)
+      , rewardWeights
       }
 
   raceValidatorHash <- PlutusScript.hash <$> mkRaceValidator raceParams

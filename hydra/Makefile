@@ -1,4 +1,4 @@
-.PHONY: build format run-a run-b start-race gen-keys
+.PHONY: build format run-a run-b start-race run-simulator gen-keys
 
 ps-sources := $(shell fd --no-ignore-parent -epurs)
 purs-args := "--stash --censor-lib --censor-codes=ImplicitImport,ImplicitQualifiedImport,ImplicitQualifiedImportReExport,UserDefinedWarning"
@@ -24,6 +24,9 @@ run-b: requires-nix-shell
 
 start-race: requires-nix-shell
 	spago run --main CardanoRacers.Hydra.Demo.StartRace --exec-args 'demo/config.json'
+
+run-simulator: requires-nix-shell
+	spago run --main CardanoRacers.Hydra.Demo.RunSimulator --exec-args 'simulator/input.csv'
 
 gen-keys: requires-nix-shell
 	@hydra-node gen-hydra-key --output-file ${keys-dir}/hydra-a

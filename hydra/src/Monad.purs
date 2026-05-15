@@ -3,6 +3,7 @@ module CardanoRacers.Hydra.Monad
   , AppM(AppM)
   , AppState
   , RaceData
+  , RaceResultSlots
   , appLogger
   , cleanupApp
   , getAppLauncher
@@ -24,6 +25,8 @@ module CardanoRacers.Hydra.Monad
 
 import Prelude
 
+import Aeson (Finite)
+import Cardano.Plutus.Types.Address (Address) as Plutus
 import Cardano.Types (NetworkId(MainnetId, TestnetId), PlutusScript, UtxoMap)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Hydra.Config (AppConfig)
@@ -31,6 +34,7 @@ import CardanoRacers.Hydra.Contracts.Collateral (getCollateralUtxo)
 import CardanoRacers.Hydra.Lib.AVar (readNow) as AVar
 import CardanoRacers.Hydra.Lib.Contract (runContractNullCosts)
 import CardanoRacers.Hydra.Types.Common (Utxo)
+import CardanoRacers.Hydra.Types.RaceStatus (RaceStatus(Initializing))
 import CardanoRacers.Race.Types (RaceParams)
 import Contract.Config
   ( ContractParams
@@ -56,6 +60,7 @@ import Data.Either (either)
 import Data.Log.Formatter.Pretty (prettyFormatter)
 import Data.Log.Level (LogLevel)
 import Data.Log.Message (Message)
+import Data.Map (Map)
 import Data.Maybe (Maybe(Just, Nothing))
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.String (take, trim) as String
@@ -63,12 +68,14 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Effect.Aff (Aff, launchAff, runAff_)
 import Effect.Aff.AVar (AVar)
-import Effect.Aff.AVar (new) as AVar
+import Effect.Aff.AVar (new, read) as AVar
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Console (log)
 import Effect.Exception (Error, error)
 import Effect.Exception (message) as Error
+import Effect.Ref (Ref)
+import Effect.Ref (new, read, write) as Ref
 import HydraSdk.Lib (modify) as AVar
 import HydraSdk.Types
   ( HydraHeadStatus(HeadStatus_Unknown)
@@ -100,14 +107,18 @@ derive newtype instance MonadRec AppM
 
 type AppLogger = Message -> ReaderT AppState Aff Unit
 
+-- TODO: some AVars here could probably just be Refs
 type AppState =
   { config :: AppConfig
   , contractEnv :: ContractEnv
   , collateralUtxo :: Utxo
   , headStatus :: AVar HydraHeadStatus
-  , race :: AVar (Maybe RaceData)
   , snapshot :: AVar HydraSnapshot
+  , raceDataRef :: Ref (Maybe RaceData)
+  , raceStatusRef :: Ref RaceStatus
   }
+
+type RaceResultSlots = Map Plutus.Address (AVar (Maybe (Finite Number)))
 
 type RaceData =
   { racersParams :: RacersParams
@@ -169,9 +180,7 @@ appLogger message = do
     liftEffect $ log messageFormatted
 
 readHeadStatus :: AppM HydraHeadStatus
-readHeadStatus =
-  AVar.readNow (error "readHeadStatus: empty avar")
-    =<< asks _.headStatus
+readHeadStatus = liftAff <<< AVar.read =<< asks _.headStatus
 
 setHeadStatus :: HydraHeadStatus -> AppM Unit
 setHeadStatus status =
@@ -179,15 +188,15 @@ setHeadStatus status =
     =<< asks _.headStatus
 
 readRaceData :: AppM RaceData
-readRaceData =
-  liftMaybe (error "readRaceData: Nothing found")
-    =<< AVar.readNow (error "readRaceData: empty avar")
-    =<< asks _.race
+readRaceData = do
+  { raceDataRef } <- ask
+  raceData <- liftEffect $ Ref.read raceDataRef
+  liftMaybe (error "readRaceData: Nothing found") raceData
 
 setRaceData :: RaceData -> AppM Unit
-setRaceData rd =
-  (void <<< AVar.modify (const (pure $ Just rd)))
-    =<< asks _.race
+setRaceData rd = do
+  { raceDataRef } <- ask
+  liftEffect $ Ref.write (Just rd) raceDataRef
 
 readHydraSnapshot :: AppM HydraSnapshot
 readHydraSnapshot =
@@ -217,15 +226,17 @@ initApp config@{ hydraNodeStartupParams } = do
       config.logLevel
   collateralUtxo <- runContractInEnv contractEnv getCollateralUtxo
   headStatus <- AVar.new HeadStatus_Unknown
-  race <- AVar.new Nothing
   snapshot <- AVar.new emptySnapshot
+  raceDataRef <- liftEffect $ Ref.new Nothing
+  raceStatusRef <- liftEffect $ Ref.new Initializing
   pure
     { config
     , contractEnv
     , collateralUtxo
     , headStatus
-    , race
     , snapshot
+    , raceDataRef
+    , raceStatusRef
     }
 
 initContractEnv :: FilePath -> FilePath -> LogLevel -> Aff ContractEnv

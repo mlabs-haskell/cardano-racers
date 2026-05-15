@@ -195,6 +195,9 @@
             packageJson = ./hydra/package.json;
             packageLock = ./hydra/package-lock.json;
             nodejs = pkgs.nodejs-18_x;
+            # Enter shell using:
+            # NIXPKGS_ALLOW_UNFREE=1 nix develop .#hydra --impure
+            # This is needed, because steam-run has an unfree license
             shell = {
               withRuntime = true;
               packageLockOnly = true;
@@ -204,6 +207,8 @@
                 nodePackages.eslint
                 nodePackages.prettier
                 nodePackages.purs-tidy
+                # FIXME: use run-free?
+                (steam.override { privateTmp = false; }).run # steam-run
               ];
               shellHook =
                 ''

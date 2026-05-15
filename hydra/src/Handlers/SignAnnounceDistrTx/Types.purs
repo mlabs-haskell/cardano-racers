@@ -1,5 +1,11 @@
 module CardanoRacers.Hydra.Handlers.SignAnnounceDistrTx.Types
-  ( SignAnnounceDistrTxError(CouldNotDecodeTx, TxValidationFailed, CouldNotSignTx)
+  ( SignAnnounceDistrTxError
+      ( CouldNotDecodeTx
+      , RaceDataNotAvailable
+      , UnexpectedRaceStatus
+      , TxValidationFailed
+      , CouldNotSignTx
+      )
   , SignAnnounceDistrTxRequestPayload
   , SignAnnounceDistrTxResponse
   , signAnnounceDistrTxErrorCodec
@@ -39,6 +45,8 @@ type SignAnnounceDistrTxResponse = ServerResponse Vkeywitness SignAnnounceDistrT
 
 data SignAnnounceDistrTxError
   = CouldNotDecodeTx String
+  | RaceDataNotAvailable
+  | UnexpectedRaceStatus
   | TxValidationFailed
   | CouldNotSignTx
 
@@ -52,6 +60,8 @@ signAnnounceDistrTxErrorCodec :: CA.JsonCodec SignAnnounceDistrTxError
 signAnnounceDistrTxErrorCodec =
   CAS.sum "SignAnnounceDistrTxError"
     { "CouldNotDecodeTx": CA.string
+    , "RaceDataNotAvailable": unit
+    , "UnexpectedRaceStatus": unit
     , "TxValidationFailed": unit
     , "CouldNotSignTx": unit
     }
