@@ -6,15 +6,17 @@ module CardanoRacers.Hydra.State.RaceStatus
 
 import Prelude
 
-import CardanoRacers.Hydra.Monad (AppM)
+import CardanoRacers.Hydra.Monad (AppM, RaceData)
 import CardanoRacers.Hydra.ResultsConsensus (confirmResultsByConsensus)
 import CardanoRacers.Hydra.Types.RaceStatus
   ( RaceStatus(Initializing, AcceptingPlayerInputs, FinalizingResults, DistributingRewards)
+  , RaceResults
   , isInitializing
   )
 import Contract.Log (logError', logInfo')
 import Control.Monad.Reader (ask)
 import Data.Either (Either(Left, Right))
+import Data.Identity (Identity)
 import Data.Map (fromFoldable, toUnfoldableUnordered) as Map
 import Data.Maybe (Maybe(Just, Nothing), isNothing)
 import Data.Newtype (unwrap)
@@ -25,7 +27,12 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Ref (read, write) as Ref
 
-setRaceStatusAccepting :: AppM Boolean
+setRaceStatusAccepting
+  :: AppM
+       ( Maybe
+           { raceData :: RaceData
+           }
+       )
 setRaceStatusAccepting = do
   { raceDataRef, raceStatusRef } <- ask
   raceData <- liftEffect $ Ref.read raceDataRef
@@ -38,13 +45,13 @@ setRaceStatusAccepting = do
             (\addr -> Tuple addr <$> liftAff (AVar.new Nothing))
             (unwrap rd.raceParams).participants
       liftEffect $ Ref.write (AcceptingPlayerInputs resultSlots) raceStatusRef
-      pure true
+      pure $ Just { raceData: rd }
     x, y -> do
       when (isNothing x) $
         logError' "setRaceStatusAccepting: race data is not set"
       unless (isInitializing y) $
         logError' "setRaceStatusAccepting: unexpected race status"
-      pure false
+      pure Nothing
 
 setRaceStatusFinalizing :: AppM Boolean
 setRaceStatusFinalizing = do
@@ -66,7 +73,12 @@ setRaceStatusFinalizing = do
       logError' "setRaceStatusFinalizing: unexpected race status"
       pure false
 
-setRaceStatusDistributing :: AppM Boolean
+setRaceStatusDistributing
+  :: AppM
+       ( Maybe
+           { finalResults :: RaceResults Identity
+           }
+       )
 setRaceStatusDistributing = do
   { raceStatusRef, config: { hydraNodeStartupParams: { peers } } } <- ask
   raceStatus <- liftEffect $ Ref.read raceStatusRef
@@ -78,7 +90,7 @@ setRaceStatusDistributing = do
             logError' $
               "setRaceStatusDistributing: could not finalize race results. error: "
                 <> show err
-            pure false
+            pure Nothing
           Right finalResults -> do
             logInfo' $ "setRaceStatusDistributing: final race results reached by consensus: "
               <> show finalResults
@@ -86,7 +98,7 @@ setRaceStatusDistributing = do
               { localResults
               , finalResults
               }
-            pure true
+            pure $ Just { finalResults }
     _ -> do
       logError' "setRaceStatusDistributing: unexpected race status"
-      pure false
+      pure Nothing

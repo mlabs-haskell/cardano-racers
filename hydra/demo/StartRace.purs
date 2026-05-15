@@ -26,6 +26,7 @@ import CardanoRacers.Hydra.Handlers.HostRace
   )
 import CardanoRacers.Hydra.Handlers.SubmitPlayerInput (mkSigMessage, playerInputCodec)
 import CardanoRacers.Hydra.Lib.Cose (getCoseSign1Signature)
+import CardanoRacers.Hydra.Lib.Retry (retryOnFalse)
 import CardanoRacers.Hydra.Monad (initContractEnv)
 import CardanoRacers.Hydra.Services.Utils (handleResponse, postRequest)
 import CardanoRacers.Hydra.Types.ServerResponse
@@ -69,13 +70,12 @@ import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Aff (delay, launchAff_)
 import Effect.Aff.Class (class MonadAff, liftAff)
-import Effect.Aff.Retry (constantDelay, limitRetriesByCumulativeDelay, recovering)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
 import Effect.Exception (error, throw)
-import Effect.Exception (message) as Error
 import HydraSdk.Lib (caDecodeFile)
 import HydraSdk.Types (HttpError)
+import JS.BigInt (fromInt) as BigInt
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (readTextFile)
 import Node.Path (FilePath)
@@ -121,10 +121,14 @@ main = do
                 addr <- liftedM "Could not get wallet address" getWalletAddress
                 plutusAddr <- liftMaybe (error "Could not convert wallet address") $
                   Plutus.Address.fromCardano addr
-                let participants = Array.singleton plutusAddr -- one participant 
+                let
+                  participants = Array.singleton plutusAddr -- one participant
+                  rewardWeights = [ 50_000, 30_000, 20_000 ] <#> wrap <<< { numerator: _ } <<<
+                    BigInt.fromInt
                 { txHash, raceParams } <-
                   runRacers racersParams $
-                    startRace Nothing raceHashFixture totalRewardValueFixture participants
+                    startRace Nothing raceHashFixture totalRewardValueFixture rewardWeights
+                      participants
                       delegatesFixture
                 logAndDelay $ "startRace success: " <> toHex txHash
 
@@ -147,20 +151,20 @@ main = do
                     log $ "hostRace success: " <> toHex commitTxHash
 
                 -- Submit player input
-                recovering
-                  (limitRetriesByCumulativeDelay (Minutes 10.0) $ constantDelay (Seconds 30.0))
-                  (Array.singleton $ \_ err -> pure $ Error.message err == "retry")
-                  ( \_ ->
-                      submitPlayerInput groupInfo raceParams "simulator/input.csv" >>=
-                        case _ of
-                          Left httpError -> do
-                            logError' $ "submitPlayerInput request failed with error: "
-                              <> show httpError
-                            throwError $ error "retry"
-                          Right _ ->
-                            pure unit
-                  )
-
+                do
+                  submitted <-
+                    retryOnFalse { timeout: Minutes 10.0, delay: Seconds 30.0 }
+                      ( submitPlayerInput groupInfo raceParams "simulator/input.csv" >>=
+                          case _ of
+                            Left httpError -> do
+                              logError' $ "submitPlayerInput request failed with error: "
+                                <> show httpError
+                              pure false
+                            Right _ ->
+                              pure true
+                      )
+                  unless submitted $ throwError $ error
+                    "Failed to submit player input after multiple attempts"
           {-
           -- Disband Hydra group
           disbandTxHash <- disbandHydraGroup groupEntry.oref

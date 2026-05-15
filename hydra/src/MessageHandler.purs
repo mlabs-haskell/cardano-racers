@@ -4,24 +4,25 @@ module CardanoRacers.Hydra.MessageHandler
 
 import Prelude
 
-import Cardano.Plutus.Types.Map (empty) as Plutus.Map
 import CardanoRacers.Hydra.Contracts.AnnounceDistr (announceRewardDistribution)
 import CardanoRacers.Hydra.Contracts.Commit (commitCollateralToHydra)
 import CardanoRacers.Hydra.Lib.Json (printJsonUsingCodec)
-import CardanoRacers.Hydra.Lib.Retry (retryBool)
+import CardanoRacers.Hydra.Lib.Retry (RetryConfig, retryOnAnyError, retryOnNothing)
 import CardanoRacers.Hydra.Monad (AppM, getAppLauncher, setHydraSnapshot)
+import CardanoRacers.Hydra.RewardDistribution (distributeRewards)
 import CardanoRacers.Hydra.State.RaceStatus
   ( setRaceStatusAccepting
   , setRaceStatusDistributing
   , setRaceStatusFinalizing
   )
 import Contract.Log (logInfo', logWarn')
-import Control.Monad.Error.Class (throwError, try)
+import Control.Monad.Error.Class (liftMaybe, throwError, try)
 import Control.Monad.Reader.Class (ask)
 import Data.Either (Either(Left, Right))
+import Data.Int (round) as Int
 import Data.Maybe (fromMaybe)
-import Data.Newtype (wrap, unwrap)
-import Data.Time.Duration (Minutes(Minutes), Seconds(Seconds))
+import Data.Newtype (unwrap, wrap)
+import Data.Time.Duration (Minutes(Minutes), Seconds(Seconds), fromDuration)
 import Effect.Class (liftEffect)
 import Effect.Exception (error)
 import Effect.Timer (setTimeout)
@@ -68,31 +69,29 @@ messageHandler ws msg = do
             , utxo
             , confirmed: mempty
             }
-          do
-            success <- setRaceStatusAccepting
-            -- TODO: handle fatal errors gracefully: close Head, etc.
-            unless success do
-              throwError $ error "Could not advance race status to AcceptingPlayerInputs"
+          -- TODO: handle fatal errors gracefully: close Head, etc.
+          { raceData } <-
+            liftMaybe (error "Could not advance race status to AcceptingPlayerInputs") =<<
+              setRaceStatusAccepting
           launchApp <- getAppLauncher
-          -- TODO: time params should be configurable
-          liftEffect $ void $ setTimeout 300000 {- 5 min -}  $ launchApp do
+          liftEffect $ void $ setTimeout playerInputSubmitWindow $ launchApp do
             logInfo' "Finalizing race results..."
             do
               success <- setRaceStatusFinalizing
               unless success do
                 throwError $ error "Could not advance race status to FinalizingResults"
-            do
-              success <-
-                retryBool { timeout: Minutes 5.0, delay: Seconds 10.0 }
+            { finalResults } <-
+              liftMaybe (error "Could not advance race status to DistributingRewards") =<<
+                retryOnNothing defaultRetryConfig
                   setRaceStatusDistributing
-              unless success do
-                throwError $ error "Could not advance race status to DistributingRewards"
             when isHeadLeader do
-              -- TODO: build reward distribution
-              announceRewardDistribution ws Plutus.Map.empty
+              let rewardDistr = distributeRewards finalResults raceData.raceParams
+              logInfo' $ "Reward distribution: " <> show rewardDistr
+              retryOnAnyError defaultRetryConfig $
+                announceRewardDistribution ws rewardDistr
         SnapshotConfirmed { snapshot } -> do
           setAndLogHydraSnapshot snapshot
-          when (isHeadLeader && (unwrap snapshot).snapshotNumber == 1) do
+          when (isHeadLeader && (unwrap snapshot).snapshotNumber == one) do
             liftEffect ws.closeHead
         ReadyToFanout _ ->
           when isHeadLeader $ liftEffect ws.fanout
@@ -103,3 +102,14 @@ setAndLogHydraSnapshot snapshot = do
   setHydraSnapshot snapshot
   logInfo' $ "New confirmed snapshot: " <> printJsonUsingCodec hydraSnapshotCodec
     snapshot
+
+-- TODO: time params should be configurable
+
+playerInputSubmitWindow :: Int
+playerInputSubmitWindow = Int.round $ unwrap $ fromDuration $ Minutes 5.0
+
+defaultRetryConfig :: RetryConfig Minutes Seconds
+defaultRetryConfig =
+  { timeout: Minutes 5.0
+  , delay: Seconds 20.0
+  }

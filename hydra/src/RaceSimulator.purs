@@ -11,7 +11,7 @@ module CardanoRacers.Hydra.RaceSimulator
 import Prelude
 
 import Aeson (Finite, finiteNumber)
-import CardanoRacers.Hydra.Lib.Retry (retryBool)
+import CardanoRacers.Hydra.Lib.Retry (retryOnFalse)
 import Contract.Log (logTrace')
 import Control.Monad.Error.Class (class MonadError, try)
 import Control.Monad.Logger.Class (class MonadLogger)
@@ -95,7 +95,7 @@ runSimulator userInput = do
       delaySec = 5
       timeoutSec = 60
     logTrace' $ "Simulator child process will be killed in " <> show timeoutSec <> " seconds"
-    retryBool
+    retryOnFalse
       { timeout: Seconds $ Int.toNumber timeoutSec
       , delay: Seconds $ Int.toNumber delaySec
       }

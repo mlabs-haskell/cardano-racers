@@ -26,6 +26,7 @@
   , "hydra-sdk"
   , "identity"
   , "integers"
+  , "js-bigints"
   , "js-timers"
   , "maybe"
   , "monad-logger"
