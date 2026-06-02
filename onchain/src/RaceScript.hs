@@ -45,6 +45,7 @@ import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
 import PlutusTx.AssocMap (elems, keys, lookup, toList)
 import PlutusTx.Prelude hiding (toList)
 import Utils (distributesToAddrs, findCurrentGameStateFromRefInputs, getInlineDatumFromTxOut)
+import Plutus.V1.Ledger.Address (toPubKeyHash)
 
 data RaceParams = RaceParams
   { stateCurrencySymbol :: CurrencySymbol 
@@ -52,6 +53,7 @@ data RaceParams = RaceParams
   , participants :: [Address]
   , delegates :: [PubKeyHash]
   , escrowTtl :: POSIXTime
+  , feePerDelegate :: Maybe Value 
   }
   deriving (Generic, Show)
 PlutusTx.unstableMakeIsData ''RaceParams
@@ -109,6 +111,7 @@ mkRaceScript rp params dat red ctx =
                 , traceIfFalse "invalid combined distributed value" $ totalRewardValueDistributed distr
                 , traceIfFalse "unexpected addresses in distribution" $ rewardsDistributedToRaceParticipants distr
                 , traceIfFalse "rewards not sent to race participants" $ rewardsSentToRaceParticipants distr
+                , traceIfFalse "hosting fees not sent to delegates" feesSentToDelegates 
                 , traceIfFalse "locked ada not returned to admin" lockedAdaReturnedToAdmin
                 , traceIfFalse "state token not disposed correctly" raceStateTokenSentToTokenBin 
                 ]
@@ -225,6 +228,23 @@ mkRaceScript rp params dat red ctx =
               (txInfoOutputs txInfo)
         )
         (toList distr)
+
+    feesSentToDelegates :: Bool
+    feesSentToDelegates =
+      case feePerDelegate params of
+        Just feeValue ->
+          all
+            ( \delegatePkh ->
+                isJust $ find
+                  ( \out ->
+                      toPubKeyHash (txOutAddress out) == Just delegatePkh &&
+                        txOutValue out `geq` feeValue
+                  )
+                  (txInfoOutputs txInfo)
+            )
+            (delegates params)
+        Nothing ->
+          True
 
     lockedAdaReturnedToAdmin :: Bool
     lockedAdaReturnedToAdmin =

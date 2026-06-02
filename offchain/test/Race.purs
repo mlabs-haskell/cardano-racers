@@ -11,8 +11,17 @@ import Cardano.Types.BigInt (fromInt) as JSBigInt
 import Cardano.Types.BigNum (fromInt) as BigNum
 import Cardano.Types.Value (lovelaceValueOf)
 import Cardano.Wallet.Key (getPrivatePaymentKey, privateKeyToPkh)
-import CardanoRacers.Race.Contract (distributeRewards, startRace)
-import CardanoRacers.Race.Types (RewardDistribution)
+import CardanoRacers.Helpers (assetNameFromAsciiUnsafe)
+import CardanoRacers.Race.Contract
+  ( distributeRewards
+  , startRaceWithHardcodedRewardDistribution
+  )
+import CardanoRacers.Race.Types
+  ( RewardDistribution
+  , StartRaceParams(StartRaceParams)
+  , StartRaceResult(StartRaceResult)
+  )
+import CardanoRacers.RaceRegistry.Types (RaceParticipant)
 import CardanoRacers.RaceSlot.Types (RaceHash)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
 import Contract.Log (logInfo')
@@ -39,30 +48,45 @@ suite :: TestPlanM ContractTest Unit
 suite =
   group "Race" do
     test "DistributeRewards" do
-      withWallets (distr /\ distr /\ distr /\ replicate numParticipants distr)
-        \(admin /\ treasury /\ anyone /\ participants) -> do
+      withWallets
+        ( distr /\ distr /\ distr /\ replicate numParticipants distr /\
+            replicate numDelegates distr
+        )
+        \(admin /\ treasury /\ anyone /\ participants /\ delegates) -> do
           rp <- withKeyWallet admin createRacersParamsHelper
           runRacers rp do
             void $ initRacersStateWithAdminAndTreasury (admin /\ treasury)
               (BigInt.fromInt 1_000_000)
               assetPrices
-          pkhs <- liftAff $ traverse
+          participantAddresses <- do
+            pkhs <- liftAff $ traverse
+              (map privateKeyToPkh <<< getPrivatePaymentKey)
+              participants
+            pure
+              ( flip Plutus.Address.pubKeyHashAddress Nothing <<< wrap <<< wrap
+                  <$> pkhs
+              )
+          delegatePkhs <- liftAff $ traverse
             (map privateKeyToPkh <<< getPrivatePaymentKey)
-            participants
-          let
-            addrs =
-              flip Plutus.Address.pubKeyHashAddress Nothing <<< wrap <<< wrap
-                <$> pkhs
-          { raceParams } <-
+            delegates
+          StartRaceResult { raceParams } <-
             withKeyWallet admin $ runRacers rp $
-              startRace (Just $ mkRewardDistribution addrs) raceHash
-                totalRewardValue
-                ( [ 50_000, 30_000, 20_000 ] <#> wrap <<< { numerator: _ } <<<
-                    JSBigInt.fromInt
+              startRaceWithHardcodedRewardDistribution
+                (Just $ mkRewardDistribution participantAddresses)
+                ( StartRaceParams
+                    { raceId: raceHash
+                    , totalRewardValue
+                    , rewardWeights:
+                        [ 50_000, 30_000, 20_000 ] <#> wrap <<< { numerator: _ }
+                          <<<
+                            JSBigInt.fromInt
+                    , participants: mkRaceParticipantFixture <$>
+                        participantAddresses
+                    , delegates: delegatePkhs
+                    , feePerDelegate: Just $ lovelaceValueOf $
+                        BigNum.fromInt 3_000_000
+                    }
                 )
-                addrs
-                mempty
-
           txHash <- withKeyWallet anyone $ runRacers rp $
             distributeRewards raceParams
           logInfo' $ "Success: " <> show txHash
@@ -80,6 +104,14 @@ suite =
     , epic: JSBigInt.fromInt 20_000_000
     }
 
+mkRaceParticipantFixture :: Plutus.Address -> RaceParticipant
+mkRaceParticipantFixture payoutAddress =
+  wrap
+    { car: assetNameFromAsciiUnsafe "TestCar"
+    , driver: assetNameFromAsciiUnsafe "TestDriver"
+    , payoutAddress
+    }
+
 raceHash :: RaceHash
 raceHash = unsafePartial fromJust $ byteArrayFromAscii "TestRaceHash"
 
@@ -92,6 +124,9 @@ singleRewardLovelace = 1_000_000
 
 numParticipants :: Int
 numParticipants = 5
+
+numDelegates :: Int
+numDelegates = 3
 
 mkRewardDistribution :: Array Plutus.Address -> RewardDistribution
 mkRewardDistribution =

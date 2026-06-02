@@ -1,4 +1,4 @@
-module CardanoRacers.Hydra.Lib.Hash
+module CardanoRacers.Utils.Hash
   ( blake2b256Hash
   ) where
 

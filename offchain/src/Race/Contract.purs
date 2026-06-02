@@ -2,6 +2,7 @@ module CardanoRacers.Race.Contract
   ( distributeRewards
   , mkRaceValidator
   , startRace
+  , startRaceWithHardcodedRewardDistribution
   ) where
 
 import Contract.Prelude
@@ -9,6 +10,7 @@ import Contract.Prelude
 import Cardano.FromData (fromData)
 import Cardano.Plutus.ApplyArgs (applyArgs)
 import Cardano.Plutus.Types.Address (Address) as Plutus
+import Cardano.Plutus.Types.Credential (Credential(PubKeyCredential)) as Plutus
 import Cardano.Plutus.Types.Map (toCardano) as Plutus.Map
 import Cardano.Plutus.Types.Value (fromCardano, toCardano) as Plutus.Value
 import Cardano.ToData (toData)
@@ -17,7 +19,6 @@ import Cardano.Types
   , Asset(Asset)
   , AssetName
   , Credential(ScriptHashCredential)
-  , Ed25519KeyHash
   , PlutusScript
   , RedeemerDatum
   , ScriptHash
@@ -38,18 +39,19 @@ import CardanoRacers.Race.Types
   , RaceParams
   , RaceRedeemer(DistributeRewards)
   , RewardDistribution
+  , StartRaceParams(StartRaceParams)
+  , StartRaceResult
   , raceStateTokenName
   , valueEscrowTokenName
   )
+import CardanoRacers.RaceRegistry.Types (RaceParticipant(RaceParticipant))
 import CardanoRacers.RaceSlot.Contract
   ( mintRaceSlotTokenConstraints
   , mkRaceSlotPolicy
   )
-import CardanoRacers.RaceSlot.Types (RaceHash)
 import CardanoRacers.RacersState.Contract (queryRacersState)
 import CardanoRacers.RacersState.Types (RacersState(RacersState))
 import CardanoRacers.ScriptsFFI (raceScript)
-import CardanoRacers.Types.FixedDecimal (FixedDecimal, N5)
 import Contract.Address (getNetworkId)
 import Contract.Chain (currentTime)
 import Contract.Monad (Contract, liftContractM)
@@ -59,7 +61,8 @@ import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptFromEnvelope)
 import Contract.Transaction (awaitTxConfirmed, submitTxFromConstraints)
 import Contract.TxConstraints (DatumPresence(DatumInline), TxConstraints)
 import Contract.TxConstraints
-  ( mustPayToScript
+  ( mustPayToPubKey
+  , mustPayToScript
   , mustReferenceOutput
   , mustSpendScriptOutput
   ) as Constraints
@@ -80,25 +83,18 @@ import JS.BigInt (toNumber) as BigInt
 import Partial.Unsafe (unsafePartial)
 import Racers (Racers)
 
-startRace
+startRace :: StartRaceParams -> Racers StartRaceResult
+startRace =
+  startRaceWithHardcodedRewardDistribution Nothing
+
+startRaceWithHardcodedRewardDistribution
   :: Maybe RewardDistribution -- should only be set in tests
-  -> RaceHash
-  -> Value
-  -> Array (FixedDecimal N5)
-  -> Array Plutus.Address
-  -> Array Ed25519KeyHash
-  -> Racers
-       { txHash :: TransactionHash
-       , raceParams :: RaceParams
-       }
-startRace
+  -> StartRaceParams
+  -> Racers StartRaceResult
+startRaceWithHardcodedRewardDistribution
   distribution
-  raceHash
-  totalRewardValue
-  rewardWeights
-  participants
-  delegates = do
-  slotPolicy <- mkRaceSlotPolicy raceHash
+  (StartRaceParams startParams) = do
+  slotPolicy <- mkRaceSlotPolicy startParams.raceId
 
   slotPolicyHash <-
     lift $ liftContractM "Could not get race slot token script hash"
@@ -107,22 +103,36 @@ startRace
       )
 
   (slotConstraints /\ slotLookups) <- mintRaceSlotTokenConstraints
-    raceHash
+    startParams.raceId
     [ raceStateTokenName /\ one
     , valueEscrowTokenName /\ one
     ]
 
   nowTime <- lift currentTime
 
+  participantAddresses <-
+    traverse
+      ( \(RaceParticipant { payoutAddress }) ->
+          case (unwrap payoutAddress).addressCredential of
+            Plutus.PubKeyCredential _ ->
+              pure payoutAddress
+            _ ->
+              throwError $ error
+                $ "All race participants must have pkh addresses. But found: "
+                <> show payoutAddress
+      )
+      startParams.participants
+
   let
     raceParams :: RaceParams
     raceParams = wrap
       { stateCurrencySymbol: slotPolicyHash
-      , totalRewardValue: Plutus.Value.fromCardano totalRewardValue
-      , participants
-      , delegates
+      , totalRewardValue: Plutus.Value.fromCardano startParams.totalRewardValue
+      , participants: participantAddresses
+      , delegates: startParams.delegates
       , escrowTtl: nowTime + mkPosixTimeUnsafe (Days 2.0)
-      , rewardWeights
+      , feePerDelegate: Plutus.Value.fromCardano <$> startParams.feePerDelegate
+      , rewardWeights: startParams.rewardWeights
       }
 
   raceValidatorHash <- PlutusScript.hash <$> mkRaceValidator raceParams
@@ -142,7 +152,8 @@ startRace
         (BigNum.fromInt 5_000_000)
 
     escrowValue :: Value
-    escrowValue = unsafePartial $ totalRewardValue <> valueEscrowTokenValue
+    escrowValue = unsafePartial $ startParams.totalRewardValue <>
+      valueEscrowTokenValue
 
     -- TODO: ensure totalRewardValue comes from the treasury wallet?
     constraints :: TxConstraints
@@ -165,7 +176,7 @@ startRace
   lift do
     txHash <- submitTxFromConstraints lookups constraints
     awaitTxConfirmed txHash
-    pure
+    pure $ wrap
       { txHash
       , raceParams
       }
@@ -216,6 +227,12 @@ distributeRewards raceParams = do
       )
       (Map.toUnfoldable rewardDistr)
 
+  feePerDelegate <-
+    liftMaybe (error "Could not convert Plutus feePerDelegate to Cardano.Value")
+      ( traverse Plutus.Value.toCardano
+          (unwrap raceParams).feePerDelegate
+      )
+
   let
     mkStateTokenValue :: AssetName -> Value
     mkStateTokenValue tn = Value.singleton stateCurrencySymbol tn BigNum.one
@@ -227,7 +244,6 @@ distributeRewards raceParams = do
             <> mkStateTokenValue valueEscrowTokenName
         )
 
-    -- TODO: ensure these calculations are consistent with the on-chain validator
     raceStateLovelace :: Number
     raceStateLovelace = BigInt.toNumber $ BigNum.toBigInt $ unwrap $ valueToCoin
       (unwrap $ snd raceStateUtxo).amount
@@ -248,6 +264,12 @@ distributeRewards raceParams = do
       [ Constraints.mustSpendScriptOutput (fst raceStateUtxo) redeemer
       , Constraints.mustSpendScriptOutput (fst valueEscrowUtxo) redeemer
       , foldMap (uncurry paysToAddrConstraint) rewards
+      , maybe mempty
+          ( \feeValue ->
+              foldMap (flip Constraints.mustPayToPubKey feeValue <<< wrap)
+                (unwrap raceParams).delegates
+          )
+          feePerDelegate
       , Constraints.mustPayToScript raceValidatorHash (toData TokenBin)
           DatumInline
           stateTokens
