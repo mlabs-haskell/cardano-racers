@@ -60,4 +60,12 @@ interface Client extends RacersQueries {
     car: TokenName,
     driver: TokenName
   ): Promise<TransactionHash>;
+
+  /** TODO: docs
+   */
+  completeRace(
+    race: Race,
+    hydraGroupHttpServers: string[],
+    csvInput: string
+  ): Promise<void>;
 }

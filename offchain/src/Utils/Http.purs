@@ -1,4 +1,4 @@
-module CardanoRacers.Hydra.Services.Utils
+module CardanoRacers.Utils.Http
   ( getRequest
   , handleResponse
   , postRequest
@@ -17,11 +17,17 @@ import Data.Bifunctor (lmap)
 import Data.Codec.Argonaut (JsonCodec) as CA
 import Data.Either (Either(Left, Right))
 import Data.HTTP.Method (Method(GET, POST))
-import Data.Maybe (Maybe)
+import Data.Maybe (Maybe(Just))
 import Data.Newtype (wrap)
+import Data.Time.Duration (Milliseconds, Seconds(Seconds), fromDuration)
 import Effect.Aff (Aff)
 import HydraSdk.Lib (caDecodeString)
-import HydraSdk.Types (HttpError(DecodeJsonError, HttpRequestError, HttpResponseError))
+import HydraSdk.Types
+  ( HttpError(DecodeJsonError, HttpRequestError, HttpResponseError)
+  )
+
+defaultRequestTimeout :: Milliseconds
+defaultRequestTimeout = fromDuration $ Seconds 30.0
 
 getRequest :: Affjax.URL -> Aff (Either Affjax.Error (Affjax.Response String))
 getRequest url =
@@ -29,6 +35,7 @@ getRequest url =
     { method = Left GET
     , url = url
     , responseFormat = Affjax.ResponseFormat.string
+    , timeout = Just defaultRequestTimeout
     }
 
 postRequest
@@ -44,6 +51,7 @@ postRequest { url, content, headers } =
     , headers = headers
     , responseFormat = Affjax.ResponseFormat.string
     , content = Affjax.String <<< stringifyAeson <$> content
+    , timeout = Just defaultRequestTimeout
     }
 
 handleResponse

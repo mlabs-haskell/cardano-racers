@@ -5,6 +5,7 @@ module CardanoRacers.Types.FixedDecimal
   , class AddNat
   , convertExp
   , emul
+  , fixedDecimalCodec
   , fromFixed5
   , fromFixedZero
   , toFixed5
@@ -16,10 +17,14 @@ import Prelude
 import Cardano.Plutus.DataSchema (class KnownNat, Nat, S, Z)
 import Cardano.Plutus.DataSchema.Nat (natVal)
 import Contract.PlutusData (class FromData, class ToData, fromData, toData)
+import Data.Codec.Argonaut (JsonCodec, object) as CA
+import Data.Codec.Argonaut.Record (record) as CAR
 import Data.Generic.Rep (class Generic)
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Ord (abs)
+import Data.Profunctor (wrapIso)
 import Data.Show.Generic (genericShow)
+import HydraSdk.Lib (bigIntCodec)
 import JS.BigInt (BigInt)
 import JS.BigInt (fromInt, pow) as BigInt
 import Type.Proxy (Proxy(Proxy))
@@ -41,6 +46,12 @@ instance ToData (FixedDecimal exp) where
 
 instance FromData (FixedDecimal exp) where
   fromData = map (wrap <<< { numerator: _ }) <<< fromData
+
+fixedDecimalCodec :: forall (exp :: Nat). CA.JsonCodec (FixedDecimal exp)
+fixedDecimalCodec =
+  wrapIso FixedDecimal $ CA.object "FixedDecimal" $ CAR.record
+    { numerator: bigIntCodec
+    }
 
 class AddNat :: Nat -> Nat -> Nat -> Constraint
 class AddNat a b res | a b -> res, a res -> b, b res -> a

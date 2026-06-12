@@ -4,68 +4,45 @@ module CardanoRacers.Hydra.Demo.StartRace
 
 import Prelude
 
-import Aeson (stringifyAeson)
-import Affjax (defaultRequest) as Affjax
-import Affjax.RequestBody (RequestBody(String)) as Affjax.RequestBody
-import Affjax.ResponseFormat (string) as Affjax.ResponseFormat
 import Cardano.AsCbor (class AsCbor, decodeCbor, encodeCbor)
+import Cardano.Plutus.Types.Address (Address) as Plutus
 import Cardano.Plutus.Types.Address (fromCardano) as Plutus.Address
-import Cardano.Provider (request)
-import Cardano.ToData (toData)
 import Cardano.Types (Ed25519KeyHash, ScriptHash, TransactionHash, Value)
 import Cardano.Types.BigNum (fromInt) as BigNum
-import Cardano.Types.PrivateKey (toPublicKey) as PrivateKey
 import Cardano.Types.Value (lovelaceValueOf)
-import Cardano.Wallet.Key (getPrivatePaymentKey)
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.Hydra.Handlers.HostRace
-  ( HostRaceRequest
-  , HostRaceResponse
-  , hostRaceRequestCodec
-  , hostRaceResponseCodec
-  )
-import CardanoRacers.Hydra.Handlers.SubmitPlayerInput (mkSigMessage, playerInputCodec)
-import CardanoRacers.Hydra.Lib.Cose (getCoseSign1Signature)
-import CardanoRacers.Hydra.Lib.Retry (retryOnAnyError, retryOnFalse)
+import CardanoRacers.Helpers (assetNameFromAsciiUnsafe)
+import CardanoRacers.Hydra.Lib.Retry (retryOnAnyError)
 import CardanoRacers.Hydra.Monad (initContractEnv)
-import CardanoRacers.Hydra.Services.Utils (handleResponse, postRequest)
-import CardanoRacers.Hydra.Types.ServerResponse
-  ( ServerResponse(ServerResponseError, ServerResponseSuccess)
-  )
 import CardanoRacers.HydraGroup.Contract (findHydraGroupById)
 import CardanoRacers.HydraGroup.Contract (registerHydraGroup) as HydraGroup
 import CardanoRacers.HydraGroup.Types (HydraGroupInfo)
 import CardanoRacers.Nitro.Helpers (createRacersParams)
 import CardanoRacers.Race.Contract (distributeRewards, startRace)
-import CardanoRacers.Race.Types (RaceParams)
-import CardanoRacers.RaceSlot.Types (RaceHash)
-import Contract.CborBytes (cborBytesToHex, hexToCborBytes)
-import Contract.Log (logError')
-import Contract.Monad (Contract, liftContractM, liftedM, runContractInEnv)
-import Contract.Wallet
-  ( Wallet(KeyWallet)
-  , getWalletAddress
-  , getWalletUtxos
-  , ownPaymentPubKeyHash
-  , signData
+import CardanoRacers.Race.Types
+  ( RaceParams
+  , StartRaceParams(StartRaceParams)
+  , StartRaceResult(StartRaceResult)
   )
-import Control.Monad.Error.Class (liftMaybe, throwError)
-import Control.Monad.Except (ExceptT(ExceptT), runExceptT)
-import Control.Monad.Reader (ask)
+import CardanoRacers.RaceRegistry.Types (RaceParticipant)
+import CardanoRacers.RaceSlot.Types (RaceHash)
+import CardanoRacers.Services.HydraDelegate (HostRaceRequest, hostRaceRequest)
+import Contract.Address (getNetworkId)
+import Contract.CborBytes (cborBytesToHex, hexToCborBytes)
+import Contract.Monad (Contract, liftContractM, liftedM, runContractInEnv)
+import Contract.Wallet (getWalletAddress, getWalletUtxos, ownPaymentPubKeyHash)
+import Control.Monad.Error.Class (liftMaybe)
 import Ctl.Internal.Contract.AwaitTxConfirmed (awaitTxConfirmed)
-import Ctl.Internal.Helpers ((<</>>))
 import Data.Array (head, singleton) as Array
 import Data.ByteArray (byteArrayFromAscii)
-import Data.Codec.Argonaut (JsonCodec, encode, null, object, printJsonDecodeError, string) as CA
+import Data.Codec.Argonaut (JsonCodec, object, printJsonDecodeError, string) as CA
 import Data.Codec.Argonaut.Record (record) as CAR
 import Data.Either (Either(Left, Right))
-import Data.HTTP.Method (Method(POST))
 import Data.Log.Level (LogLevel(Trace))
 import Data.Map (toUnfoldable) as Map
-import Data.Maybe (Maybe(Just, Nothing), fromJust)
+import Data.Maybe (Maybe(Just), fromJust)
 import Data.Newtype (unwrap, wrap)
-import Data.Time.Duration (Minutes(Minutes), Seconds(Seconds), convertDuration, fromDuration)
-import Data.Traversable (traverse_)
+import Data.Time.Duration (Minutes(Minutes), Seconds(Seconds), convertDuration)
 import Data.Tuple.Nested ((/\))
 import Effect (Effect)
 import Effect.Aff (delay, launchAff_)
@@ -76,6 +53,7 @@ import Effect.Exception (error, throw)
 import HydraSdk.Lib (caDecodeFile)
 import HydraSdk.Types (HttpError)
 import JS.BigInt (fromInt) as BigInt
+import Lib.CardanoRacers.Client (submitPlayerInputToDelegates)
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (readTextFile)
 import Node.Path (FilePath)
@@ -122,14 +100,22 @@ main = do
                 plutusAddr <- liftMaybe (error "Could not convert wallet address") $
                   Plutus.Address.fromCardano addr
                 let
-                  participants = Array.singleton plutusAddr -- one participant
+                  -- one participant
+                  participants = Array.singleton $ mkRaceParticipantFixture plutusAddr
                   rewardWeights = [ 50_000, 30_000, 20_000 ] <#> wrap <<< { numerator: _ } <<<
                     BigInt.fromInt
-                { txHash: startRaceTxHash, raceParams } <-
+                StartRaceResult { txHash: startRaceTxHash, raceParams } <-
                   runRacers racersParams $
-                    startRace Nothing raceHashFixture totalRewardValueFixture rewardWeights
-                      participants
-                      delegatesFixture
+                    startRace
+                      ( StartRaceParams
+                          { raceId: raceHashFixture
+                          , totalRewardValue: totalRewardValueFixture
+                          , rewardWeights
+                          , participants
+                          , delegates: delegatesFixture
+                          , feePerDelegate: Just $ lovelaceValueOf $ BigNum.fromInt 3_000_000
+                          }
+                      )
                 logAndDelay $ "startRace success: "
                   <> toHex startRaceTxHash
 
@@ -146,26 +132,17 @@ main = do
                 liftEffect case resp of
                   Left httpError ->
                     throw $ "host request failed: " <> show httpError
-                  Right (ServerResponseError hostRaceError) ->
-                    throw $ "could not host race: " <> show hostRaceError
-                  Right (ServerResponseSuccess { commitTxHash }) ->
-                    log $ "hostRace success: " <> toHex commitTxHash
+                  Right txHash ->
+                    log $ "hostRace success: " <> toHex txHash
 
                 -- Submit player input
                 do
-                  submitted <-
-                    retryOnFalse { timeout: Minutes 10.0, delay: Seconds 30.0 }
-                      ( submitPlayerInput groupInfo raceParams "simulator/input.csv" >>=
-                          case _ of
-                            Left httpError -> do
-                              logError' $ "submitPlayerInput request failed with error: "
-                                <> show httpError
-                              pure false
-                            Right _ ->
-                              pure true
-                      )
-                  unless submitted $ throwError $ error
-                    "Failed to submit player input after multiple attempts"
+                  csv <- liftAff $ readTextFile UTF8 "simulator/input.csv"
+                  retryOnAnyError "submitPlayerInput"
+                    { timeout: Minutes 10.0, delay: Seconds 30.0 } $
+                    submitPlayerInputToDelegates (unwrap raceParams).stateCurrencySymbol
+                      (unwrap groupInfo).hydraGroupHttpServers
+                      csv
 
                 -- Distribute rewards
                 do
@@ -206,72 +183,19 @@ hostRace
   -> TransactionHash
   -> RacersParams
   -> RaceParams
-  -> Contract (Either HttpError HostRaceResponse)
+  -> Contract (Either HttpError TransactionHash)
 hostRace groupInfo startRaceTxHash racersParams raceParams = do
+  network <- getNetworkId
   httpServer <- liftMaybe (error "Could not get httpServer") $ Array.head
     (unwrap groupInfo).hydraGroupHttpServers
-  liftAff $ handleResponse hostRaceResponseCodec <$>
-    request
-      ( Affjax.defaultRequest
-          { method = Left POST
-          , url = httpServer <</>> "hostRace"
-          , content =
-              Just $ Affjax.RequestBody.String $ stringifyAeson $ CA.encode
-                hostRaceRequestCodec
-                reqBody
-          , responseFormat = Affjax.ResponseFormat.string
-          , timeout = Just $ fromDuration $ Seconds 30.0
-          }
-      )
+  liftAff $ hostRaceRequest httpServer network reqBody
   where
   reqBody :: HostRaceRequest
-  reqBody =
+  reqBody = wrap
     { raceOref: wrap { transactionId: startRaceTxHash, index: zero }
-    , racersParams
-    , raceParams: encodeCbor $ toData raceParams
+    , racersParams: Just racersParams
+    , raceParams
     }
-
-submitPlayerInput
-  :: HydraGroupInfo
-  -> RaceParams
-  -> FilePath
-  -> Contract (Either HttpError Unit)
-submitPlayerInput groupInfo raceParams inputCsvPath = do
-  addr <- liftedM "Could not get wallet address" getWalletAddress
-  csv <- liftAff $ readTextFile UTF8 inputCsvPath
-  { signature: coseSign1 } <- signData addr $ wrap $ mkSigMessage csv
-    (unwrap raceParams).stateCurrencySymbol
-  sigBytes <- liftEffect $ getCoseSign1Signature $ unwrap coseSign1
-  signature <- liftMaybe (error "Could not decode signature") $
-    decodeCbor (wrap sigBytes)
-  let httpServers = (unwrap groupInfo).hydraGroupHttpServers
-  { wallet } <- ask
-  -- FIXME: use key from DataSignature instead 
-  -- https://github.com/mlabs-haskell/hydra-auction-offchain/blob/bead07c8bd06eaa8198de6582585bd111dd9d1e6/src/Wallet.purs#L105
-  vk <-
-    case wallet of
-      Just (KeyWallet kw) -> do
-        sk <- liftAff $ unwrap <$> getPrivatePaymentKey kw
-        pure $ PrivateKey.toPublicKey sk
-      _ -> throwError $ error "Could not get verification key"
-  runExceptT $
-    traverse_
-      ( \httpServer ->
-          ExceptT $ liftAff $ handleResponse CA.null <$>
-            postRequest
-              { url: httpServer <</>> "playerInput"
-              , content: Just $ CA.encode playerInputCodec
-                  { csv
-                  , auth:
-                      { vk
-                      , addr
-                      , signature
-                      }
-                  }
-              , headers: mempty
-              }
-      )
-      httpServers
 
 raceHashFixture :: RaceHash
 raceHashFixture = unsafePartial fromJust $ byteArrayFromAscii "TestRaceHash"
@@ -285,6 +209,14 @@ delegatesFixture =
     [ "0e0607203c2ab6f2f729e2317502277191c681283637d5ee6b2a9933"
     , "35c92e61b4f915ce7615ea8b8ece661843e6bc5f591fe99036d388a9"
     ]
+
+mkRaceParticipantFixture :: Plutus.Address -> RaceParticipant
+mkRaceParticipantFixture payoutAddress =
+  wrap
+    { car: assetNameFromAsciiUnsafe "TestCar"
+    , driver: assetNameFromAsciiUnsafe "TestDriver"
+    , payoutAddress
+    }
 
 keyHashFromHex :: String -> Ed25519KeyHash
 keyHashFromHex str = unsafePartial fromJust $ decodeCbor =<< hexToCborBytes str

@@ -18,8 +18,8 @@ import CardanoRacers.Hydra.Handlers.SignCommitTx
   , signCommitTxRequestPayloadCodec
   , signCommitTxResponseCodec
   )
-import CardanoRacers.Hydra.Services.Utils (getRequest, handleResponse, postRequest)
 import CardanoRacers.Hydra.Types.RaceStatus (RaceResults, raceResultsCodec)
+import CardanoRacers.Utils.Http (getRequest, handleResponse, postRequest)
 import Ctl.Internal.Helpers ((<</>>))
 import Data.Codec.Argonaut (encode) as CA
 import Data.Either (Either)

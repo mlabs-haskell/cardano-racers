@@ -32,6 +32,7 @@ import CardanoRacers.Helpers
   , paysToAddrConstraint
   )
 import CardanoRacers.Nitro.Contract (mintNitroContract)
+import CardanoRacers.Race.Contract (distributeRewards, startRace)
 import CardanoRacers.RaceRegistry.Contract
   ( collectRegistryScriptLeftovers
   , initRace
@@ -41,6 +42,8 @@ import CardanoRacers.RaceRegistry.Contract
   )
 import CardanoRacers.RaceRegistry.Types (RegistryParams)
 import CardanoRacers.RaceSlot.Types (RaceHash)
+import CardanoRacers.Services.HydraDelegate (hostRaceRequest)
+import CardanoRacers.Utils.HasJson (fromJs, toJs)
 import Common.ContractHelpers (collectDustByThreshold)
 import Contract.Address (addressFromBech32, getNetworkId)
 import Contract.CborBytes (cborBytesToHex)
@@ -56,7 +59,7 @@ import Contract.TxConstraints as Constraints
 import Contract.Utxos (utxosAt)
 import Contract.Value (lovelaceValueOf, valueOf)
 import Contract.Wallet (getWalletBalance)
-import Control.Monad.Error.Class (try)
+import Control.Monad.Error.Class (throwError, try)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff, toAffE)
 import Data.Array (concat, cons, replicate) as Array
@@ -66,6 +69,7 @@ import Data.BigInt (toInt, toString) as BigInt
 import Data.Bitraversable (ltraverse, rtraverse)
 import Data.Map (Map)
 import Data.Map (fromFoldable, toUnfoldable) as Map
+import Data.Newtype (modify)
 import Data.String (toLower)
 import Data.UInt (toInt) as UInt
 import Effect.Aff.Compat
@@ -77,6 +81,7 @@ import Effect.Aff.Compat
   , mkEffectFn3
   , runEffectFn1
   )
+import Effect.Exception (error)
 import Effect.Uncurried (EffectFn4, mkEffectFn4)
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable, toUnfoldable) as Object
@@ -149,6 +154,9 @@ type Bot r =
       EffectFn2 Race RewardDistributionFFI (Promise (Array TransactionHashFFI))
   , createRace :: EffectFn3 Race Int Int (Promise Unit)
   , collectDust :: EffectFn1 Lovelace (Promise TransactionHashFFI)
+  , startRace :: EffectFn1 Aeson (Promise Aeson)
+  , hostRace :: EffectFn2 String Aeson (Promise TransactionHashFFI)
+  , distributeRewards :: EffectFn1 Aeson (Promise Aeson)
   | r
   )
 
@@ -186,6 +194,23 @@ mkBot cp walletSpec rp =
           slots
           utxoCount
     , collectDust: mkEffectFn1 $ fromAff <<< runC <<< collectDust
+    , startRace: mkEffectFn1 $ \startParams -> fromAff $ runC do
+        network <- lift getNetworkId
+        toJs network <$> startRace (fromJs network startParams)
+    , hostRace: mkEffectFn2 $ \httpServer hostParams -> fromAff do
+        network <- runC $ lift getNetworkId
+        resp <- hostRaceRequest httpServer network $ modify
+          (_ { racersParams = Just rp })
+          (fromJs network hostParams)
+        case resp of
+          Right txHash ->
+            pure $ cborBytesToHex $ encodeCbor txHash
+          Left httpError ->
+            throwError $ error $ "hostRace request failed with error: "
+              <> show httpError
+    , distributeRewards: mkEffectFn1 $ \raceParams -> fromAff $ runC do
+        network <- lift getNetworkId
+        toJs unit <$> distributeRewards (fromJs network raceParams)
     } `merge` queries
 
 mintNitro :: Nitro -> Racers TransactionHashFFI
