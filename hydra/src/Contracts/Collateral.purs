@@ -6,6 +6,8 @@ module CardanoRacers.Hydra.Contracts.Collateral
 import Contract.Prelude
 
 import Cardano.Types (TransactionOutput(TransactionOutput))
+import Cardano.Types.Address (getPaymentCredential)
+import Cardano.Types.Credential (asPubKeyHash)
 import Cardano.Types.Value (lovelaceValueOf) as Value
 import CardanoRacers.Hydra.Const (appConst)
 import CardanoRacers.Hydra.Types.Common (Utxo)
@@ -39,9 +41,16 @@ queryCollateralUtxo =
 
 isCollateralTxOut :: TransactionOutput -> Boolean
 isCollateralTxOut (TransactionOutput txOut) =
-  txOut.amount == Value.lovelaceValueOf appConst.collateralLovelace
+  isPubKeyHashAddress txOut.address
+    && txOut.amount
+    == Value.lovelaceValueOf appConst.collateralLovelace
     && isNothing txOut.datum
     && isNothing txOut.scriptRef
+  where
+  isPubKeyHashAddress addr =
+    isJust do
+      cred <- getPaymentCredential addr
+      asPubKeyHash $ unwrap cred
 
 createCollateralUtxo :: Contract Unit
 createCollateralUtxo = do

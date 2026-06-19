@@ -1,4 +1,7 @@
-module CardanoRacers.Hydra.Main (main) where
+module CardanoRacers.Hydra.Main
+  ( main
+  , cleanupHandler
+  ) where
 
 import Prelude
 

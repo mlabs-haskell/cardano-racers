@@ -12,6 +12,7 @@ import Cardano.Types.BigNum (fromInt) as BigNum
 import Cardano.Types.Value (lovelaceValueOf)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Helpers (assetNameFromAsciiUnsafe)
+import CardanoRacers.Hydra.Config (AppQueryBackend(Blockfrost))
 import CardanoRacers.Hydra.Lib.Retry (retryOnAnyError)
 import CardanoRacers.Hydra.Monad (initContractEnv)
 import CardanoRacers.HydraGroup.Contract (findHydraGroupById)
@@ -82,7 +83,10 @@ main = do
         case _ of
           Right cfg ->
             launchAff_ do
-              contractEnv <- initContractEnv cfg.blockfrostApiKeyFile cfg.signingKeyFile Trace
+              contractEnv <- initContractEnv
+                (Blockfrost { apiKeyFile: cfg.blockfrostApiKeyFile })
+                cfg.signingKeyFile
+                Trace
               runContractInEnv contractEnv do
                 -- Register Hydra group
                 groupId <- registerHydraGroup

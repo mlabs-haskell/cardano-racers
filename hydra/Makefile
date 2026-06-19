@@ -1,4 +1,4 @@
-.PHONY: build format run-a run-b start-race run-simulator gen-keys
+.PHONY: build test format run-a run-b start-race run-simulator gen-keys
 
 ps-sources := $(shell fd --no-ignore-parent -epurs)
 purs-args := "--stash --censor-lib --censor-codes=ImplicitImport,ImplicitQualifiedImport,ImplicitQualifiedImportReExport,UserDefinedWarning"
@@ -12,6 +12,9 @@ requires-nix-shell:
 
 build: requires-nix-shell
 	spago build --purs-args ${purs-args}
+
+test: requires-nix-shell
+	spago run --main Test.CardanoRacers.Hydra.Main
 
 format: requires-nix-shell
 	purs-tidy format-in-place ${ps-sources}

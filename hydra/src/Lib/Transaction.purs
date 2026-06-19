@@ -1,6 +1,7 @@
 module CardanoRacers.Hydra.Lib.Transaction
   ( appendTxSignatures
   , reSignTransaction
+  , removeTxOutputsWithEmptyValues
   , setAuxDataHash
   , setExUnitsToMax
   , setTxValid
@@ -10,21 +11,27 @@ module CardanoRacers.Hydra.Lib.Transaction
 
 import Prelude
 
-import Cardano.Types (Language(PlutusV2), Transaction, Vkeywitness)
+import Cardano.Types (Language(PlutusV2, PlutusV3), Transaction, Vkeywitness, _body, _outputs)
 import Cardano.Types.AuxiliaryData (hashAuxiliaryData)
 import Cardano.Types.Transaction (_body, _isValid, _witnessSet)
 import Cardano.Types.TransactionBody (_auxiliaryDataHash)
 import Cardano.Types.TransactionWitnessSet (_plutusData, _redeemers, _vkeys)
+import Cardano.Types.Value (empty) as Value
 import Contract.Monad (Contract)
 import Contract.ProtocolParameters (getProtocolParameters)
 import Contract.Transaction (signTransaction)
 import Ctl.Internal.Transaction (setScriptDataHash)
-import Data.Array (difference) as Array
+import Data.Array (difference, filter) as Array
 import Data.Lens (view, (%~), (.~), (<>~), (^.))
 import Data.Map (filterKeys) as Map
 import Data.Maybe (Maybe(Just, Nothing))
 import Data.Newtype (modify, unwrap)
 import Effect.Class (liftEffect)
+
+removeTxOutputsWithEmptyValues :: Transaction -> Transaction
+removeTxOutputsWithEmptyValues tx =
+  tx # _body <<< _outputs %~
+    Array.filter (notEq Value.empty <<< _.amount <<< unwrap)
 
 setAuxDataHash :: Transaction -> Transaction
 setAuxDataHash tx =
@@ -41,7 +48,7 @@ setExUnitsToMax :: Transaction -> Contract Transaction
 setExUnitsToMax tx = do
   pparams <- unwrap <$> getProtocolParameters
   let
-    costModels = Map.filterKeys (eq PlutusV2) pparams.costModels
+    costModels = Map.filterKeys (\lang -> lang == PlutusV2) pparams.costModels
     ws = evaluatedTx ^. _witnessSet
     evaluatedTx =
       tx # _witnessSet <<< _redeemers %~ map \redeemer ->

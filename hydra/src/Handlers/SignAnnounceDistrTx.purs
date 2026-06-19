@@ -9,8 +9,8 @@ import Cardano.Types (Vkeywitness)
 import CardanoRacers.Hydra.Contracts.AnnounceDistr (mkAnnounceRewardDistributionTx)
 import CardanoRacers.Hydra.Handlers.SignAnnounceDistrTx.Types
   ( SignAnnounceDistrTxError
-      ( CouldNotDecodeTx
-      , RaceDataNotAvailable
+      ( CouldNotDecodeReqBody
+      , RequestedRaceNotHosted
       , UnexpectedRaceStatus
       , TxValidationFailed
       , CouldNotSignTx
@@ -19,7 +19,7 @@ import CardanoRacers.Hydra.Handlers.SignAnnounceDistrTx.Types
   , signAnnounceDistrTxResponseCodec
   )
 import CardanoRacers.Hydra.Lib.Transaction (signTxReturnSignature)
-import CardanoRacers.Hydra.Monad (AppM, liftContract)
+import CardanoRacers.Hydra.Monad (AppM, findRaceEntryByRaceCs, liftContract)
 import CardanoRacers.Hydra.RewardDistribution (distributeRewards)
 import CardanoRacers.Hydra.Types.RaceStatus (RaceStatus(DistributingRewards))
 import CardanoRacers.Hydra.Types.ServerResponse (fromEither, respCreatedOrBadRequest)
@@ -45,15 +45,17 @@ signAnnounceDistrTxHandlerImpl bodyStr =
   runExceptT do
     case caDecodeString signAnnounceDistrTxRequestPayloadCodec bodyStr of
       Left decodeErr ->
-        throwError $ CouldNotDecodeTx $ CA.printJsonDecodeError decodeErr
-      Right { tx, collateralAddress } -> do
-        { raceDataRef, raceStatusRef } <- ask
-        { raceParams } <- liftEffect (Ref.read raceDataRef) !? RaceDataNotAvailable
+        throwError $ CouldNotDecodeReqBody
+          { decodeError: CA.printJsonDecodeError decodeErr
+          }
+      Right { raceCs, tx, changeAddress } -> do
+        { raceData, raceStatusRef } <- findRaceEntryByRaceCs raceCs !? RequestedRaceNotHosted
         raceStatus <- liftEffect $ Ref.read raceStatusRef
         case raceStatus of
           DistributingRewards { finalResults } -> do
-            let rewardDistr = distributeRewards finalResults raceParams
-            expectedTx <- lift $ mkAnnounceRewardDistributionTx collateralAddress rewardDistr
+            let rewardDistr = distributeRewards finalResults raceData.raceParams
+            expectedTx <- lift $ mkAnnounceRewardDistributionTx raceData changeAddress
+              rewardDistr
             when (tx /= expectedTx) $ throwError TxValidationFailed
             liftContract (signTxReturnSignature tx) !? CouldNotSignTx
           _ ->

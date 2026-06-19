@@ -9,7 +9,7 @@ import Cardano.Types (Ed25519KeyHash)
 import Cardano.Types.Address (getPaymentCredential)
 import Cardano.Types.Credential (asPubKeyHash)
 import Cardano.Types.PublicKey (hash, verify) as PublicKey
-import CardanoRacers.Hydra.Monad (AppM, getAppRunner, readRaceData)
+import CardanoRacers.Hydra.Monad (AppM, findRaceEntryByRaceCs, getAppRunner)
 import CardanoRacers.Hydra.RaceSimulator
   ( RaceSimulationError
   , raceSimulationErrorCodec
@@ -19,6 +19,7 @@ import CardanoRacers.Hydra.Types.RaceStatus (RaceStatus(AcceptingPlayerInputs))
 import CardanoRacers.Race.Types (RaceParams(RaceParams))
 import CardanoRacers.Services.HydraDelegate (playerInputCodec)
 import CardanoRacers.Utils.Cose (mkSigStruct)
+import Control.Error.Util ((!?))
 import Control.Monad.Error.Class (liftEither, liftMaybe, throwError)
 import Control.Monad.Except (ExceptT(ExceptT), runExceptT)
 import Control.Monad.Reader (ask)
@@ -63,7 +64,8 @@ submitPlayerInputHandlerReturningErrors bodyStr =
       liftEither $
         lmap (CouldNotDecodeReqBody <<< { decodeError: _ } <<< CA.printJsonDecodeError)
           (caDecodeString playerInputCodec bodyStr)
-    { raceStatusRef } <- ask
+    { raceData, raceStatusRef } <- findRaceEntryByRaceCs reqBody.raceCs !?
+      RequestedRaceNotHosted
     resultSlots <-
       liftEffect (Ref.read raceStatusRef) >>=
         case _ of
@@ -71,9 +73,9 @@ submitPlayerInputHandlerReturningErrors bodyStr =
             pure slots
           _ ->
             throwError PlayerInputSubmitWindowNotActive
-    { raceParams: RaceParams { stateCurrencySymbol: raceId, participants } } <-
-      lift readRaceData
-    let pkh = PublicKey.hash reqBody.auth.vk
+    let
+      pkh = PublicKey.hash reqBody.auth.vk
+      { raceParams: RaceParams { stateCurrencySymbol: raceId, participants } } = raceData
     addr <- liftMaybe MustBeRaceParticipant $ getParticipantAddress pkh participants
     slot <- liftMaybe ResultSlotsMisconfigured $ Map.lookup addr resultSlots
     unless
@@ -115,6 +117,7 @@ getParticipantAddress player participants =
 
 data SubmitPlayerInputError
   = CouldNotDecodeReqBody { decodeError :: String }
+  | RequestedRaceNotHosted
   | MustBeRaceParticipant
   | PlayerInputSubmitWindowNotActive
   | ResultSlotsMisconfigured
@@ -137,6 +140,7 @@ submitPlayerInputErrorCodec =
         CAR.record
           { decodeError: CA.string
           }
+    , "RequestedRaceNotHosted": unit
     , "MustBeRaceParticipant": unit
     , "PlayerInputSubmitWindowNotActive": unit
     , "ResultSlotsMisconfigured": unit
@@ -154,6 +158,8 @@ errorStatus :: SubmitPlayerInputError -> Status
 errorStatus =
   case _ of
     CouldNotDecodeReqBody _ ->
+      Status.badRequest
+    RequestedRaceNotHosted ->
       Status.badRequest
     MustBeRaceParticipant ->
       Status.forbidden

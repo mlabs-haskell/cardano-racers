@@ -7,12 +7,12 @@
       type = "github";
       owner = "Plutonomicon";
       repo = "cardano-transaction-lib";
-      rev = "2f7751724f703f4c480df3d50204020932f64b83";
+      rev = "723052ce847c0fd9625243cd188af035b8a91b87";
     };
     cardano-node.follows = "cardano-transaction-lib/cardano-node";
     hydra.follows = "hydra-sdk/hydra";
     hydra-sdk = {
-      url = "github:mlabs-haskell/purescript-hydra-sdk/dshuiski/revive";
+      url = "github:mlabs-haskell/purescript-hydra-sdk/dshuiski/v3";
       inputs.ctl.follows = "cardano-transaction-lib";
     };
 

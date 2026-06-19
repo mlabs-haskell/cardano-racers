@@ -1,7 +1,7 @@
 module CardanoRacers.Hydra.Handlers.SignAnnounceDistrTx.Types
   ( SignAnnounceDistrTxError
-      ( CouldNotDecodeTx
-      , RaceDataNotAvailable
+      ( CouldNotDecodeReqBody
+      , RequestedRaceNotHosted
       , UnexpectedRaceStatus
       , TxValidationFailed
       , CouldNotSignTx
@@ -15,26 +15,28 @@ module CardanoRacers.Hydra.Handlers.SignAnnounceDistrTx.Types
 
 import Prelude
 
-import Cardano.Types (Address, Transaction, Vkeywitness)
+import Cardano.Types (Address, ScriptHash, Transaction, Vkeywitness)
 import CardanoRacers.Hydra.Codec (vkeyWitnessCodec)
 import CardanoRacers.Hydra.Types.ServerResponse (ServerResponse, serverResponseCodec)
 import Data.Codec.Argonaut (JsonCodec, object, string) as CA
 import Data.Codec.Argonaut.Record (record) as CAR
-import Data.Codec.Argonaut.Sum (sum) as CAS
+import Data.Codec.Argonaut.Sum (sum, sumFlat) as CAS
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
-import HydraSdk.Lib (addressCodec, txCodec)
+import HydraSdk.Lib (addressCodec, scriptHashCodec, txCodec)
 
 type SignAnnounceDistrTxRequestPayload =
-  { tx :: Transaction
-  , collateralAddress :: Address
+  { raceCs :: ScriptHash
+  , tx :: Transaction
+  , changeAddress :: Address
   }
 
 signAnnounceDistrTxRequestPayloadCodec :: CA.JsonCodec SignAnnounceDistrTxRequestPayload
 signAnnounceDistrTxRequestPayloadCodec =
   CA.object "SignAnnounceDistrTxRequestPayload" $ CAR.record
-    { tx: txCodec
-    , collateralAddress: addressCodec
+    { raceCs: scriptHashCodec
+    , tx: txCodec
+    , changeAddress: addressCodec
     }
 
 signAnnounceDistrTxResponseCodec :: CA.JsonCodec SignAnnounceDistrTxResponse
@@ -44,8 +46,8 @@ signAnnounceDistrTxResponseCodec =
 type SignAnnounceDistrTxResponse = ServerResponse Vkeywitness SignAnnounceDistrTxError
 
 data SignAnnounceDistrTxError
-  = CouldNotDecodeTx String
-  | RaceDataNotAvailable
+  = CouldNotDecodeReqBody { decodeError :: String }
+  | RequestedRaceNotHosted
   | UnexpectedRaceStatus
   | TxValidationFailed
   | CouldNotSignTx
@@ -58,9 +60,12 @@ instance Show SignAnnounceDistrTxError where
 
 signAnnounceDistrTxErrorCodec :: CA.JsonCodec SignAnnounceDistrTxError
 signAnnounceDistrTxErrorCodec =
-  CAS.sum "SignAnnounceDistrTxError"
-    { "CouldNotDecodeTx": CA.string
-    , "RaceDataNotAvailable": unit
+  CAS.sumFlat "SignAnnounceDistrTxError"
+    { "CouldNotDecodeReqBody":
+        CAR.record
+          { decodeError: CA.string
+          }
+    , "RequestedRaceNotHosted": unit
     , "UnexpectedRaceStatus": unit
     , "TxValidationFailed": unit
     , "CouldNotSignTx": unit

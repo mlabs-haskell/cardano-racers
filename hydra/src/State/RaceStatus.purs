@@ -6,7 +6,7 @@ module CardanoRacers.Hydra.State.RaceStatus
 
 import Prelude
 
-import CardanoRacers.Hydra.Monad (AppM, RaceData)
+import CardanoRacers.Hydra.Monad (AppM, RaceData, RaceEntry, printRaceId)
 import CardanoRacers.Hydra.ResultsConsensus (confirmResultsByConsensus)
 import CardanoRacers.Hydra.Types.RaceStatus
   ( RaceStatus(Initializing, AcceptingPlayerInputs, FinalizingResults, DistributingRewards)
@@ -27,35 +27,25 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Ref (read, write) as Ref
 
-setRaceStatusAccepting
-  :: AppM
-       ( Maybe
-           { raceData :: RaceData
-           }
-       )
-setRaceStatusAccepting = do
-  { raceDataRef, raceStatusRef } <- ask
-  raceData <- liftEffect $ Ref.read raceDataRef
+setRaceStatusAccepting :: RaceEntry -> AppM Boolean
+setRaceStatusAccepting { raceData, raceStatusRef } = do
   raceStatus <- liftEffect $ Ref.read raceStatusRef
-  case raceData, raceStatus of
-    Just rd, Initializing -> do
+  case raceStatus of
+    Initializing -> do
       resultSlots <-
         Map.fromFoldable <$>
           traverse
             (\addr -> Tuple addr <$> liftAff (AVar.new Nothing))
-            (unwrap rd.raceParams).participants
+            (unwrap raceData.raceParams).participants
       liftEffect $ Ref.write (AcceptingPlayerInputs resultSlots) raceStatusRef
-      pure $ Just { raceData: rd }
-    x, y -> do
-      when (isNothing x) $
-        logError' "setRaceStatusAccepting: race data is not set"
-      unless (isInitializing y) $
-        logError' "setRaceStatusAccepting: unexpected race status"
-      pure Nothing
+      pure true
+    _ -> do
+      logError' $ "setRaceStatusAccepting: unexpected race status for race: " <>
+        printRaceId raceData
+      pure false
 
-setRaceStatusFinalizing :: AppM Boolean
-setRaceStatusFinalizing = do
-  { raceStatusRef } <- ask
+setRaceStatusFinalizing :: RaceEntry -> AppM Boolean
+setRaceStatusFinalizing { raceData, raceStatusRef } = do
   raceStatus <- liftEffect $ Ref.read raceStatusRef
   case raceStatus of
     AcceptingPlayerInputs resultSlots -> do
@@ -70,21 +60,24 @@ setRaceStatusFinalizing = do
       liftEffect $ Ref.write (FinalizingResults results) raceStatusRef
       pure true
     _ -> do
-      logError' "setRaceStatusFinalizing: unexpected race status"
+      logError' $ "setRaceStatusFinalizing: unexpected race status for race: " <>
+        printRaceId raceData
       pure false
 
 setRaceStatusDistributing
-  :: AppM
+  :: RaceEntry
+  -> AppM
        ( Maybe
            { finalResults :: RaceResults Identity
            }
        )
-setRaceStatusDistributing = do
-  { raceStatusRef, config: { hydraNodeStartupParams: { peers } } } <- ask
+setRaceStatusDistributing { raceData, raceStatusRef } = do
+  { config: { hydraNodeStartupParams: { peers } } } <- ask
   raceStatus <- liftEffect $ Ref.read raceStatusRef
   case raceStatus of
-    FinalizingResults localResults ->
-      confirmResultsByConsensus localResults (_.httpServer <$> peers) >>=
+    FinalizingResults localResults -> do
+      let raceCs = (unwrap raceData.raceParams).stateCurrencySymbol
+      confirmResultsByConsensus raceCs localResults (_.httpServer <$> peers) >>=
         case _ of
           Left err -> do
             logError' $
@@ -100,5 +93,6 @@ setRaceStatusDistributing = do
               }
             pure $ Just { finalResults }
     _ -> do
-      logError' "setRaceStatusDistributing: unexpected race status"
+      logError' $ "setRaceStatusDistributing: unexpected race status for race: " <>
+        printRaceId raceData
       pure Nothing

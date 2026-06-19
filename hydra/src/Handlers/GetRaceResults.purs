@@ -1,5 +1,9 @@
 module CardanoRacers.Hydra.Handlers.GetRaceResults
-  ( GetRaceResultsError(RaceResultsNotAvailable)
+  ( GetRaceResultsError
+      ( CouldNotDecodeRaceCs
+      , RequestedRaceNotHosted
+      , RaceResultsNotAvailable
+      )
   , getRaceResultsErrorCodec
   , getRaceResultsHandler
   ) where
@@ -7,12 +11,15 @@ module CardanoRacers.Hydra.Handlers.GetRaceResults
 import Prelude
 
 import Aeson (stringifyAeson)
-import CardanoRacers.Hydra.Monad (AppM)
+import Cardano.AsCbor (decodeCbor)
+import CardanoRacers.Hydra.Monad (AppM, findRaceEntryByRaceCs)
 import CardanoRacers.Hydra.Types.RaceStatus
   ( RaceResults
   , RaceStatus(FinalizingResults, DistributingRewards)
   , raceResultsCodec
   )
+import Contract.CborBytes (hexToCborBytes)
+import Control.Error.Util ((!?), (??))
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Reader (ask)
@@ -27,25 +34,22 @@ import Effect.Ref (Ref)
 import Effect.Ref (read) as Ref
 import HTTPure (Response) as HTTPure
 import HTTPure (Status, ok, response)
-import HTTPure.Status (conflict) as Status
+import HTTPure.Status (badRequest, conflict) as Status
 
-getRaceResultsHandler :: AppM HTTPure.Response
-getRaceResultsHandler = do
-  { raceStatusRef } <- ask
-  getRaceResults raceStatusRef >>=
+getRaceResultsHandler :: String -> AppM HTTPure.Response
+getRaceResultsHandler raceCsStr =
+  getRaceResults raceCsStr >>=
     case _ of
       Left err ->
         response (errorStatus err) $ stringifyAeson $ CA.encode getRaceResultsErrorCodec err
       Right res ->
         ok $ stringifyAeson $ CA.encode raceResultsCodec res
 
-getRaceResults
-  :: forall (m :: Type -> Type)
-   . MonadEffect m
-  => Ref RaceStatus
-  -> m (Either GetRaceResultsError (RaceResults Maybe))
-getRaceResults raceStatusRef =
+getRaceResults :: String -> AppM (Either GetRaceResultsError (RaceResults Maybe))
+getRaceResults raceCsStr =
   runExceptT do
+    raceCs <- (decodeCbor =<< hexToCborBytes raceCsStr) ?? CouldNotDecodeRaceCs
+    { raceStatusRef } <- findRaceEntryByRaceCs raceCs !? RequestedRaceNotHosted
     raceStatus <- liftEffect $ Ref.read raceStatusRef
     case raceStatus of
       FinalizingResults raceResults -> pure raceResults
@@ -54,7 +58,10 @@ getRaceResults raceStatusRef =
 
 -- Errors
 
-data GetRaceResultsError = RaceResultsNotAvailable
+data GetRaceResultsError
+  = CouldNotDecodeRaceCs
+  | RequestedRaceNotHosted
+  | RaceResultsNotAvailable
 
 derive instance Generic GetRaceResultsError _
 derive instance Eq GetRaceResultsError
@@ -65,11 +72,17 @@ instance Show GetRaceResultsError where
 getRaceResultsErrorCodec :: CA.JsonCodec GetRaceResultsError
 getRaceResultsErrorCodec =
   CAS.sumFlat "GetRaceResultsError"
-    { "RaceResultsNotAvailable": unit
+    { "CouldNotDecodeRaceCs": unit
+    , "RequestedRaceNotHosted": unit
+    , "RaceResultsNotAvailable": unit
     }
 
 errorStatus :: GetRaceResultsError -> Status
 errorStatus =
   case _ of
+    CouldNotDecodeRaceCs ->
+      Status.badRequest
+    RequestedRaceNotHosted ->
+      Status.badRequest
     RaceResultsNotAvailable ->
       Status.conflict

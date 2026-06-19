@@ -7,6 +7,7 @@ import Prelude
 
 import Cardano.Provider (ServerConfig)
 import Cardano.Provider.ServerConfig (mkHttpUrl)
+import Cardano.Types (ScriptHash)
 import CardanoRacers.Hydra.Handlers.GetRaceResults (GetRaceResultsError)
 import CardanoRacers.Hydra.Services.HydraPeer (getRaceResultsRequest)
 import CardanoRacers.Hydra.Types.RaceStatus (RaceResults, raceResultsToMap)
@@ -38,16 +39,17 @@ instance Show ConfirmResultsError where
 confirmResultsByConsensus
   :: forall (m :: Type -> Type)
    . MonadAff m
-  => RaceResults Maybe
+  => ScriptHash
+  -> RaceResults Maybe
   -> Array ServerConfig
   -> m (Either ConfirmResultsError (RaceResults Identity))
-confirmResultsByConsensus localResults peers =
+confirmResultsByConsensus raceCs localResults peers =
   runExceptT do
     let localResultMap = raceResultsToMap localResults
     peerResultMaps <- traverse
       ( \httpServer ->
           ExceptT $ liftAff $ bimap CouldNotGetPeerResults raceResultsToMap <$>
-            getRaceResultsRequest (mkHttpUrl httpServer)
+            getRaceResultsRequest (mkHttpUrl httpServer) raceCs
       )
       peers
     let

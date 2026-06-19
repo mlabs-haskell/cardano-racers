@@ -69,7 +69,7 @@ let additions =
         }
       , cardano-transaction-lib =
         { dependencies =
-         [ "aeson"
+          [ "aeson"
           , "aff"
           , "aff-promise"
           , "aff-retry"
@@ -175,7 +175,7 @@ let additions =
           , "web-storage"
           ]
         , repo = "https://github.com/Plutonomicon/cardano-transaction-lib.git"
-        , version = "7045ce4e7fd68a607f91f362fbbe83f38e2d3889"
+        , version = "723052ce847c0fd9625243cd188af035b8a91b87"
         }
       , codec-aeson =
         { dependencies =
@@ -241,10 +241,13 @@ let additions =
           , "avar"
           , "bifunctors"
           , "bytearrays"
+          , "cardano-key-wallet"
           , "cardano-types"
           , "codec-aeson"
+          , "console"
           , "control"
           , "datetime"
+          , "debug"
           , "effect"
           , "either"
           , "errors"
@@ -263,11 +266,13 @@ let additions =
           , "node-buffer"
           , "node-child-process"
           , "node-fs"
+          , "node-fs-aff"
           , "node-path"
           , "node-process"
           , "node-streams"
           , "optparse"
           , "ordered-collections"
+          , "parallel"
           , "parsing"
           , "partial"
           , "plutus-types"
@@ -288,7 +293,7 @@ let additions =
           , "uuid"
           ]
         , repo = "https://github.com/mlabs-haskell/purescript-hydra-sdk"
-        , version = "18b8390370e1f4fd39a826cbce81dcedf3dd0992"
+        , version = "b3b963e586862df2872d20d4283fa11fe505923e"
         }
       }
 

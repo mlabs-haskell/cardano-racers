@@ -15,6 +15,7 @@ import Cardano.Types
   , Ed25519Signature
   , NetworkId
   , PublicKey
+  , ScriptHash
   , TransactionHash
   , TransactionInput
   )
@@ -40,11 +41,12 @@ import Data.Newtype (class Newtype)
 import Data.Profunctor (wrapIso)
 import Data.Show.Generic (genericShow)
 import Effect.Aff (Aff)
-import HydraSdk.Lib (addressCodec, cborBytesCodec, publicKeyCodec, txHashCodec)
+import HydraSdk.Lib (addressCodec, cborBytesCodec, publicKeyCodec, scriptHashCodec, txHashCodec)
 import HydraSdk.Types (HttpError)
 
 type PlayerInput =
-  { csv :: String
+  { raceCs :: ScriptHash
+  , csv :: String
   , auth ::
       { vk :: PublicKey
       , addr :: Address
@@ -55,7 +57,8 @@ type PlayerInput =
 playerInputCodec :: CA.JsonCodec PlayerInput
 playerInputCodec =
   CA.object "PlayerInput" $ CAR.record
-    { csv: CA.string
+    { raceCs: scriptHashCodec
+    , csv: CA.string
     , auth:
         CA.object "PlayerInput:auth" $ CAR.record
           { vk: publicKeyCodec

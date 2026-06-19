@@ -1,12 +1,12 @@
 let upstream =
     -- https://github.com/mlabs-haskell/purescript-cardano-package-set
-      https://raw.githubusercontent.com/mlabs-haskell/purescript-cardano-package-set/v4.0.1/packages.dhall
-        sha256:738a4057532f0dc140978b02964432d281011514e7ab9482053adaef4e4e7027
+      https://raw.githubusercontent.com/mlabs-haskell/purescript-cardano-package-set/v4.1.0/packages.dhall
+        sha256:f8d7c3ff5aea758f64cd0876e5be3f8b778b447579b615f143c4043744bd5e37
 
 let additions =
       { cardano-transaction-lib =
         { dependencies =
-         [ "aeson"
+          [ "aeson"
           , "aff"
           , "aff-promise"
           , "aff-retry"
@@ -112,7 +112,7 @@ let additions =
           , "web-storage"
           ]
         , repo = "https://github.com/Plutonomicon/cardano-transaction-lib.git"
-        , version = "2f7751724f703f4c480df3d50204020932f64b83"
+        , version = "723052ce847c0fd9625243cd188af035b8a91b87"
         }
       , codec-aeson =
         { dependencies =
@@ -182,6 +182,7 @@ let additions =
           , "codec-aeson"
           , "control"
           , "datetime"
+          , "debug"
           , "effect"
           , "either"
           , "errors"
@@ -225,7 +226,7 @@ let additions =
           , "uuid"
           ]
         , repo = "https://github.com/mlabs-haskell/purescript-hydra-sdk"
-        , version = "18b8390370e1f4fd39a826cbce81dcedf3dd0992"
+        , version = "a615abcae0e1f0288d4b243c0999396b91825052"
         }
       }
 

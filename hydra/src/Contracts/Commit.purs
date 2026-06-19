@@ -21,6 +21,7 @@ import Cardano.Types
 import Cardano.Types.Address (mkPaymentAddress)
 import Cardano.Types.PlutusScript (hash) as PlutusScript
 import CardanoRacers.Common.Types (RacersParams)
+import CardanoRacers.Hydra.Contracts.Common (fixTx)
 import CardanoRacers.Hydra.Lib.Transaction
   ( appendTxSignatures
   , reSignTransaction
@@ -75,10 +76,12 @@ import URI.Port (toInt) as Port
 commitCollateralToHydra :: AppM TransactionHash
 commitCollateralToHydra = do
   { collateralUtxo, config: { hydraNodeStartupParams: { hydraNodeApiAddress } } } <- ask
-  let req = mkSimpleCommitRequest $ Map.fromFoldable [ collateralUtxo ]
+  collateralUtxo' <- liftMaybe (error "commitCollateralToHydra: collateralUtxo is Nothing") $
+    collateralUtxo
+  let req = mkSimpleCommitRequest $ Map.fromFoldable [ collateralUtxo' ]
   commitTx <- do
     tx <- liftAff $ queryCommitTx req hydraNodeApiAddress
-    liftContract $ fixCommitTx tx [ PlutusV3 ]
+    liftContract $ fixTx tx [ PlutusV3 ]
   liftContract $ submit commitTx
 
 commitRaceUtxoToHydra
@@ -90,13 +93,12 @@ commitRaceUtxoToHydra
        , raceValidator :: PlutusScript
        }
 commitRaceUtxoToHydra raceUtxo rp raceParams = do
-  { collateralUtxo, config: { hydraNodeStartupParams: { hydraNodeApiAddress, peers } } } <- ask
+  { config: { hydraNodeStartupParams: { hydraNodeApiAddress, peers } } } <- ask
   { tx: blueprintTx, raceValidator } <- liftContract $ mkBlueprintTx rp raceParams raceUtxo
-    collateralUtxo
-  let req = mkFullCommitRequest blueprintTx $ Map.fromFoldable [ raceUtxo, collateralUtxo ]
+  let req = mkFullCommitRequest blueprintTx $ Map.fromFoldable [ raceUtxo ]
   commitTx <- do
     tx <- liftAff $ queryCommitTx req hydraNodeApiAddress
-    liftContract $ fixCommitTx tx [ PlutusV2, PlutusV3 ]
+    liftContract $ fixTx tx [ PlutusV2 ]
   pkh <-
     liftMaybe (error "commitRaceUtxoToHydra: could not get own pkh") =<<
       liftContract ownPaymentPubKeyHash
@@ -123,22 +125,6 @@ queryCommitTx req hydraNodeApiAddress = do
     , secure: false
     , path: Nothing
     }
-
--- Recompute script integrity and auxiliary data hashes, and re-sign the
--- transaction. Tx CBOR can change after re-serialization.
-fixCommitTx :: Transaction -> Array Language -> Contract Transaction
-fixCommitTx tx languages = do
-  pparams <- unwrap <$> getProtocolParameters
-  let
-    costModels =
-      -- PlutusV2 for CardanoRacers scripts, PlutusV3 for Hydra scripts
-      Map.filterKeys (flip Array.elem languages)
-        pparams.costModels
-    ws = unwrap (unwrap tx).witnessSet
-  fixedTx <- liftEffect $ setScriptDataHash costModels ws.redeemers ws.plutusData $
-    setAuxDataHash tx
-  signedTx <- reSignTransaction fixedTx
-  pure signedTx
 
 multiSignCommitTx
   :: forall (r :: Row Type)
@@ -179,12 +165,11 @@ mkBlueprintTx
   :: RacersParams
   -> RaceParams
   -> Utxo
-  -> Utxo
   -> Contract
        { tx :: Transaction
        , raceValidator :: PlutusScript
        }
-mkBlueprintTx rp raceParams raceUtxo collateralUtxo = do
+mkBlueprintTx rp raceParams raceUtxo = do
   raceValidator <- runRacers rp $ mkRaceValidator raceParams
   network <- getNetworkId
   let
@@ -206,13 +191,12 @@ mkBlueprintTx rp raceParams raceUtxo collateralUtxo = do
     constraints :: TxConstraints
     constraints = mconcat
       [ Constraints.mustSpendScriptOutput (fst raceUtxo) redeemer
-      , Constraints.mustSpendPubKeyOutput (fst collateralUtxo)
       , foldMap (Constraints.mustBeSignedBy <<< wrap) (unwrap raceParams).delegates
       ]
 
     lookups :: ScriptLookups
     lookups = mconcat
-      [ Lookups.unspentOutputs $ Map.fromFoldable [ raceUtxo, collateralUtxo ]
+      [ Lookups.unspentOutputs $ Map.fromFoldable [ raceUtxo ]
       , Lookups.validator raceValidator
       ]
 

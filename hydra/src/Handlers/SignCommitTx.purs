@@ -1,6 +1,6 @@
 module CardanoRacers.Hydra.Handlers.SignCommitTx
   ( SignCommitTxError
-      ( CouldNotDecodeRequestBody
+      ( CouldNotDecodeReqBody
       , CouldNotDecodeRaceParams
       , CouldNotSignTx
       )
@@ -18,10 +18,11 @@ import Prelude
 import Cardano.AsCbor (decodeCbor)
 import Cardano.FromData (fromData)
 import Cardano.Types (CborBytes, Ed25519KeyHash, Transaction, Vkeywitness)
+import Cardano.Types.Transaction (hash) as Transaction
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Hydra.Codec (racersParamsCodec, vkeyWitnessCodec)
 import CardanoRacers.Hydra.Lib.Transaction (signTxReturnSignature)
-import CardanoRacers.Hydra.Monad (AppM, liftContract, setRaceData)
+import CardanoRacers.Hydra.Monad (AppM, initRace, liftContract)
 import CardanoRacers.Hydra.Types.ServerResponse
   ( ServerResponse
   , fromEither
@@ -35,7 +36,7 @@ import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift)
 import Data.Codec.Argonaut (JsonCodec, object, printJsonDecodeError, string) as CA
 import Data.Codec.Argonaut.Record (record) as CAR
-import Data.Codec.Argonaut.Sum (sum) as CAS
+import Data.Codec.Argonaut.Sum (sum, sumFlat) as CAS
 import Data.Either (Either(Left, Right))
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
@@ -73,7 +74,9 @@ signCommitTxHandlerImpl :: String -> AppM (Either SignCommitTxError Vkeywitness)
 signCommitTxHandlerImpl bodyStr =
   runExceptT case caDecodeString signCommitTxRequestPayloadCodec bodyStr of
     Left decodeErr ->
-      throwError $ CouldNotDecodeRequestBody $ CA.printJsonDecodeError decodeErr
+      throwError $ CouldNotDecodeReqBody
+        { decodeError: CA.printJsonDecodeError decodeErr
+        }
     Right reqBody -> do
       -- TODO: validation
       raceParams <- (fromData =<< decodeCbor reqBody.raceParams) ?? CouldNotDecodeRaceParams
@@ -81,7 +84,8 @@ signCommitTxHandlerImpl bodyStr =
         lift $ liftContract $ runRacers reqBody.racersParams $
           mkRaceValidator raceParams
       sig <- liftContract (signTxReturnSignature reqBody.commitTx) !? CouldNotSignTx
-      lift $ setRaceData
+      let depositTxId = Transaction.hash reqBody.commitTx
+      lift $ initRace depositTxId
         { racersParams: reqBody.racersParams
         , raceParams
         , raceValidator
@@ -92,7 +96,7 @@ signCommitTxHandlerImpl bodyStr =
 -- SignCommitTxError
 
 data SignCommitTxError
-  = CouldNotDecodeRequestBody String
+  = CouldNotDecodeReqBody { decodeError :: String }
   | CouldNotDecodeRaceParams
   | CouldNotSignTx
 
@@ -104,8 +108,11 @@ instance Show SignCommitTxError where
 
 signCommitTxErrorCodec :: CA.JsonCodec SignCommitTxError
 signCommitTxErrorCodec =
-  CAS.sum "SignCommitTxError"
-    { "CouldNotDecodeRequestBody": CA.string
+  CAS.sumFlat "SignCommitTxError"
+    { "CouldNotDecodeReqBody":
+        CAR.record
+          { decodeError: CA.string
+          }
     , "CouldNotDecodeRaceParams": unit
     , "CouldNotSignTx": unit
     }

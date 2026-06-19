@@ -1,7 +1,8 @@
 module CardanoRacers.Hydra.Handlers.HostRace
   ( HostRaceError
-      ( CouldNotDecodeRequestBody
+      ( CouldNotDecodeReqBody
       , RacersParamsNotProvided
+      , CollateralUtxoNotAvailable
       , CouldNotResolveRaceOref
       , InvalidHeadStatus
       )
@@ -15,11 +16,19 @@ import Prelude
 import Aeson (stringifyAeson)
 import Cardano.Types (TransactionHash)
 import CardanoRacers.Hydra.Contracts.Commit (commitRaceUtxoToHydra)
-import CardanoRacers.Hydra.Monad (AppM, liftContract, readHeadStatus, setRaceData)
+import CardanoRacers.Hydra.Contracts.Common (findCollateralUtxo)
+import CardanoRacers.Hydra.Monad
+  ( AppM
+  , initRace
+  , liftContract
+  , readHeadStatus
+  , readHydraSnapshot
+  )
 import CardanoRacers.Services.HydraDelegate
   ( HostRaceRequest(HostRaceRequest)
   , hostRaceRequestCodec
   )
+import CardanoRaces.Hydra.Lib.Print (printHex)
 import Contract.Address (getNetworkId)
 import Contract.Log (logInfo')
 import Contract.Utxos (getUtxo)
@@ -33,13 +42,16 @@ import Data.Codec.Argonaut.Record (record) as CAR
 import Data.Codec.Argonaut.Sum (sumFlat) as CAS
 import Data.Either (Either(Left, Right))
 import Data.Generic.Rep (class Generic)
+import Data.Map (union) as Map
+import Data.Maybe (maybe)
+import Data.Newtype (unwrap)
 import Data.Show.Generic (genericShow)
 import Data.Tuple.Nested ((/\))
 import HTTPure (Response) as HTTPure
 import HTTPure (Status, response)
 import HTTPure.Status (badRequest, conflict, created) as Status
 import HydraSdk.Lib (caDecodeString, txHashCodec)
-import HydraSdk.Types (HydraHeadStatus(HeadStatus_Initializing), headStatusCodec)
+import HydraSdk.Types (HydraHeadStatus(HeadStatus_Open), headStatusCodec, toUtxoMap)
 
 hostRaceHandler :: String -> AppM HTTPure.Response
 hostRaceHandler bodyStr = do
@@ -50,40 +62,50 @@ hostRaceHandler bodyStr = do
     Right txHash ->
       response Status.created $ stringifyAeson $ CA.encode txHashCodec txHash
 
--- TODO: check if another hosting request is currently being processed
 hostRaceHandlerImpl :: String -> AppM (Either HostRaceError TransactionHash)
 hostRaceHandlerImpl bodyStr =
   runExceptT do
     network <- lift $ liftContract getNetworkId
     HostRaceRequest reqBody <-
       liftEither $
-        lmap (CouldNotDecodeRequestBody <<< { decodeErr: _ } <<< CA.printJsonDecodeError)
+        lmap (CouldNotDecodeReqBody <<< { decodeError: _ } <<< CA.printJsonDecodeError)
           (caDecodeString (hostRaceRequestCodec network) bodyStr)
     racersParams <- reqBody.racersParams ?? RacersParamsNotProvided
+    {-
+    _ <- do
+      snapshot <- lift readHydraSnapshot
+      let
+        finalizedUtxos = toUtxoMap (unwrap snapshot).utxo
+        utxos = maybe finalizedUtxos (Map.union finalizedUtxos <<< toUtxoMap)
+          (unwrap snapshot).utxoToCommit
+      findCollateralUtxo utxos ?? CollateralUtxoNotAvailable
+    -}
     headStatus <- lift readHeadStatus
-    let headStatusExpected = HeadStatus_Initializing
+    let headStatusExpected = HeadStatus_Open
     when (headStatus /= headStatusExpected) do
       throwError $ InvalidHeadStatus
         { expected: headStatusExpected
         , actual: headStatus
         }
     raceOut <- liftContract (getUtxo reqBody.raceOref) !? CouldNotResolveRaceOref
-    { txHash, raceValidator } <- lift $ commitRaceUtxoToHydra (reqBody.raceOref /\ raceOut)
+    { txHash: depositTxId, raceValidator } <- lift $ commitRaceUtxoToHydra
+      (reqBody.raceOref /\ raceOut)
       racersParams
       reqBody.raceParams
-    logInfo' $ "Successfully commited RaceState utxo: " <> show txHash
-    lift $ setRaceData
+    logInfo' $ "Successfully commited RaceState utxo: " <> printHex depositTxId
+    lift $ initRace depositTxId
       { racersParams
       , raceParams: reqBody.raceParams
       , raceValidator
       }
-    pure txHash
+    pure depositTxId
 
 -- Error
 
 data HostRaceError
-  = CouldNotDecodeRequestBody { decodeErr :: String }
+  = CouldNotDecodeReqBody { decodeError :: String }
   | RacersParamsNotProvided
+  | CollateralUtxoNotAvailable
   | CouldNotResolveRaceOref
   | InvalidHeadStatus { expected :: HydraHeadStatus, actual :: HydraHeadStatus }
 
@@ -96,11 +118,12 @@ instance Show HostRaceError where
 hostRaceErrorCodec :: CA.JsonCodec HostRaceError
 hostRaceErrorCodec =
   CAS.sumFlat "HostRaceError"
-    { "CouldNotDecodeRequestBody":
+    { "CouldNotDecodeReqBody":
         CAR.record
-          { decodeErr: CA.string
+          { decodeError: CA.string
           }
     , "RacersParamsNotProvided": unit
+    , "CollateralUtxoNotAvailable": unit
     , "CouldNotResolveRaceOref": unit
     , "InvalidHeadStatus":
         CAR.record
@@ -112,10 +135,12 @@ hostRaceErrorCodec =
 errorStatus :: HostRaceError -> Status
 errorStatus =
   case _ of
-    CouldNotDecodeRequestBody _ ->
+    CouldNotDecodeReqBody _ ->
       Status.badRequest
     RacersParamsNotProvided ->
       Status.badRequest
+    CollateralUtxoNotAvailable ->
+      Status.conflict
     CouldNotResolveRaceOref ->
       Status.badRequest
     InvalidHeadStatus _ ->

@@ -1,5 +1,6 @@
 module CardanoRacers.Hydra.Codec
   ( ed25519SignatureCodec
+  , networkIdCodec
   , plutusAddressCodec
   , racersParamsCodec
   , serverConfigCodec
@@ -12,10 +13,11 @@ import Prelude
 import Cardano.AsCbor (class AsCbor, decodeCbor, encodeCbor)
 import Cardano.Plutus.Types.Address (Address) as Plutus
 import Cardano.Provider (ServerConfig)
-import Cardano.Types (Ed25519Signature, Vkeywitness)
+import Cardano.Types (Ed25519Signature, NetworkId, Vkeywitness)
 import CardanoRacers.Common.Types (RacersParams)
 import Data.Codec.Argonaut (JsonCodec, boolean, int, object, prismaticCodec, string) as CA
 import Data.Codec.Argonaut.Compat (maybe) as CA
+import Data.Codec.Argonaut.Generic (nullarySum) as CAG
 import Data.Codec.Argonaut.Record (record) as CAR
 import Data.UInt (UInt)
 import Data.UInt (fromInt', toInt) as UInt
@@ -29,6 +31,9 @@ asCborCodec name =
 
 ed25519SignatureCodec :: CA.JsonCodec Ed25519Signature
 ed25519SignatureCodec = asCborCodec "Ed25519Signature"
+
+networkIdCodec :: CA.JsonCodec NetworkId
+networkIdCodec = CAG.nullarySum "NetworkId"
 
 plutusAddressCodec :: CA.JsonCodec Plutus.Address
 plutusAddressCodec = aesonCodec "Plutus.Address"

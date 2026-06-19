@@ -208,7 +208,8 @@ submitPlayerInputToDelegates raceCs hydraGroupHttpServers csv = do
     traverse_
       ( \httpServer ->
           ExceptT $ liftAff $ submitPlayerInputRequest httpServer
-            { csv
+            { raceCs
+            , csv
             , auth:
                 { vk
                 , addr
