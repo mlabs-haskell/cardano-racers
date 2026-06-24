@@ -43,4 +43,4 @@ cleanupHandler :: AppState -> HydraNodeHandle -> (Effect Unit -> Effect Unit) ->
 cleanupHandler appState hydraNodeHandle closeHttpServer = do
   cleanupHttpServer $ closeHttpServer $ pure unit
   cleanupHydraNode hydraNodeHandle
-  cleanupApp appState
+  launchAff_ $ cleanupApp appState

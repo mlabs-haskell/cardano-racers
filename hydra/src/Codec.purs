@@ -23,7 +23,7 @@ import Data.UInt (UInt)
 import Data.UInt (fromInt', toInt) as UInt
 import HydraSdk.Lib (aesonCodec, cborBytesCodec)
 
--- TODO: Export asCborCodec from HydraSdk.Lib 
+-- TODO(low): Export asCborCodec from HydraSdk.Lib 
 asCborCodec :: forall a. AsCbor a => String -> CA.JsonCodec a
 asCborCodec name =
   CA.prismaticCodec name decodeCbor encodeCbor

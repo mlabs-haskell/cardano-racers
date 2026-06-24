@@ -22,65 +22,48 @@ import Cardano.Types.Address (mkPaymentAddress)
 import Cardano.Types.PlutusScript (hash) as PlutusScript
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Hydra.Contracts.Common (fixTx)
-import CardanoRacers.Hydra.Lib.Transaction
-  ( appendTxSignatures
-  , reSignTransaction
-  , setAuxDataHash
-  )
-import CardanoRacers.Hydra.Monad (AppM, liftContract)
+import CardanoRacers.Hydra.Lib.Transaction (appendTxSignatures)
+import CardanoRacers.Hydra.Monad (AppM, getHydraNodeBaseUrl, liftContract)
 import CardanoRacers.Hydra.Services.HydraPeer (signCommitTxRequest)
 import CardanoRacers.Hydra.Types.Common (Utxo)
-import CardanoRacers.Hydra.Types.ServerResponse
-  ( ServerResponse(ServerResponseError, ServerResponseSuccess)
-  )
 import CardanoRacers.Race.Contract (mkRaceValidator)
 import CardanoRacers.Race.Types (RaceParams, RaceRedeemer(MoveL2))
 import Contract.Address (getNetworkId)
 import Contract.Monad (Contract)
 import Contract.Prelude (mconcat)
-import Contract.ProtocolParameters (getProtocolParameters)
 import Contract.ScriptLookups (ScriptLookups)
 import Contract.ScriptLookups (unspentOutputs, validator) as Lookups
 import Contract.Transaction (submit)
 import Contract.TxConstraints (TxConstraints)
-import Contract.TxConstraints (mustBeSignedBy, mustSpendPubKeyOutput, mustSpendScriptOutput) as Constraints
+import Contract.TxConstraints (mustBeSignedBy, mustSpendScriptOutput) as Constraints
 import Contract.UnbalancedTx (mkUnbalancedTx)
 import Contract.Wallet (ownPaymentPubKeyHash)
 import Control.Monad.Error.Class (liftMaybe, throwError)
 import Control.Monad.Reader (ask)
 import Control.Parallel (parTraverse)
-import Ctl.Internal.Transaction (setScriptDataHash)
-import Data.Array (elem) as Array
-import Data.Either (either)
+import Data.Either (Either(Left, Right), either)
 import Data.Foldable (foldMap)
-import Data.Map (filterKeys, fromFoldable) as Map
+import Data.Map (fromFoldable) as Map
 import Data.Maybe (Maybe(Nothing))
 import Data.Newtype (unwrap, wrap)
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested ((/\))
-import Data.UInt (fromInt) as UInt
 import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
-import Effect.Class (liftEffect)
 import Effect.Exception (error)
 import HydraSdk.NodeApi (commitRequest)
-import HydraSdk.Types
-  ( HostPort
-  , HydraCommitRequest
-  , mkFullCommitRequest
-  , mkSimpleCommitRequest
-  )
+import HydraSdk.Types (HydraCommitRequest, mkFullCommitRequest, mkSimpleCommitRequest)
 import Racers (runRacers)
-import URI.Port (toInt) as Port
 
 commitCollateralToHydra :: AppM TransactionHash
 commitCollateralToHydra = do
-  { collateralUtxo, config: { hydraNodeStartupParams: { hydraNodeApiAddress } } } <- ask
+  { collateralUtxo } <- ask
   collateralUtxo' <- liftMaybe (error "commitCollateralToHydra: collateralUtxo is Nothing") $
     collateralUtxo
   let req = mkSimpleCommitRequest $ Map.fromFoldable [ collateralUtxo' ]
+  hydraNodeBaseUrl <- getHydraNodeBaseUrl
   commitTx <- do
-    tx <- liftAff $ queryCommitTx req hydraNodeApiAddress
+    tx <- liftAff $ queryCommitTx req hydraNodeBaseUrl
     liftContract $ fixTx tx [ PlutusV3 ]
   liftContract $ submit commitTx
 
@@ -93,11 +76,12 @@ commitRaceUtxoToHydra
        , raceValidator :: PlutusScript
        }
 commitRaceUtxoToHydra raceUtxo rp raceParams = do
-  { config: { hydraNodeStartupParams: { hydraNodeApiAddress, peers } } } <- ask
+  { config: { hydraNodeStartupParams: { peers } } } <- ask
   { tx: blueprintTx, raceValidator } <- liftContract $ mkBlueprintTx rp raceParams raceUtxo
   let req = mkFullCommitRequest blueprintTx $ Map.fromFoldable [ raceUtxo ]
+  hydraNodeBaseUrl <- getHydraNodeBaseUrl
   commitTx <- do
-    tx <- liftAff $ queryCommitTx req hydraNodeApiAddress
+    tx <- liftAff $ queryCommitTx req hydraNodeBaseUrl
     liftContract $ fixTx tx [ PlutusV2 ]
   pkh <-
     liftMaybe (error "commitRaceUtxoToHydra: could not get own pkh") =<<
@@ -106,9 +90,9 @@ commitRaceUtxoToHydra raceUtxo rp raceParams = do
   txHash <- liftContract $ submit signedCommitTx
   pure { txHash, raceValidator }
 
-queryCommitTx :: HydraCommitRequest -> HostPort -> Aff Transaction
-queryCommitTx req hydraNodeApiAddress = do
-  eiResult <- commitRequest (mkHttpUrl hydraNodeApiServerConfig) req
+queryCommitTx :: HydraCommitRequest -> String -> Aff Transaction
+queryCommitTx req hydraNodeBaseUrl = do
+  eiResult <- commitRequest hydraNodeBaseUrl req
   hydraTx <-
     either (throwError <<< error <<< append "queryCommitTx: commitRequest failed: " <<< show)
       pure
@@ -117,14 +101,6 @@ queryCommitTx req hydraNodeApiAddress = do
     liftMaybe (error "queryCommitTx: could not decode transaction") $
       decodeCbor hydraTx.cborHex
   pure commitTx
-  where
-  hydraNodeApiServerConfig :: ServerConfig
-  hydraNodeApiServerConfig =
-    { port: UInt.fromInt $ Port.toInt hydraNodeApiAddress.port
-    , host: "127.0.0.1"
-    , secure: false
-    , path: Nothing
-    }
 
 multiSignCommitTx
   :: forall (r :: Row Type)
@@ -137,26 +113,22 @@ multiSignCommitTx
 multiSignCommitTx peers commitTx pkh racersParams raceParams = do
   signatures <- parTraverse
     ( \{ httpServer } -> do
-        eiResp <-
+        resp <-
           signCommitTxRequest (mkHttpUrl httpServer)
             { commitTx
             , commitLeader: pkh
             , racersParams
             , raceParams: encodeCbor $ toData raceParams
             }
-        resp <-
-          either
-            ( throwError <<< error <<< append "multiSignCommitTx: signCommitTxRequest failed: "
-                <<< show
-            )
-            pure
-            eiResp
         case resp of
-          ServerResponseSuccess signature ->
-            pure signature
-          ServerResponseError signCommitTxErr ->
-            throwError $ error $ "multiSignCommitTx: failed to get signature from peer: " <>
-              show signCommitTxErr
+          Left httpErr ->
+            throwError $ error $ "multiSignCommitTx: signCommitTx request failed with error: "
+              <> show httpErr
+          Right (Left domainErr) ->
+            throwError $ error $ "multiSignCommitTx: signCommitTx endpoint returned error: "
+              <> show domainErr
+          Right (Right sig) ->
+            pure sig
     )
     peers
   pure $ appendTxSignatures signatures commitTx

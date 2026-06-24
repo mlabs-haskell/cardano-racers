@@ -1,5 +1,6 @@
 module CardanoRacers.Race.Contract
   ( distributeRewards
+  , distributeRewardsReturningErrors
   , mkRaceValidator
   , startRace
   , startRaceWithHardcodedRewardDistribution
@@ -15,8 +16,7 @@ import Cardano.Plutus.Types.Map (toCardano) as Plutus.Map
 import Cardano.Plutus.Types.Value (fromCardano, toCardano) as Plutus.Value
 import Cardano.ToData (toData)
 import Cardano.Types
-  ( Address
-  , Asset(Asset)
+  ( Asset(Asset)
   , AssetName
   , Credential(ScriptHashCredential)
   , PlutusScript
@@ -35,7 +35,17 @@ import Cardano.Types.Value (lovelaceValueOf, valueOf, valueToCoin)
 import Cardano.Types.Value (singleton) as Value
 import CardanoRacers.Helpers (mkPosixTimeUnsafe, paysToAddrConstraint)
 import CardanoRacers.Race.Types
-  ( RaceDatum(ValueEscrow, RaceState, TokenBin)
+  ( DistributeRewardsContractError
+      ( CouldNotFindRaceStateUtxo
+      , CouldNotFindValueEscrowUtxo
+      , CouldNotDecodeRaceDatum
+      , CouldNotConvertDistribution
+      , RewardDistributionNotAnnounced
+      , UnexpectedRaceDatumVariant
+      , CouldNotConvertRewardValue
+      , CouldNotConvertFeePerDelegateValue
+      )
+  , RaceDatum(ValueEscrow, RaceState, TokenBin)
   , RaceParams
   , RaceRedeemer(DistributeRewards)
   , RewardDistribution
@@ -54,7 +64,7 @@ import CardanoRacers.RacersState.Types (RacersState(RacersState))
 import CardanoRacers.ScriptsFFI (raceScript)
 import Contract.Address (getNetworkId)
 import Contract.Chain (currentTime)
-import Contract.Monad (Contract, liftContractM)
+import Contract.Monad (liftContractM)
 import Contract.ScriptLookups (ScriptLookups)
 import Contract.ScriptLookups (unspentOutputs, validator) as Lookups
 import Contract.TextEnvelope (decodeTextEnvelope, plutusScriptFromEnvelope)
@@ -67,7 +77,9 @@ import Contract.TxConstraints
   , mustSpendScriptOutput
   ) as Constraints
 import Contract.Utxos (utxosAt)
-import Control.Monad.Error.Class (liftMaybe, throwError)
+import Control.Error.Util ((??))
+import Control.Monad.Error.Class (throwError)
+import Control.Monad.Except (runExceptT)
 import Control.Monad.Reader.Class (asks)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (find, head) as Array
@@ -182,7 +194,14 @@ startRaceWithHardcodedRewardDistribution
       }
 
 distributeRewards :: RaceParams -> Racers TransactionHash
-distributeRewards raceParams = do
+distributeRewards =
+  either (throwError <<< error <<< show) pure
+    <=< distributeRewardsReturningErrors
+
+distributeRewardsReturningErrors
+  :: RaceParams
+  -> Racers (Either DistributeRewardsContractError TransactionHash)
+distributeRewardsReturningErrors raceParams = do
   RacersState { treasuryAddress, operatingAddress } /\ racersStateOref /\
     racersStateTxOut <- queryRacersState
 
@@ -195,133 +214,123 @@ distributeRewards raceParams = do
       mkPaymentAddress network (wrap $ ScriptHashCredential raceValidatorHash)
         Nothing
 
-  { raceStateUtxo, valueEscrowUtxo } <- lift $ findRaceStateAndValueEscrowUtxos
-    raceValidatorAddress
-    stateCurrencySymbol
+  raceValidatorUtxos <- lift $ Map.toUnfoldable <$> utxosAt raceValidatorAddress
+  runExceptT do
+    raceStateUtxo <- findRaceStateUtxo raceValidatorUtxos stateCurrencySymbol ??
+      CouldNotFindRaceStateUtxo
+    valueEscrowUtxo <-
+      findValueEscrowUtxo raceValidatorUtxos stateCurrencySymbol ??
+        CouldNotFindValueEscrowUtxo
 
-  raceStateDatum <-
-    liftMaybe (error "Could not decode RaceDatum") $
-      decodeRaceDatum (snd raceStateUtxo)
-  rewardDistr <-
-    case raceStateDatum of
-      RaceState { distribution: Just distr } ->
-        liftMaybe (error "Could not convert Plutus distribution to Map") $
-          Plutus.Map.toCardano distr
-      RaceState { distribution: Nothing } ->
-        throwError $ error "Reward distribution not announced"
-      _ ->
-        throwError $ error
-          $ "Unexpected RaceDatum variant. Expected: RaceState, datum: "
-          <> show raceStateDatum
+    raceStateDatum <- decodeRaceDatum (snd raceStateUtxo) ??
+      CouldNotDecodeRaceDatum
+    rewardDistr <-
+      case raceStateDatum of
+        RaceState { distribution: Just distr } ->
+          Plutus.Map.toCardano distr ?? CouldNotConvertDistribution
+        RaceState { distribution: Nothing } ->
+          throwError RewardDistributionNotAnnounced
+        _ ->
+          throwError UnexpectedRaceDatumVariant
 
-  (rewards :: Array (Plutus.Address /\ Value)) <-
-    traverse
-      ( \(addr /\ plutusReward) ->
-          case Plutus.Value.toCardano plutusReward of
-            Just reward ->
-              pure $ addr /\ reward
-            Nothing -> do
-              throwError $ error
-                $ "Could not convert Plutus reward to Cardano.Value: "
-                <> show plutusReward
-      )
-      (Map.toUnfoldable rewardDistr)
-
-  feePerDelegate <-
-    liftMaybe (error "Could not convert Plutus feePerDelegate to Cardano.Value")
-      ( traverse Plutus.Value.toCardano
-          (unwrap raceParams).feePerDelegate
-      )
-
-  let
-    mkStateTokenValue :: AssetName -> Value
-    mkStateTokenValue tn = Value.singleton stateCurrencySymbol tn BigNum.one
-
-    stateTokens :: Value
-    stateTokens =
-      unsafePartial
-        ( mkStateTokenValue raceStateTokenName
-            <> mkStateTokenValue valueEscrowTokenName
+    (rewards :: Array (Plutus.Address /\ Value)) <-
+      traverse
+        ( \(addr /\ plutusReward) ->
+            case Plutus.Value.toCardano plutusReward of
+              Just reward ->
+                pure $ addr /\ reward
+              Nothing ->
+                throwError CouldNotConvertRewardValue
         )
+        (Map.toUnfoldable rewardDistr)
 
-    raceStateLovelace :: Number
-    raceStateLovelace = BigInt.toNumber $ BigNum.toBigInt $ unwrap $ valueToCoin
-      (unwrap $ snd raceStateUtxo).amount
+    feePerDelegate <-
+      traverse Plutus.Value.toCardano (unwrap raceParams).feePerDelegate ??
+        CouldNotConvertFeePerDelegateValue
 
-    treasuryValue :: Value
-    treasuryValue =
-      lovelaceValueOf $ BigNum.fromInt $ ceil $ raceStateLovelace * 0.75
+    let
+      mkStateTokenValue :: AssetName -> Value
+      mkStateTokenValue tn = Value.singleton stateCurrencySymbol tn BigNum.one
 
-    operatingValue :: Value
-    operatingValue =
-      lovelaceValueOf $ BigNum.fromInt $ ceil $ raceStateLovelace * 0.25
-
-    redeemer :: RedeemerDatum
-    redeemer = wrap $ toData DistributeRewards
-
-    constraints :: TxConstraints
-    constraints = mconcat
-      [ Constraints.mustSpendScriptOutput (fst raceStateUtxo) redeemer
-      , Constraints.mustSpendScriptOutput (fst valueEscrowUtxo) redeemer
-      , foldMap (uncurry paysToAddrConstraint) rewards
-      , maybe mempty
-          ( \feeValue ->
-              foldMap (flip Constraints.mustPayToPubKey feeValue <<< wrap)
-                (unwrap raceParams).delegates
+      stateTokens :: Value
+      stateTokens =
+        unsafePartial
+          ( mkStateTokenValue raceStateTokenName
+              <> mkStateTokenValue valueEscrowTokenName
           )
-          feePerDelegate
-      , Constraints.mustPayToScript raceValidatorHash (toData TokenBin)
-          DatumInline
-          stateTokens
-      , Constraints.mustReferenceOutput racersStateOref
-      , paysToAddrConstraint treasuryAddress treasuryValue
-      , paysToAddrConstraint operatingAddress operatingValue
-      ]
 
-    lookups :: ScriptLookups
-    lookups = mconcat
-      [ Lookups.unspentOutputs $ Map.fromFoldable
-          [ raceStateUtxo
-          , valueEscrowUtxo
-          , racersStateOref /\ racersStateTxOut
-          ]
-      , Lookups.validator raceValidator
-      ]
+      raceStateLovelace :: Number
+      raceStateLovelace = BigInt.toNumber $ BigNum.toBigInt $ unwrap $
+        valueToCoin
+          (unwrap $ snd raceStateUtxo).amount
 
-  lift do
-    txHash <- submitTxFromConstraints lookups constraints
-    awaitTxConfirmed txHash
-    pure txHash
+      treasuryValue :: Value
+      treasuryValue =
+        lovelaceValueOf $ BigNum.fromInt $ ceil $ raceStateLovelace * 0.75
 
-findRaceStateAndValueEscrowUtxos
-  :: Address
+      operatingValue :: Value
+      operatingValue =
+        lovelaceValueOf $ BigNum.fromInt $ ceil $ raceStateLovelace * 0.25
+
+      redeemer :: RedeemerDatum
+      redeemer = wrap $ toData DistributeRewards
+
+      constraints :: TxConstraints
+      constraints = mconcat
+        [ Constraints.mustSpendScriptOutput (fst raceStateUtxo) redeemer
+        , Constraints.mustSpendScriptOutput (fst valueEscrowUtxo) redeemer
+        , foldMap (uncurry paysToAddrConstraint) rewards
+        , maybe mempty
+            ( \feeValue ->
+                foldMap (flip Constraints.mustPayToPubKey feeValue <<< wrap)
+                  (unwrap raceParams).delegates
+            )
+            feePerDelegate
+        , Constraints.mustPayToScript raceValidatorHash (toData TokenBin)
+            DatumInline
+            stateTokens
+        , Constraints.mustReferenceOutput racersStateOref
+        , paysToAddrConstraint treasuryAddress treasuryValue
+        , paysToAddrConstraint operatingAddress operatingValue
+        ]
+
+      lookups :: ScriptLookups
+      lookups = mconcat
+        [ Lookups.unspentOutputs $ Map.fromFoldable
+            [ raceStateUtxo
+            , valueEscrowUtxo
+            , racersStateOref /\ racersStateTxOut
+            ]
+        , Lookups.validator raceValidator
+        ]
+    lift $ lift do
+      txHash <- submitTxFromConstraints lookups constraints
+      awaitTxConfirmed txHash
+      pure txHash
+
+findRaceStateUtxo
+  :: Array (TransactionInput /\ TransactionOutput)
   -> ScriptHash
-  -> Contract
-       { raceStateUtxo :: TransactionInput /\ TransactionOutput
-       , valueEscrowUtxo :: TransactionInput /\ TransactionOutput
-       }
-findRaceStateAndValueEscrowUtxos scriptAddr stateCs = do
-  scriptUtxos <- Map.toUnfoldable <$> utxosAt scriptAddr
-  raceStateUtxo <-
-    liftMaybe (error "Could not find RaceState utxo") $
-      Array.find
-        ( \(_ /\ txOut) ->
-            valueOf (Asset stateCs raceStateTokenName) (unwrap txOut).amount
-              == BigNum.one
-        )
-        scriptUtxos
-  valueEscrowUtxo <-
-    liftMaybe (error "Could not find ValueEscrow utxo") $
-      Array.find
-        ( \(_ /\ txOut) ->
-            valueOf (Asset stateCs valueEscrowTokenName) (unwrap txOut).amount
-              == BigNum.one
-        )
-        scriptUtxos
-  pure
-    { raceStateUtxo
-    , valueEscrowUtxo
-    }
+  -> Maybe (TransactionInput /\ TransactionOutput)
+findRaceStateUtxo scriptUtxos stateCs =
+  Array.find
+    ( \(_ /\ txOut) ->
+        valueOf (Asset stateCs raceStateTokenName) (unwrap txOut).amount
+          == BigNum.one
+    )
+    scriptUtxos
+
+findValueEscrowUtxo
+  :: Array (TransactionInput /\ TransactionOutput)
+  -> ScriptHash
+  -> Maybe (TransactionInput /\ TransactionOutput)
+findValueEscrowUtxo scriptUtxos stateCs =
+  Array.find
+    ( \(_ /\ txOut) ->
+        valueOf (Asset stateCs valueEscrowTokenName) (unwrap txOut).amount
+          == BigNum.one
+    )
+    scriptUtxos
 
 decodeRaceDatum :: TransactionOutput -> Maybe RaceDatum
 decodeRaceDatum txOut =

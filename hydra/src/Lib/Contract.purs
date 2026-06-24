@@ -4,17 +4,16 @@ module CardanoRacers.Hydra.Lib.Contract
 
 import Prelude
 
-import Cardano.Types (ExUnits(ExUnits))
 import Cardano.Types.Coin (zero) as Coin
 import Contract.Monad (Contract, ContractEnv, runContractInEnv)
-import Contract.Numeric.BigNum (fromInt, fromStringUnsafe, one, zero) as BigNum
+import Contract.Numeric.BigNum (one, zero) as BigNum
 import Contract.ProtocolParameters (getProtocolParameters)
 import Control.Monad.Reader (local)
 import Data.Newtype (modify, wrap)
 import Data.UInt (UInt)
 import Effect.Aff (Aff)
 
--- TODO(high-prio): inherit values from pparams.json
+-- TODO(medium): inherit values from pparams.json
 runContractNullCosts :: forall (a :: Type). ContractEnv -> Contract a -> Aff a
 runContractNullCosts contractEnv contract =
   runContractInEnv contractEnv do

@@ -871,11 +871,11 @@ let
 
     "hydra-sdk" = pkgs.stdenv.mkDerivation {
         name = "hydra-sdk";
-        version = "a615abcae0e1f0288d4b243c0999396b91825052";
+        version = "14d0f4fc8824509bae6df3d9b63488f01d1110d4";
         src = pkgs.fetchgit {
           url = "https://github.com/mlabs-haskell/purescript-hydra-sdk";
-          rev = "a615abcae0e1f0288d4b243c0999396b91825052";
-          sha256 = "1fdyj5sycgla56pz9ci6ns14ixh88hi1zjq4ky72gghgah22rg4n";
+          rev = "14d0f4fc8824509bae6df3d9b63488f01d1110d4";
+          sha256 = "07pm18ldzn0c5xzq1vdchbh1kalmx60wniygl8lcr8waw3mwjdvk";
         };
         phases = "installPhase";
         installPhase = "ln -s $src $out";

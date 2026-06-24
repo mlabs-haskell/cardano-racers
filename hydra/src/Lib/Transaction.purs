@@ -11,7 +11,7 @@ module CardanoRacers.Hydra.Lib.Transaction
 
 import Prelude
 
-import Cardano.Types (Language(PlutusV2, PlutusV3), Transaction, Vkeywitness, _body, _outputs)
+import Cardano.Types (Language(PlutusV2), Transaction, Vkeywitness, _outputs)
 import Cardano.Types.AuxiliaryData (hashAuxiliaryData)
 import Cardano.Types.Transaction (_body, _isValid, _witnessSet)
 import Cardano.Types.TransactionBody (_auxiliaryDataHash)

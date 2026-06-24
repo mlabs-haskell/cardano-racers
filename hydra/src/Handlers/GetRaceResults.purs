@@ -22,15 +22,13 @@ import Contract.CborBytes (hexToCborBytes)
 import Control.Error.Util ((!?), (??))
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Except (runExceptT)
-import Control.Monad.Reader (ask)
 import Data.Codec.Argonaut (JsonCodec, encode) as CA
 import Data.Codec.Argonaut.Sum (sumFlat) as CAS
 import Data.Either (Either(Left, Right))
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe)
 import Data.Show.Generic (genericShow)
-import Effect.Class (class MonadEffect, liftEffect)
-import Effect.Ref (Ref)
+import Effect.Class (liftEffect)
 import Effect.Ref (read) as Ref
 import HTTPure (Response) as HTTPure
 import HTTPure (Status, ok, response)
@@ -83,6 +81,6 @@ errorStatus =
     CouldNotDecodeRaceCs ->
       Status.badRequest
     RequestedRaceNotHosted ->
-      Status.badRequest
+      Status.conflict
     RaceResultsNotAvailable ->
       Status.conflict

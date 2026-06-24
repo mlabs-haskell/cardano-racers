@@ -2456,7 +2456,7 @@
         "nixpkgs-2003": "nixpkgs-2003_2",
         "nixpkgs-2105": "nixpkgs-2105_2",
         "nixpkgs-2111": "nixpkgs-2111_2",
-        "nixpkgs-unstable": "nixpkgs-unstable_5",
+        "nixpkgs-unstable": "nixpkgs-unstable_6",
         "old-ghc-nix": "old-ghc-nix_5",
         "stackage": "stackage_5"
       },
@@ -5279,6 +5279,22 @@
     },
     "nixpkgs-unstable_5": {
       "locked": {
+        "lastModified": 1781577229,
+        "narHash": "sha256-lrp67w8AulE9Ks53n27I45ADSzbOCn4H+CNW1Ck8B+8=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "567a49d1913ce81ac6e9582e3553dd90a955875f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs-unstable_6": {
+      "locked": {
         "lastModified": 1648219316,
         "narHash": "sha256-Ctij+dOi0ZZIfX5eMhgwugfvB+WZSrvVNAyAuANOsnQ=",
         "owner": "NixOS",
@@ -6204,6 +6220,7 @@
           "cardano-transaction-lib",
           "nixpkgs"
         ],
+        "nixpkgs-unstable": "nixpkgs-unstable_5",
         "plutip": "plutip",
         "plutonomy": "plutonomy"
       }

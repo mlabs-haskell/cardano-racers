@@ -12,11 +12,11 @@ import CardanoRacers.Hydra.Monad
   ( AppM
   , RaceEntry
   , findRaceEntryByDepositTxId
-  , getAppLauncher
   , printRaceId
   , readHeadStatus
   , removeRaceEntry
   , setHydraSnapshot
+  , setTimer
   )
 import CardanoRacers.Hydra.RewardDistribution (distributeRewards)
 import CardanoRacers.Hydra.State.RaceStatus
@@ -28,15 +28,18 @@ import CardanoRaces.Hydra.Lib.Print (printHex)
 import Contract.Log (logError', logInfo', logWarn')
 import Control.Monad.Error.Class (catchError, liftMaybe, throwError, try)
 import Control.Monad.Reader.Class (ask)
+import Data.DateTime (diff) as DateTime
 import Data.Either (Either(Left, Right))
-import Data.Int (round) as Int
+import Data.Int (toNumber) as Int
 import Data.Maybe (Maybe(Just, Nothing), fromMaybe)
-import Data.Newtype (unwrap, wrap)
-import Data.Time.Duration (Minutes(Minutes), Seconds(Seconds), fromDuration)
+import Data.Newtype (wrap)
+import Data.Time.Duration (Milliseconds, Minutes(Minutes), Seconds(Seconds), fromDuration)
+import Effect.Aff (delay)
+import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (error)
 import Effect.Exception (message) as Error
-import Effect.Timer (setTimeout)
+import Effect.Now (nowDateTime)
 import HydraSdk.NodeApi (HydraNodeApiWebSocket)
 import HydraSdk.Types
   ( HydraHeadStatus(HeadStatus_Unknown, HeadStatus_Idle, HeadStatus_Open, HeadStatus_Final)
@@ -69,7 +72,7 @@ messageHandler ws msg = do
       case message of
         Greetings { headStatus, snapshotUtxo, chainSyncedStatus } -> do
           setHydraSnapshot $ wrap
-            { number: zero -- FIXME(low-prio): Should `Greetings` message include snapshot number?
+            { number: zero
             , utxo: fromMaybe mempty snapshotUtxo
             , confirmed: mempty
             , utxoToCommit: Nothing
@@ -96,9 +99,12 @@ messageHandler ws msg = do
         DepositExpired { depositTxId, deadline: _deadline } -> do
           logWarn' $ "Deposit expired. Deposit TxId: " <> printHex depositTxId
           removeRaceEntry depositTxId
-        CommitRecorded { pendingDeposit: depositTxId } -> do
+        CommitRecorded { pendingDeposit: depositTxId, deadline } -> do
           logInfo' $ "Commit recorded. Deposit TxId: " <> printHex depositTxId
-        -- TODO(med-prio): recover deposit
+          now <- liftEffect nowDateTime
+          setTimer ((deadline `DateTime.diff` now) :: Milliseconds) do
+            liftAff $ delay $ fromDuration $ Seconds 30.0 -- padding to account for possible inaccuracy 
+            liftEffect $ ws.recoverDeposit depositTxId
         CommitFinalized { depositTxId } -> do
           logInfo' $ "Commit finalized. Deposit TxId: " <> printHex depositTxId
           findRaceEntryByDepositTxId depositTxId >>=
@@ -112,7 +118,7 @@ messageHandler ws msg = do
                     <> ", error: "
                     <> Error.message err
               Nothing ->
-                pure unit -- collateral deposit?
+                pure unit
         DecommitFinalized { distributedUTxO: distributedUtxos } -> do
           logInfo' $ "Decommit finalized. Distributed UTxOs: " <> show distributedUtxos
         SnapshotConfirmed { snapshot } ->
@@ -122,7 +128,7 @@ messageHandler ws msg = do
             liftEffect ws.fanout
         _ -> pure unit
 
--- TODO(low-prio): revise error handling approach
+-- TODO(low): revise error handling approach
 closeHeadOnException :: HydraNodeApiWebSocket AppM -> AppM Unit -> AppM Unit
 closeHeadOnException ws action = do
   action `catchError` \err -> do
@@ -149,36 +155,28 @@ processRace ws race@{ raceData } = do
     success <- setRaceStatusAccepting race
     unless success do
       throwError $ error "Could not advance race status to AcceptingPlayerInputs"
-  launchApp <- getAppLauncher
-  -- TODO(med-prio): cancel timers as part of cleanup 
-  liftEffect $ void $ setTimeout (timeParams.playerInputSubmitWindowSec * 1000) $
-    launchApp do
-      logInfo' "Finalizing race results..."
-      do
-        success <- setRaceStatusFinalizing race
-        unless success do
-          throwError $ error "Could not advance race status to FinalizingResults"
-      { finalResults } <-
-        liftMaybe (error "Could not advance race status to DistributingRewards")
-          =<<
-            retryOnNothing defaultRetryConfig
-              (setRaceStatusDistributing race)
-      when isHeadLeader do
-        let rewardDistr = distributeRewards finalResults raceData.raceParams
-        logInfo' $ "Reward distribution: " <> show rewardDistr
-        retryOnAnyError "announceRewardDistribution" defaultRetryConfig $
-          announceRewardDistribution ws raceData rewardDistr
+  setTimer (Seconds $ Int.toNumber timeParams.playerInputSubmitWindowSec) do
+    logInfo' "Finalizing race results..."
+    do
+      success <- setRaceStatusFinalizing race
+      unless success do
+        throwError $ error "Could not advance race status to FinalizingResults"
+    { finalResults } <-
+      liftMaybe (error "Could not advance race status to DistributingRewards")
+        =<<
+          retryOnNothing defaultRetryConfig
+            (setRaceStatusDistributing race)
+    when isHeadLeader do
+      let rewardDistr = distributeRewards finalResults raceData.raceParams
+      logInfo' $ "Reward distribution: " <> show rewardDistr
+      retryOnAnyError "announceRewardDistribution" defaultRetryConfig $
+        announceRewardDistribution ws raceData rewardDistr
 
 setAndLogHydraSnapshot :: HydraSnapshot -> AppM Unit
 setAndLogHydraSnapshot snapshot = do
   setHydraSnapshot snapshot
   logInfo' $ "New confirmed snapshot: " <> printJsonUsingCodec hydraSnapshotCodec
     snapshot
-
--- TODO: time params should be configurable
-
-playerInputSubmitWindow :: Int
-playerInputSubmitWindow = Int.round $ unwrap $ fromDuration $ Minutes 5.0
 
 defaultRetryConfig :: RetryConfig Minutes Seconds
 defaultRetryConfig =

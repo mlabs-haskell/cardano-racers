@@ -38,6 +38,7 @@
   , "node-path"
   , "node-process"
   , "node-streams"
+  , "now"
   , "numbers"
   , "ordered-collections"
   , "parallel"
@@ -45,7 +46,6 @@
   , "plutus-types"
   , "posix-types"
   , "prelude"
-  , "profunctor"
   , "profunctor-lenses"
   , "quickcheck"
   , "record"
@@ -57,7 +57,6 @@
   , "tuples"
   , "uint"
   , "uri"
-  , "variant"
   ]
 , packages = ./packages.dhall
 , sources =

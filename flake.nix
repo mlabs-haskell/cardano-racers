@@ -1,6 +1,7 @@
 {
   inputs = {
     nixpkgs.follows = "cardano-transaction-lib/nixpkgs";
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     # offchain
     cardano-transaction-lib = {
@@ -27,7 +28,7 @@
     };
   };
 
-  outputs = inputs@{ self, nixpkgs, haskell-nix, hydra, iohk-nix, cardano-transaction-lib, plutip, ... }:
+  outputs = inputs@{ self, nixpkgs, nixpkgs-unstable, haskell-nix, hydra, iohk-nix, cardano-transaction-lib, plutip, ... }:
     let
       # GENERAL
       # supportedSystems = with nixpkgs.lib.systems.supported; tier1 ++ tier2 ++ tier3;
@@ -44,6 +45,7 @@
         inherit (haskell-nix) config;
       };
       nixpkgsFor' = system: import nixpkgs { inherit system; };
+      nixpkgsUnstableFor = system: import nixpkgs-unstable { inherit system; };
 
       formatCheckFor = system:
         let
@@ -94,7 +96,7 @@
           inherit system;
           inherit (haskell-nix) config;
         };
-
+  
         projectFor = system:
           let
             pkgs = nixpkgsFor system;
@@ -175,29 +177,32 @@
 
       # HYDRA
 
+      hydraSourceFor = system: pkgs:
+        let
+          offchainSource = offchainSourceFor system pkgs; 
+        in
+        pkgs.runCommandLocal "cardano-racers-hydra-src" { }
+          ''
+            set -e
+            mkdir $out
+            cp -r ${offchainSource} $out/offchain
+            cp -r ${./hydra}/* $out
+          '';
+
       hydraApp = {
         projectFor = system:
           let
             pkgs = nixpkgsFor system;
-            exporter = ((onchain.projectFor system).flake { }).packages."cardano-racers-onchain:exe:exporter";
+            pkgsUnstable = nixpkgsUnstableFor system;
+            src = hydraSourceFor system pkgs;
           in
           pkgs.purescriptProject {
-            inherit pkgs;
+            inherit pkgs src;
             projectName = "cardano-racers-hydra";
             strictComp = true;
-            src = pkgs.runCommandLocal "generated-source" { }
-              ''
-                set -e
-                cp -r ${./hydra} $out
-                chmod -R +w $out
-                ${exporter}/bin/exporter $out/src
-              '';
             packageJson = ./hydra/package.json;
             packageLock = ./hydra/package-lock.json;
             nodejs = pkgs.nodejs-18_x;
-            # Enter shell using:
-            # NIXPKGS_ALLOW_UNFREE=1 nix develop .#hydra --impure
-            # This is needed, because steam-run has an unfree license
             shell = {
               withRuntime = true;
               packageLockOnly = true;
@@ -207,8 +212,7 @@
                 nodePackages.eslint
                 nodePackages.prettier
                 nodePackages.purs-tidy
-                # FIXME: use run-free?
-                (steam.override { privateTmp = false; }).run # steam-run
+                (pkgsUnstable.steam.override { privateTmp = false; }).run-free # steam-run
               ];
               shellHook =
                 ''
@@ -220,23 +224,28 @@
 
       # OFFCHAIN / Testnet, Cardano, ...
 
+      offchainSourceFor = system: pkgs:
+        let
+          exporter = ((onchain.projectFor system).flake { }).packages."cardano-racers-onchain:exe:exporter";
+        in
+        pkgs.runCommandLocal "offchain-src" {}
+          ''
+            set -e
+            cp -r ${./offchain} $out
+            chmod -R +w $out
+            ${exporter}/bin/exporter $out/src
+          '';
+
       offchain = {
         projectFor = system:
           let
             pkgs = nixpkgsFor system;
-            exporter = ((onchain.projectFor system).flake { }).packages."cardano-racers-onchain:exe:exporter";
+            src = offchainSourceFor system pkgs; 
           in
           pkgs.purescriptProject {
-            inherit pkgs;
+            inherit pkgs src;
             projectName = "cardano-racers-offchain";
-            strictComp = false; # TODO: this should be eventually removed
-            src = pkgs.runCommandLocal "generated-source" { }
-              ''
-                set -e
-                cp -r ${./offchain} $out
-                chmod -R +w $out
-                ${exporter}/bin/exporter $out/src
-              '';
+            strictComp = true;
             packageJson = ./offchain/package.json;
             packageLock = ./offchain/package-lock.json;
             nodejs = pkgs.nodejs-18_x;
@@ -351,7 +360,7 @@
         {
           script-exporter = onchain.script-exporter system;
           exported-scripts = onchain.exported-scripts system;
-          gzipped-bundles = gzippedBundlesFor system;
+          gzipped-bundles = gzippedBundlesFor system; 
         }
       );
 
@@ -363,6 +372,15 @@
           };
           cardano-racers-offchain-unit-tests = self.offchain.project.${system}.runPursTest {
             testMain = "Test.CardanoRacers.Unit";
+          };
+          cardano-racers-hydra-tests = self.hydraApp.project.${system}.runLocalTestnetTest {
+            testMain = "Test.CardanoRacers.Hydra.Main";
+            buildInputs = [
+              hydra.packages.${system}.hydra-node
+            ];
+            env = {
+              MOCK_RACE_SIMULATOR = "1";
+            };
           };
         }
       );

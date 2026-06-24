@@ -2,6 +2,7 @@ module CardanoRacers.Hydra.Config
   ( AppConfig
   , AppQueryBackend(Blockfrost, Kupmios)
   , AppTimeParams
+  , DevParams
   , PeerExtraConfig
   , appConfigCodec
   , configFromArgv
@@ -22,10 +23,11 @@ import Data.Codec.Argonaut
   , printJsonDecodeError
   , string
   ) as CA
-import Data.Codec.Argonaut.Record (record) as CAR
+import Data.Codec.Argonaut.Record (optional, record) as CAR
 import Data.Codec.Argonaut.Sum (sumFlat) as CAS
 import Data.Either (either)
 import Data.Generic.Rep (class Generic)
+import Data.Maybe (Maybe)
 import Data.Show.Generic (genericShow)
 import Effect (Effect)
 import Effect.Exception (throw)
@@ -43,6 +45,7 @@ type AppConfig =
   , logLevel :: LogLevel
   , isHeadLeader :: Boolean
   , timeParams :: AppTimeParams
+  , devParams :: Maybe DevParams
   }
 
 appConfigCodec :: CA.JsonCodec AppConfig
@@ -54,6 +57,17 @@ appConfigCodec =
     , logLevel: logLevelCodec
     , isHeadLeader: CA.boolean
     , timeParams: appTimeParamsCodec
+    , devParams: CAR.optional devParamsCodec
+    }
+
+type DevParams =
+  { mockRaceSimulator :: Boolean
+  }
+
+devParamsCodec :: CA.JsonCodec DevParams
+devParamsCodec =
+  CA.object "DevParams" $ CAR.record
+    { mockRaceSimulator: CA.boolean
     }
 
 type AppTimeParams =

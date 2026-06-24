@@ -178,8 +178,10 @@ let additions =
           , "avar"
           , "bifunctors"
           , "bytearrays"
+          , "cardano-key-wallet"
           , "cardano-types"
           , "codec-aeson"
+          , "console"
           , "control"
           , "datetime"
           , "debug"
@@ -201,11 +203,13 @@ let additions =
           , "node-buffer"
           , "node-child-process"
           , "node-fs"
+          , "node-fs-aff"
           , "node-path"
           , "node-process"
           , "node-streams"
           , "optparse"
           , "ordered-collections"
+          , "parallel"
           , "parsing"
           , "partial"
           , "plutus-types"
@@ -226,7 +230,7 @@ let additions =
           , "uuid"
           ]
         , repo = "https://github.com/mlabs-haskell/purescript-hydra-sdk"
-        , version = "a615abcae0e1f0288d4b243c0999396b91825052"
+        , version = "14d0f4fc8824509bae6df3d9b63488f01d1110d4"
         }
       }
 

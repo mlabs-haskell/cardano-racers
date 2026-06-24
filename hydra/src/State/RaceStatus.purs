@@ -6,19 +6,18 @@ module CardanoRacers.Hydra.State.RaceStatus
 
 import Prelude
 
-import CardanoRacers.Hydra.Monad (AppM, RaceData, RaceEntry, printRaceId)
+import CardanoRacers.Hydra.Monad (AppM, RaceEntry, printRaceId)
 import CardanoRacers.Hydra.ResultsConsensus (confirmResultsByConsensus)
 import CardanoRacers.Hydra.Types.RaceStatus
   ( RaceStatus(Initializing, AcceptingPlayerInputs, FinalizingResults, DistributingRewards)
   , RaceResults
-  , isInitializing
   )
 import Contract.Log (logError', logInfo')
 import Control.Monad.Reader (ask)
 import Data.Either (Either(Left, Right))
 import Data.Identity (Identity)
 import Data.Map (fromFoldable, toUnfoldableUnordered) as Map
-import Data.Maybe (Maybe(Just, Nothing), isNothing)
+import Data.Maybe (Maybe(Just, Nothing))
 import Data.Newtype (unwrap)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(Tuple))

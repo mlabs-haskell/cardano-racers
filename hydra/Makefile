@@ -1,4 +1,4 @@
-.PHONY: build test format run-a run-b start-race run-simulator gen-keys
+.PHONY: build test format run-hydra-fst run-hydra-snd hydra-race-demo unity-simulator-demo gen-keys
 
 ps-sources := $(shell fd --no-ignore-parent -epurs)
 purs-args := "--stash --censor-lib --censor-codes=ImplicitImport,ImplicitQualifiedImport,ImplicitQualifiedImportReExport,UserDefinedWarning"
@@ -19,17 +19,17 @@ test: requires-nix-shell
 format: requires-nix-shell
 	purs-tidy format-in-place ${ps-sources}
 
-run-a: requires-nix-shell
+run-hydra-fst: requires-nix-shell
 	spago run --main CardanoRacers.Hydra.Main --exec-args 'config-a.json'
 
-run-b: requires-nix-shell
+run-hydra-snd: requires-nix-shell
 	spago run --main CardanoRacers.Hydra.Main --exec-args 'config-b.json'
 
-start-race: requires-nix-shell
-	spago run --main CardanoRacers.Hydra.Demo.StartRace --exec-args 'demo/config.json'
+hydra-race-demo: requires-nix-shell
+	spago run --main CardanoRacers.Hydra.Demo.HydraRace --exec-args 'demo/config.json'
 
-run-simulator: requires-nix-shell
-	spago run --main CardanoRacers.Hydra.Demo.RunSimulator --exec-args 'simulator/input.csv'
+unity-simulator-demo: requires-nix-shell
+	spago run --main CardanoRacers.Hydra.Demo.UnitySimulator --exec-args 'simulator/test-input.csv'
 
 gen-keys: requires-nix-shell
 	@hydra-node gen-hydra-key --output-file ${keys-dir}/hydra-a

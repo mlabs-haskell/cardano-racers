@@ -11,6 +11,7 @@ module CardanoRacers.Hydra.Monad
   , findRaceEntryByRaceCs
   , getAppLauncher
   , getAppRunner
+  , getHydraNodeBaseUrl
   , initApp
   , initContractEnv
   , initRace
@@ -24,19 +25,19 @@ module CardanoRacers.Hydra.Monad
   , runApp
   , setHeadStatus
   , setHydraSnapshot
+  , setTimer
   ) where
 
 import Prelude
 
 import Aeson (Finite)
-import Cardano.AsCbor (encodeCbor)
 import Cardano.Plutus.Types.Address (Address) as Plutus
+import Cardano.Provider.ServerConfig (mkHttpUrl)
 import Cardano.Types
   ( NetworkId(MainnetId, TestnetId)
   , PlutusScript
   , ScriptHash
   , TransactionHash
-  , UtxoMap
   )
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Hydra.Config (AppConfig, AppQueryBackend(Blockfrost, Kupmios))
@@ -46,7 +47,6 @@ import CardanoRacers.Hydra.Types.Common (Utxo)
 import CardanoRacers.Hydra.Types.RaceStatus (RaceStatus(Initializing))
 import CardanoRacers.Race.Types (RaceParams)
 import CardanoRaces.Hydra.Lib.Print (printHex)
-import Contract.CborBytes (cborBytesToHex)
 import Contract.Config
   ( ContractParams
   , PrivatePaymentKeySource(PrivatePaymentKeyFile)
@@ -63,42 +63,42 @@ import Contract.Config
   , mkCtlBackendParams
   )
 import Contract.Monad (Contract, ContractEnv, mkContractEnv, runContractInEnv, stopContractEnv)
-import Control.Monad.Error.Class (class MonadError, class MonadThrow, liftMaybe, throwError)
+import Control.Monad.Error.Class (class MonadError, class MonadThrow)
 import Control.Monad.Logger.Class (class MonadLogger)
 import Control.Monad.Logger.Trans (LoggerT(LoggerT), runLoggerT)
 import Control.Monad.Reader (class MonadAsk, class MonadReader, ReaderT, ask, asks, runReaderT)
 import Control.Monad.Rec.Class (class MonadRec)
-import Data.Either (either)
+import Control.Parallel (parTraverse_)
+import Data.Array (cons) as Array
+import Data.Int (ceil) as Int
 import Data.Log.Formatter.Pretty (prettyFormatter)
 import Data.Log.Level (LogLevel)
 import Data.Log.Message (Message)
 import Data.Map (Map)
-import Data.Map (delete, empty, insert, lookup, pop, union) as Map
-import Data.Maybe (Maybe(Just, Nothing), fromMaybe, maybe)
+import Data.Map (delete, empty, insert, lookup, pop) as Map
+import Data.Maybe (Maybe(Just, Nothing))
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.String (take, trim) as String
+import Data.Time.Duration (class Duration, fromDuration)
 import Data.Tuple.Nested (type (/\), (/\))
+import Data.UInt (fromInt) as UInt
 import Effect (Effect)
-import Effect.Aff (Aff, launchAff, runAff_)
+import Effect.Aff (Aff, invincible, launchAff)
 import Effect.Aff.AVar (AVar)
-import Effect.Aff.AVar (new, read, tryRead) as AVar
+import Effect.Aff.AVar (new, read) as AVar
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Console (log)
-import Effect.Exception (Error, error, throw)
-import Effect.Exception (message) as Error
+import Effect.Exception (Error, throw)
 import Effect.Ref (Ref)
-import Effect.Ref (new, read, write) as Ref
+import Effect.Ref (new) as Ref
+import Effect.Timer (TimeoutId, clearTimeout, setTimeout)
 import HydraSdk.Lib (modify) as AVar
-import HydraSdk.Types
-  ( HydraHeadStatus(HeadStatus_Unknown)
-  , HydraSnapshot
-  , emptySnapshot
-  , toUtxoMap
-  )
+import HydraSdk.Types (HydraHeadStatus(HeadStatus_Unknown), HydraSnapshot, emptySnapshot)
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Sync (readTextFile)
 import Node.Path (FilePath)
+import URI.Port (toInt) as Port
 
 newtype AppM (a :: Type) = AppM (LoggerT (ReaderT AppState Aff) a)
 
@@ -119,7 +119,7 @@ derive newtype instance MonadRec AppM
 
 type AppLogger = Message -> ReaderT AppState Aff Unit
 
--- TODO: some AVars here could probably just be Refs
+-- TODO(low): some AVars here could probably just be Refs
 type AppState =
   { config :: AppConfig
   , contractEnv :: ContractEnv
@@ -131,6 +131,8 @@ type AppState =
         { entries :: Map ScriptHash RaceEntry
         , deposits :: Map TransactionHash ScriptHash
         }
+  -- TODO(low): add worker to periodically clean up IDs of elapsed timers 
+  , timers :: AVar (Array TimeoutId)
   }
 
 type RaceEntry =
@@ -149,6 +151,33 @@ type RaceData =
 
 printRaceId :: RaceData -> String
 printRaceId rd = printHex (unwrap rd.raceParams).stateCurrencySymbol
+
+getHydraNodeBaseUrl :: AppM String
+getHydraNodeBaseUrl = do
+  { config: { hydraNodeStartupParams: { hydraNodeApiAddress } } } <- ask
+  pure $ mkHttpUrl
+    { port: UInt.fromInt $ Port.toInt hydraNodeApiAddress.port
+    , host: "127.0.0.1"
+    , secure: false
+    , path: Nothing
+    }
+
+-- Timers
+
+setTimer :: forall (d :: Type). Duration d => d -> AppM Unit -> AppM Unit
+setTimer time action = do
+  launchApp' <- getAppLauncher
+  liftAff $ invincible $ liftEffect do
+    let ms = Int.ceil $ unwrap $ fromDuration time
+    timerId <- setTimeout ms $ launchApp' action
+    launchApp' $ registerTimer timerId
+
+registerTimer :: TimeoutId -> AppM Unit
+registerTimer timer = do
+  { timers } <- ask
+  void $ AVar.modify (pure <<< Array.cons timer) timers
+
+-- Races
 
 initRace :: TransactionHash -> RaceData -> AppM Unit
 initRace depositTxId raceData = do
@@ -193,6 +222,8 @@ removeRaceEntry depositTxId = do
     )
     races
 
+--
+
 runApp :: forall (a :: Type). AppState -> AppLogger -> AppM a -> Aff a
 runApp state logger =
   flip runReaderT state
@@ -219,15 +250,13 @@ getAppLauncher =
       ask <#> \state ->
         launchApp state logger
 
-cleanupApp :: AppState -> Effect Unit
+cleanupApp :: AppState -> Aff Unit
 cleanupApp state = do
-  log "Finalizing CTL Contract environment."
-  runAff_
-    ( either
-        (log <<< append "cleanupApp failed with error: " <<< Error.message)
-        (const (log "Successfully cleaned up CTL Contract environment."))
-    )
-    (stopContractEnv state.contractEnv)
+  liftEffect $ log "Finalizing CTL Contract environment."
+  stopContractEnv state.contractEnv
+  liftEffect $ log "Cancelling all registered timers."
+  timers <- AVar.read state.timers
+  parTraverse_ (liftEffect <<< clearTimeout) timers
 
 liftContract :: forall (a :: Type). Contract a -> AppM a
 liftContract contract = do
@@ -271,6 +300,7 @@ initApp config@{ hydraNodeStartupParams, isHeadLeader } = do
   headStatus <- AVar.new HeadStatus_Unknown
   snapshot <- AVar.new emptySnapshot
   races <- AVar.new { entries: Map.empty, deposits: Map.empty }
+  timers <- AVar.new []
   pure
     { config
     , contractEnv
@@ -278,6 +308,7 @@ initApp config@{ hydraNodeStartupParams, isHeadLeader } = do
     , headStatus
     , snapshot
     , races
+    , timers
     }
 
 initContractEnv :: AppQueryBackend -> FilePath -> LogLevel -> Aff ContractEnv

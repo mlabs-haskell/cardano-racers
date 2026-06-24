@@ -293,7 +293,7 @@ let additions =
           , "uuid"
           ]
         , repo = "https://github.com/mlabs-haskell/purescript-hydra-sdk"
-        , version = "b3b963e586862df2872d20d4283fa11fe505923e"
+        , version = "14d0f4fc8824509bae6df3d9b63488f01d1110d4"
         }
       }
 

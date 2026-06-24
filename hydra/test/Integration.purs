@@ -13,25 +13,34 @@ import Cardano.Wallet.Key (KeyWallet)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Helpers (assetNameFromAsciiUnsafe)
 import CardanoRacers.Hydra.Config (AppQueryBackend(Kupmios))
-import CardanoRacers.Hydra.Lib.Retry (retryOnAnyError, retryOnFalse)
+import CardanoRacers.Hydra.Lib.Retry (retryOnError, retryOnFalse)
 import CardanoRacers.Hydra.Main (cleanupHandler)
 import CardanoRacers.Hydra.Monad (appLogger, initApp, readHeadStatus, runApp)
 import CardanoRacers.Hydra.Node (startHydraNode)
 import CardanoRacers.Hydra.Server (httpServer)
-import CardanoRacers.HydraGroup.Contract (findHydraGroupById)
-import CardanoRacers.HydraGroup.Contract (registerHydraGroup)
+import CardanoRacers.HydraGroup.Contract (findHydraGroupById, registerHydraGroup)
 import CardanoRacers.HydraGroup.Types (HydraGroupInfo)
 import CardanoRacers.Nitro.Helpers (createRacersParams)
-import CardanoRacers.Race.Contract (distributeRewards, startRace)
+import CardanoRacers.Race.Contract (distributeRewardsReturningErrors, startRace)
 import CardanoRacers.Race.Types
-  ( RaceParams
+  ( DistributeRewardsContractError(CouldNotFindRaceStateUtxo)
+  , RaceParams
   , StartRaceParams(StartRaceParams)
   , StartRaceResult(StartRaceResult)
   )
 import CardanoRacers.RaceRegistry.Types (RaceParticipant)
-import CardanoRacers.RacersState.Contract (initRacersStateContract, queryRacersState)
+import CardanoRacers.RacersState.Contract (initRacersStateContract)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices), RacersState(RacersState))
-import CardanoRacers.Services.HydraDelegate (HostRaceRequest, hostRaceRequest)
+import CardanoRacers.Services.HydraDelegate
+  ( HostRaceError
+      ( HostRace_CollateralUtxoNotAvailableOnL2
+      , HostRace_CollateralUtxoNotSpentOnL1
+      , HostRace_CommitContractFailed
+      )
+  , HostRaceRequest
+  , SubmitPlayerInputError(SubmitInput_PlayerInputSubmitWindowNotActive)
+  , hostRaceRequest
+  )
 import CardanoRaces.Hydra.Lib.Print (printHex)
 import Contract.Address (getNetworkId)
 import Contract.Log (logInfo')
@@ -43,22 +52,17 @@ import Contract.Transaction (awaitTxConfirmed)
 import Contract.Wallet (getWalletAddress, getWalletUtxos, ownPaymentPubKeyHash)
 import Control.Monad.Error.Class (liftMaybe, throwError)
 import Control.Monad.Reader (ask)
-import Control.Parallel (parTraverse, parTraverse_)
-import Data.Array (concat, cons, foldl, head, range, replicate, singleton, splitAt) as Array
-import Data.Array.NonEmpty (head) as NEArray
+import Control.Parallel (parTraverse_)
+import Data.Array (concat, cons, head, range, replicate, singleton, splitAt) as Array
+import Data.Array.NonEmpty (length, unsafeIndex) as NEArray
 import Data.ByteArray (byteArrayFromAscii)
 import Data.Either (Either(Left, Right))
 import Data.Int (toNumber) as Int
-import Data.Log.Level (LogLevel(Trace, Info))
+import Data.Log.Level (LogLevel(Info))
 import Data.Map (toUnfoldable) as Map
-import Data.Maybe (Maybe(Just, Nothing), fromJust)
+import Data.Maybe (Maybe(Just, Nothing), fromJust, isJust)
 import Data.Newtype (unwrap, wrap)
-import Data.Time.Duration
-  ( Milliseconds(Milliseconds)
-  , Minutes(Minutes)
-  , Seconds(Seconds)
-  , fromDuration
-  )
+import Data.Time.Duration (Seconds(Seconds), fromDuration)
 import Data.Traversable (traverse, traverse_)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple.Nested ((/\))
@@ -66,8 +70,7 @@ import Data.UInt (fromInt) as UInt
 import Effect.Aff (Aff, delay)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
-import Effect.Console (log)
-import Effect.Exception (error, throw)
+import Effect.Exception (error)
 import Effect.Ref (Ref)
 import Effect.Ref (read) as Ref
 import HydraSdk.Test (defaultHydraClusterTimeParamsForCardanoTestnet, withHydraCluster)
@@ -78,9 +81,10 @@ import Mote (group, test, only)
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (readTextFile)
 import Node.Path (FilePath)
+import Node.Process (lookupEnv)
 import Partial.Unsafe (unsafePartial)
 import Racers (runRacers)
-import Test.QuickCheck.Gen (randomSampleOne, shuffle)
+import Test.QuickCheck.Gen (chooseInt, randomSampleOne, shuffle)
 import URI.Port (unsafeFromInt) as Port
 
 type TestParams =
@@ -108,7 +112,7 @@ defaultUtxoDistribution =
 suite :: Ref FilePath -> TestnetConfig -> TestPlanM ContractTest Unit
 suite nodeSocketPathRef testnetConfig =
   group "Integration" do
-    test "1 race, 1 participant" do
+    only $ test "1 race, 1 participant" do
       withWallets
         ( defaultUtxoDistribution /\ defaultUtxoDistribution /\ defaultUtxoDistribution /\
             Array.replicate tp.numHydraNodes defaultUtxoDistribution
@@ -149,7 +153,7 @@ suite nodeSocketPathRef testnetConfig =
                 playerWallets
               distributeTestRewards racersParams raceParams timeParams
 
-    only $ test
+    test
       ( show tp.numRaces <> " races, " <> show tp.numRaceParticipants <>
           " participants per race"
       )
@@ -163,8 +167,7 @@ suite nodeSocketPathRef testnetConfig =
             let
               timeParams =
                 defaultTimeParams
-                  { depositPeriodSec = 40
-                  , playerInputSubmitWindowSec = 60
+                  { playerInputSubmitWindowSec = 60
                   }
             hydraTest nodeSocketPathRef testnetConfig delegateWallets timeParams \app -> do
               withKeyWallet adminWallet do
@@ -199,6 +202,7 @@ suite nodeSocketPathRef testnetConfig =
                     \{ raceParams, playerWallets } ->
                       playerWallets <#> \kw ->
                         kw /\ raceParams
+                -- all players submit their inputs simultaneously
                 parTraverse_
                   ( \(kw /\ rp) -> withKeyWallet kw $ submitTestPlayerInput rp groupInfo
                       timeParams
@@ -223,7 +227,7 @@ type TestTimeParams =
 
 defaultTimeParams :: TestTimeParams
 defaultTimeParams =
-  { depositPeriodSec: 20
+  { depositPeriodSec: 40
   , playerInputSubmitWindowSec: 20
   , defaultRetryDelaySec: 2
   }
@@ -238,6 +242,7 @@ hydraTest
 hydraTest nodeSocketPathRef testnetConfig wallets timeParams action = do
   nodeSocketPath <- liftEffect $ Ref.read nodeSocketPathRef
   contractEnv <- ask
+  mockRaceSimulator <- liftEffect $ isJust <$> lookupEnv "MOCK_RACE_SIMULATOR"
   liftAff $ withHydraCluster wallets
     { mkClusterSpec: \workdir ->
         { workdir
@@ -274,6 +279,10 @@ hydraTest nodeSocketPathRef testnetConfig wallets timeParams action = do
           , timeParams:
               { playerInputSubmitWindowSec: timeParams.playerInputSubmitWindowSec
               }
+          , devParams:
+              Just
+                { mockRaceSimulator
+                }
           }
         let logger = appLogger
         hydraNodeHandle <- runApp state logger startHydraNode
@@ -285,33 +294,37 @@ hydraTest nodeSocketPathRef testnetConfig wallets timeParams action = do
           }
     , runCleanupForHydraApp: liftEffect <<< _.cleanupHandler
     , action: \appHandles -> do
-        -- TODO: select random app
-        let app = NEArray.head appHandles
+        let
+          getRandomApp = do
+            idx <- liftEffect $ randomSampleOne $ chooseInt 0 $ NEArray.length appHandles - 1
+            pure $ unsafePartial $ NEArray.unsafeIndex appHandles idx -- safe
+          runApp' x = do
+            app <- getRandomApp
+            runApp app.state app.logger x
         runContractInEnv contractEnv $
           action
-            { getHeadStatus: runApp app.state app.logger readHeadStatus
+            { getHeadStatus: runApp' readHeadStatus
             }
     }
 
 distributeTestRewards :: RacersParams -> RaceParams -> TestTimeParams -> Contract Unit
 distributeTestRewards racersParams raceParams timeParams = do
   txHash <-
-    -- TODO: only retry when RaceState utxo is not available on L1 and fail
-    -- immediately otherwise
-    retryOnAnyError
+    retryOnError
       "distributeRewards"
+      (pure <<< eq CouldNotFindRaceStateUtxo)
       { timeout: Seconds $ Int.toNumber $ timeParams.playerInputSubmitWindowSec * 2
       , delay: Seconds $ Int.toNumber timeParams.defaultRetryDelaySec
       }
-      (runRacers racersParams $ distributeRewards raceParams)
+      (runRacers racersParams $ distributeRewardsReturningErrors raceParams)
   logInfo' $ "distributeRewards success: " <> printHex txHash
 
 submitTestPlayerInput :: RaceParams -> HydraGroupInfo -> TestTimeParams -> Contract Unit
 submitTestPlayerInput raceParams groupInfo timeParams = do
-  csv <- liftAff $ readTextFile UTF8 "simulator/input.csv"
-  -- TODO: retry specifically for PlayerInputSubmitWindowNotActive error and
-  -- fail immediately otherwise
-  retryOnAnyError "submitPlayerInput"
+  csv <- liftAff $ readTextFile UTF8 "simulator/test-input.csv"
+  retryOnError
+    "submitPlayerInput"
+    (pure <<< eq SubmitInput_PlayerInputSubmitWindowNotActive)
     { timeout: Seconds $ Int.toNumber $ timeParams.depositPeriodSec * 2
     , delay: Seconds $ Int.toNumber timeParams.defaultRetryDelaySec
     }
@@ -380,23 +393,25 @@ hostTestRace idx app racersParams groupInfo timeParams { playerWallets, delegate
     unless success do
       throwError $ error "Head is not in Open state after timeout"
 
-  -- Host L2 race
-  void $ retryOnAnyError "hostRace"
+  void $ retryOnError
+    "hostRace"
+    ( \err -> pure $ err == HostRace_CollateralUtxoNotAvailableOnL2
+        || err == HostRace_CollateralUtxoNotSpentOnL1
+        || err == HostRace_CommitContractFailed
+    )
     { timeout: Seconds $ Int.toNumber $ timeParams.depositPeriodSec * 2
     , delay: Seconds $ Int.toNumber timeParams.defaultRetryDelaySec
     }
     ( hostRace groupInfo startRaceTxHash racersParams raceParams >>=
         case _ of
-          Left httpError ->
-            throwError $ error $ "host request failed: " <> show httpError
-          Right txHash -> do
-            liftEffect $ log $ "hostRace success: " <> printHex txHash
+          Left httpErr ->
+            throwError $ error $ "hostRace request failed with error: "
+              <> show httpErr
+          Right x ->
+            pure x
     )
   liftAff $ delay $ fromDuration $ Seconds 10.0
-
-  pure
-    { raceParams
-    }
+  pure { raceParams }
 
 doInitialSetup
   :: { adminWallet :: KeyWallet
@@ -490,7 +505,7 @@ hostRace
   -> TransactionHash
   -> RacersParams
   -> RaceParams
-  -> Contract (Either HttpError TransactionHash)
+  -> Contract (Either HttpError (Either HostRaceError TransactionHash))
 hostRace groupInfo startRaceTxHash racersParams raceParams = do
   network <- getNetworkId
   httpServer <- liftMaybe (error "Could not get httpServer") $ Array.head

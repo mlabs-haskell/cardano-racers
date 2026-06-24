@@ -11,8 +11,6 @@ import Cardano.Provider.ServerConfig (mkHttpUrl)
 import Cardano.ToData (toData)
 import Cardano.Types
   ( Address
-  , Credential(ScriptHashCredential)
-  , NetworkId
   , PlutusData
   , RedeemerDatum
   , ScriptHash
@@ -20,11 +18,9 @@ import Cardano.Types
   , UtxoMap
   , Value
   )
-import Cardano.Types.Address (getPaymentCredential, mkPaymentAddress)
-import Cardano.Types.Credential (asPubKeyHash)
 import Cardano.Types.PlutusScript (hash) as PlutusScript
 import Cardano.Types.Transaction (hash) as Transaction
-import CardanoRacers.Hydra.Contracts.Common (findCollateralUtxo, findRaceStateUtxo, fixTx)
+import CardanoRacers.Hydra.Contracts.Common (findCollateralUtxo, findRaceStateUtxo)
 import CardanoRacers.Hydra.Lib.Transaction
   ( appendTxSignatures
   , removeTxOutputsWithEmptyValues
@@ -34,23 +30,17 @@ import CardanoRacers.Hydra.Lib.Transaction
 import CardanoRacers.Hydra.Monad
   ( AppM
   , RaceData
-  , RaceEntry
   , liftContract
   , liftContractNullCosts
   , readHydraSnapshot
   )
 import CardanoRacers.Hydra.Services.HydraPeer (signAnnounceDistrTxRequest)
-import CardanoRacers.Hydra.Types.Common (Utxo)
 import CardanoRacers.Hydra.Types.ContractResult (buildTx, emptySubmitTxData)
-import CardanoRacers.Hydra.Types.ServerResponse
-  ( ServerResponse(ServerResponseError, ServerResponseSuccess)
-  )
 import CardanoRacers.Race.Types
   ( RaceDatum(RaceState)
   , RaceRedeemer(MoveL2)
   , RewardDistribution
   )
-import Contract.Address (getNetworkId)
 import Contract.BalanceTxConstraints (BalancerConstraints)
 import Contract.BalanceTxConstraints
   ( mustSendChangeToAddress
@@ -76,11 +66,10 @@ import Contract.Wallet (getWalletAddress)
 import Control.Monad.Error.Class (liftMaybe, throwError)
 import Control.Monad.Reader.Class (ask)
 import Control.Parallel (parTraverse)
-import Data.Array (find) as Array
-import Data.Either (either)
+import Data.Either (Either(Left, Right))
 import Data.Foldable (foldMap)
-import Data.Map (fromFoldable, toUnfoldable, union) as Map
-import Data.Maybe (Maybe(Just, Nothing), isJust, isNothing, maybe)
+import Data.Map (fromFoldable, union) as Map
+import Data.Maybe (Maybe(Just), isNothing, maybe)
 import Data.Newtype (unwrap, wrap)
 import Data.Tuple.Nested ((/\))
 import Debug (traceM)
@@ -116,27 +105,23 @@ multiSignAnnounceDistrTx
 multiSignAnnounceDistrTx peers raceCs tx changeAddress = do
   signatures <- parTraverse
     ( \{ httpServer } -> do
-        eiResp <-
+        resp <-
           signAnnounceDistrTxRequest (mkHttpUrl httpServer)
             { raceCs
             , tx
             , changeAddress
             }
-        resp <-
-          either
-            ( throwError <<< error
-                <<< append "multiSignAnnounceDistrTx: signAnnounceDistrTxRequest failed: "
-                <<< show
-            )
-            pure
-            eiResp
         case resp of
-          ServerResponseSuccess signature ->
-            pure signature
-          ServerResponseError err ->
+          Left httpErr ->
             throwError $ error $
-              "multiSignAnnounceDistrTx: failed to get signature from peer: " <>
-                show err
+              "multiSignAnnounceDistrTx: signAnnounceDistrTx request failed with error: "
+                <> show httpErr
+          Right (Left domainErr) ->
+            throwError $ error $
+              "multiSignAnnounceDistrTx: signAnnounceDistrTx endpoint returned error: "
+                <> show domainErr
+          Right (Right sig) ->
+            pure sig
     )
     peers
   pure $ appendTxSignatures signatures tx
@@ -163,8 +148,6 @@ announceRewardDistributionContract
   -> Contract Transaction
 announceRewardDistributionContract snapshotUtxos changeAddress raceData distr = do
   let raceValidatorHash = PlutusScript.hash raceData.raceValidator
-  network <- getNetworkId
-
   traceM $ "Snapshot utxos: " <> show snapshotUtxos
 
   collateralUtxo <- liftMaybe (error "Could not find collateral utxo") $
