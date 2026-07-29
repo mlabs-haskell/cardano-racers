@@ -1,5 +1,9 @@
 module CardanoRacers.Hydra.ResultsConsensus
-  ( ConfirmResultsError(CouldNotGetOwnResults, CouldNotGetPeerResults)
+  ( ConfirmResultsError
+      ( CouldNotGetOwnResults
+      , CouldNotGetPeerResults_RequestFailed
+      , CouldNotGetPeerResults_EndpointReturnedError
+      )
   , confirmResultsByConsensus
   ) where
 
@@ -7,14 +11,15 @@ import Prelude
 
 import Cardano.Provider (ServerConfig)
 import Cardano.Provider.ServerConfig (mkHttpUrl)
+import Cardano.Types (ScriptHash)
 import CardanoRacers.Hydra.Handlers.GetRaceResults (GetRaceResultsError)
 import CardanoRacers.Hydra.Services.HydraPeer (getRaceResultsRequest)
 import CardanoRacers.Hydra.Types.RaceStatus (RaceResults, raceResultsToMap)
-import Control.Monad.Except (ExceptT(ExceptT), runExceptT)
+import Control.Monad.Error.Class (throwError)
+import Control.Monad.Except (runExceptT)
 import Data.Array ((:))
 import Data.Array (catMaybes, sortWith) as Array
-import Data.Bifunctor (bimap)
-import Data.Either (Either)
+import Data.Either (Either(Left, Right))
 import Data.Foldable (foldl)
 import Data.Generic.Rep (class Generic)
 import Data.Identity (Identity(Identity))
@@ -28,7 +33,8 @@ import HydraSdk.Types (HttpError)
 
 data ConfirmResultsError
   = CouldNotGetOwnResults GetRaceResultsError
-  | CouldNotGetPeerResults HttpError
+  | CouldNotGetPeerResults_RequestFailed HttpError
+  | CouldNotGetPeerResults_EndpointReturnedError GetRaceResultsError
 
 derive instance Generic ConfirmResultsError _
 
@@ -38,16 +44,23 @@ instance Show ConfirmResultsError where
 confirmResultsByConsensus
   :: forall (m :: Type -> Type)
    . MonadAff m
-  => RaceResults Maybe
+  => ScriptHash
+  -> RaceResults Maybe
   -> Array ServerConfig
   -> m (Either ConfirmResultsError (RaceResults Identity))
-confirmResultsByConsensus localResults peers =
+confirmResultsByConsensus raceCs localResults peers =
   runExceptT do
     let localResultMap = raceResultsToMap localResults
     peerResultMaps <- traverse
       ( \httpServer ->
-          ExceptT $ liftAff $ bimap CouldNotGetPeerResults raceResultsToMap <$>
-            getRaceResultsRequest (mkHttpUrl httpServer)
+          liftAff (getRaceResultsRequest (mkHttpUrl httpServer) raceCs) >>=
+            case _ of
+              Left httpErr ->
+                throwError $ CouldNotGetPeerResults_RequestFailed httpErr
+              Right (Left domainErr) ->
+                throwError $ CouldNotGetPeerResults_EndpointReturnedError domainErr
+              Right (Right results) ->
+                pure $ raceResultsToMap results
       )
       peers
     let

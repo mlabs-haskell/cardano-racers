@@ -1,4 +1,4 @@
-module CardanoRacers.Hydra.Demo.RunSimulator
+module CardanoRacers.Hydra.Demo.UnitySimulator
   ( main
   ) where
 

@@ -203,8 +203,11 @@ mkBot cp walletSpec rp =
           (_ { racersParams = Just rp })
           (fromJs network hostParams)
         case resp of
-          Right txHash ->
+          Right (Right txHash) ->
             pure $ cborBytesToHex $ encodeCbor txHash
+          Right (Left err) ->
+            throwError $ error $ "hostRace endpoint returned error: "
+              <> show err
           Left httpError ->
             throwError $ error $ "hostRace request failed with error: "
               <> show httpError

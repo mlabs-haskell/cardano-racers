@@ -18,7 +18,10 @@ import CardanoRacers.RaceRegistry.Contract
   , registerPositionInRace
   )
 import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
-import CardanoRacers.Services.HydraDelegate (submitPlayerInputRequest)
+import CardanoRacers.Services.HydraDelegate
+  ( SubmitPlayerInputError
+  , submitPlayerInputRequest
+  )
 import CardanoRacers.Utils.Cose
   ( fromBytesCoseKey
   , getCoseKeyHeaderX
@@ -27,7 +30,6 @@ import CardanoRacers.Utils.Cose
 import CardanoRacers.Utils.Hash (blake2b256Hash)
 import Contract.CborBytes (cborBytesToHex, hexToCborBytes)
 import Contract.Config (ContractParams, WalletSpec)
-import Contract.Log (logInfo')
 import Contract.Monad
   ( Contract
   , liftContractM
@@ -39,7 +41,7 @@ import Contract.Prim.ByteArray (byteArrayFromAscii, byteArrayToHex)
 import Contract.Transaction (TransactionInput(TransactionInput))
 import Contract.Wallet (getWalletAddress, getWalletAddresses, signData)
 import Control.Monad.Error.Class (liftMaybe, throwError)
-import Control.Monad.Except (ExceptT(ExceptT), runExceptT)
+import Control.Monad.Except (except, runExceptT)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff)
 import Ctl.Internal.Contract.Wallet (ownPubKeyHashes)
@@ -186,13 +188,20 @@ completeRace race hydraGroupHttpServers csvInput = do
       ( PlutusScript.hash <$>
           Array.head (unwrap slotPolicy).plutusMintingPolicies
       )
-  lift $ submitPlayerInputToDelegates raceCs hydraGroupHttpServers csvInput
+  res <- lift $ submitPlayerInputToDelegates raceCs hydraGroupHttpServers
+    csvInput
+  case res of
+    Left domainErr ->
+      throwError $ error $ "submitPlayerInput endpoint returned error: "
+        <> show domainErr
+    Right _ ->
+      pure unit
 
 submitPlayerInputToDelegates
   :: ScriptHash
   -> Array String
   -> String
-  -> Contract Unit
+  -> Contract (Either SubmitPlayerInputError Unit)
 submitPlayerInputToDelegates raceCs hydraGroupHttpServers csv = do
   addr <- liftedM "Could not get wallet address" getWalletAddress
   { signature: coseSign1, key } <- signData addr $ wrap $ mkSigMessage csv
@@ -204,25 +213,28 @@ submitPlayerInputToDelegates raceCs hydraGroupHttpServers csv = do
   vk <-
     liftMaybe (error "Could not get verification key")
       (PublicKey.fromRawBytes =<< getCoseKeyHeaderX maybeFfiHelper coseKey)
-  submitResult <- runExceptT $
-    traverse_
-      ( \httpServer ->
-          ExceptT $ liftAff $ submitPlayerInputRequest httpServer
-            { csv
-            , auth:
-                { vk
-                , addr
-                , signature
-                }
-            }
-      )
-      hydraGroupHttpServers
-  case submitResult of
-    Left httpError ->
-      throwError $ error $ "Could not submit player input to delegates. Error: "
-        <> show httpError
-    Right _ ->
-      logInfo' "submitPlayerInputToDelegates: success"
+  runExceptT $ traverse_
+    ( \httpServer -> do
+        res <- liftAff $ submitPlayerInputRequest httpServer
+          { raceCs
+          , csv
+          , auth:
+              { vk
+              , addr
+              , signature
+              }
+          }
+        case res of
+          Left httpError ->
+            lift $ throwError $ error
+              $ "submitPlayerInput request failed with error: "
+              <> show httpError
+              <> ", delegate server: "
+              <> httpServer
+          Right x ->
+            except x
+    )
+    hydraGroupHttpServers
 
 mkSigMessage :: String -> ScriptHash -> ByteArray
 mkSigMessage userInput raceCs = unwrap (encodeCbor raceCs) <> blake2b256Hash

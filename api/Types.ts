@@ -19,6 +19,12 @@ export type StartRaceParams = {
   feePerDelegate: Value | null;
 };
 
+export type RaceParticipant = {
+  car: AssetName;
+  driver: AssetName;
+  payoutAddress: Address; 
+};
+
 export type StartRaceResult = {
   txHash: TransactionHash;
   raceParams: RaceParams;

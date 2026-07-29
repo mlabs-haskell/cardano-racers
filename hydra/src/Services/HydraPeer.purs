@@ -6,20 +6,27 @@ module CardanoRacers.Hydra.Services.HydraPeer
 
 import Prelude
 
+import Cardano.Types (ScriptHash, Vkeywitness)
+import CardanoRacers.Hydra.Codec (vkeyWitnessCodec)
+import CardanoRacers.Hydra.Handlers.GetRaceResults
+  ( GetRaceResultsError
+  , getRaceResultsErrorCodec
+  )
 import CardanoRacers.Hydra.Handlers.SignAnnounceDistrTx.Types
-  ( SignAnnounceDistrTxRequestPayload
-  , SignAnnounceDistrTxResponse
+  ( SignAnnounceDistrTxError
+  , SignAnnounceDistrTxRequestPayload
+  , signAnnounceDistrTxErrorCodec
   , signAnnounceDistrTxRequestPayloadCodec
-  , signAnnounceDistrTxResponseCodec
   )
 import CardanoRacers.Hydra.Handlers.SignCommitTx
-  ( SignCommitTxRequestPayload
-  , SignCommitTxResponse
+  ( SignCommitTxError
+  , SignCommitTxRequestPayload
+  , signCommitTxErrorCodec
   , signCommitTxRequestPayloadCodec
-  , signCommitTxResponseCodec
   )
 import CardanoRacers.Hydra.Types.RaceStatus (RaceResults, raceResultsCodec)
 import CardanoRacers.Utils.Http (getRequest, handleResponse, postRequest)
+import CardanoRaces.Hydra.Lib.Print (printHex)
 import Ctl.Internal.Helpers ((<</>>))
 import Data.Codec.Argonaut (encode) as CA
 import Data.Either (Either)
@@ -30,9 +37,12 @@ import HydraSdk.Types (HttpError)
 signCommitTxRequest
   :: String
   -> SignCommitTxRequestPayload
-  -> Aff (Either HttpError SignCommitTxResponse)
+  -> Aff (Either HttpError (Either SignCommitTxError Vkeywitness))
 signCommitTxRequest httpServer reqBody =
-  handleResponse signCommitTxResponseCodec <$>
+  handleResponse
+    { resultCodec: vkeyWitnessCodec
+    , errorCodec: signCommitTxErrorCodec
+    } <$>
     postRequest
       { url: httpServer <</>> "signCommitTx"
       , content: Just $ CA.encode signCommitTxRequestPayloadCodec reqBody
@@ -42,16 +52,25 @@ signCommitTxRequest httpServer reqBody =
 signAnnounceDistrTxRequest
   :: String
   -> SignAnnounceDistrTxRequestPayload
-  -> Aff (Either HttpError SignAnnounceDistrTxResponse)
+  -> Aff (Either HttpError (Either SignAnnounceDistrTxError Vkeywitness))
 signAnnounceDistrTxRequest httpServer reqBody =
-  handleResponse signAnnounceDistrTxResponseCodec <$>
+  handleResponse
+    { resultCodec: vkeyWitnessCodec
+    , errorCodec: signAnnounceDistrTxErrorCodec
+    } <$>
     postRequest
       { url: httpServer <</>> "signAnnounceDistrTx"
       , content: Just $ CA.encode signAnnounceDistrTxRequestPayloadCodec reqBody
       , headers: mempty
       }
 
-getRaceResultsRequest :: String -> Aff (Either HttpError (RaceResults Maybe))
-getRaceResultsRequest httpServer =
-  handleResponse raceResultsCodec <$>
-    getRequest (httpServer <</>> "raceResults")
+getRaceResultsRequest
+  :: String
+  -> ScriptHash
+  -> Aff (Either HttpError (Either GetRaceResultsError (RaceResults Maybe)))
+getRaceResultsRequest httpServer raceCs =
+  handleResponse
+    { resultCodec: raceResultsCodec
+    , errorCodec: getRaceResultsErrorCodec
+    } <$>
+    getRequest (httpServer <</>> ("raceResults/" <> printHex raceCs))

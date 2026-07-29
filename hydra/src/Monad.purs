@@ -3,39 +3,50 @@ module CardanoRacers.Hydra.Monad
   , AppM(AppM)
   , AppState
   , RaceData
+  , RaceEntry
   , RaceResultSlots
   , appLogger
   , cleanupApp
+  , findRaceEntryByDepositTxId
+  , findRaceEntryByRaceCs
   , getAppLauncher
   , getAppRunner
-  , getHydraUtxos
+  , getHydraNodeBaseUrl
   , initApp
   , initContractEnv
+  , initRace
   , launchApp
   , liftContract
   , liftContractNullCosts
+  , printRaceId
   , readHeadStatus
   , readHydraSnapshot
-  , readRaceData
+  , removeRaceEntry
   , runApp
   , setHeadStatus
   , setHydraSnapshot
-  , setRaceData
+  , setTimer
   ) where
 
 import Prelude
 
 import Aeson (Finite)
 import Cardano.Plutus.Types.Address (Address) as Plutus
-import Cardano.Types (NetworkId(MainnetId, TestnetId), PlutusScript, UtxoMap)
+import Cardano.Provider.ServerConfig (mkHttpUrl)
+import Cardano.Types
+  ( NetworkId(MainnetId, TestnetId)
+  , PlutusScript
+  , ScriptHash
+  , TransactionHash
+  )
 import CardanoRacers.Common.Types (RacersParams)
-import CardanoRacers.Hydra.Config (AppConfig)
+import CardanoRacers.Hydra.Config (AppConfig, AppQueryBackend(Blockfrost, Kupmios))
 import CardanoRacers.Hydra.Contracts.Collateral (getCollateralUtxo)
-import CardanoRacers.Hydra.Lib.AVar (readNow) as AVar
 import CardanoRacers.Hydra.Lib.Contract (runContractNullCosts)
 import CardanoRacers.Hydra.Types.Common (Utxo)
 import CardanoRacers.Hydra.Types.RaceStatus (RaceStatus(Initializing))
 import CardanoRacers.Race.Types (RaceParams)
+import CardanoRaces.Hydra.Lib.Print (printHex)
 import Contract.Config
   ( ContractParams
   , PrivatePaymentKeySource(PrivatePaymentKeyFile)
@@ -49,44 +60,45 @@ import Contract.Config
   , disabledSynchronizationParams
   , emptyHooks
   , mkBlockfrostBackendParams
+  , mkCtlBackendParams
   )
 import Contract.Monad (Contract, ContractEnv, mkContractEnv, runContractInEnv, stopContractEnv)
-import Control.Monad.Error.Class (class MonadError, class MonadThrow, liftMaybe, throwError)
+import Control.Monad.Error.Class (class MonadError, class MonadThrow)
 import Control.Monad.Logger.Class (class MonadLogger)
 import Control.Monad.Logger.Trans (LoggerT(LoggerT), runLoggerT)
 import Control.Monad.Reader (class MonadAsk, class MonadReader, ReaderT, ask, asks, runReaderT)
 import Control.Monad.Rec.Class (class MonadRec)
-import Data.Either (either)
+import Control.Parallel (parTraverse_)
+import Data.Array (cons) as Array
+import Data.Int (ceil) as Int
 import Data.Log.Formatter.Pretty (prettyFormatter)
 import Data.Log.Level (LogLevel)
 import Data.Log.Message (Message)
 import Data.Map (Map)
+import Data.Map (delete, empty, insert, lookup, pop) as Map
 import Data.Maybe (Maybe(Just, Nothing))
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.String (take, trim) as String
+import Data.Time.Duration (class Duration, fromDuration)
 import Data.Tuple.Nested (type (/\), (/\))
+import Data.UInt (fromInt) as UInt
 import Effect (Effect)
-import Effect.Aff (Aff, launchAff, runAff_)
+import Effect.Aff (Aff, invincible, launchAff)
 import Effect.Aff.AVar (AVar)
 import Effect.Aff.AVar (new, read) as AVar
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Console (log)
-import Effect.Exception (Error, error)
-import Effect.Exception (message) as Error
+import Effect.Exception (Error, throw)
 import Effect.Ref (Ref)
-import Effect.Ref (new, read, write) as Ref
+import Effect.Ref (new) as Ref
+import Effect.Timer (TimeoutId, clearTimeout, setTimeout)
 import HydraSdk.Lib (modify) as AVar
-import HydraSdk.Types
-  ( HydraHeadStatus(HeadStatus_Unknown)
-  , HydraSnapshot
-  , QueryLayer(Blockfrost, CardanoNode)
-  , emptySnapshot
-  , toUtxoMap
-  )
+import HydraSdk.Types (HydraHeadStatus(HeadStatus_Unknown), HydraSnapshot, emptySnapshot)
 import Node.Encoding (Encoding(UTF8))
-import Node.FS.Aff (readTextFile)
+import Node.FS.Sync (readTextFile)
 import Node.Path (FilePath)
+import URI.Port (toInt) as Port
 
 newtype AppM (a :: Type) = AppM (LoggerT (ReaderT AppState Aff) a)
 
@@ -107,14 +119,25 @@ derive newtype instance MonadRec AppM
 
 type AppLogger = Message -> ReaderT AppState Aff Unit
 
--- TODO: some AVars here could probably just be Refs
+-- TODO(low): some AVars here could probably just be Refs
 type AppState =
   { config :: AppConfig
   , contractEnv :: ContractEnv
-  , collateralUtxo :: Utxo
+  , collateralUtxo :: Maybe Utxo
   , headStatus :: AVar HydraHeadStatus
   , snapshot :: AVar HydraSnapshot
-  , raceDataRef :: Ref (Maybe RaceData)
+  , races ::
+      AVar
+        { entries :: Map ScriptHash RaceEntry
+        , deposits :: Map TransactionHash ScriptHash
+        }
+  -- TODO(low): add worker to periodically clean up IDs of elapsed timers 
+  , timers :: AVar (Array TimeoutId)
+  }
+
+type RaceEntry =
+  { depositTxId :: TransactionHash
+  , raceData :: RaceData
   , raceStatusRef :: Ref RaceStatus
   }
 
@@ -125,6 +148,81 @@ type RaceData =
   , raceParams :: RaceParams
   , raceValidator :: PlutusScript
   }
+
+printRaceId :: RaceData -> String
+printRaceId rd = printHex (unwrap rd.raceParams).stateCurrencySymbol
+
+getHydraNodeBaseUrl :: AppM String
+getHydraNodeBaseUrl = do
+  { config: { hydraNodeStartupParams: { hydraNodeApiAddress } } } <- ask
+  pure $ mkHttpUrl
+    { port: UInt.fromInt $ Port.toInt hydraNodeApiAddress.port
+    , host: "127.0.0.1"
+    , secure: false
+    , path: Nothing
+    }
+
+-- Timers
+
+setTimer :: forall (d :: Type). Duration d => d -> AppM Unit -> AppM Unit
+setTimer time action = do
+  launchApp' <- getAppLauncher
+  liftAff $ invincible $ liftEffect do
+    let ms = Int.ceil $ unwrap $ fromDuration time
+    timerId <- setTimeout ms $ launchApp' action
+    launchApp' $ registerTimer timerId
+
+registerTimer :: TimeoutId -> AppM Unit
+registerTimer timer = do
+  { timers } <- ask
+  void $ AVar.modify (pure <<< Array.cons timer) timers
+
+-- Races
+
+initRace :: TransactionHash -> RaceData -> AppM Unit
+initRace depositTxId raceData = do
+  { races } <- ask
+  void $ AVar.modify
+    ( \{ entries, deposits } -> do
+        raceStatusRef <- liftEffect $ Ref.new Initializing
+        let raceCs = (unwrap raceData.raceParams).stateCurrencySymbol
+        pure
+          { entries: Map.insert raceCs { depositTxId, raceData, raceStatusRef } entries
+          , deposits: Map.insert depositTxId raceCs deposits
+          }
+    )
+    races
+
+findRaceEntryByDepositTxId :: TransactionHash -> AppM (Maybe RaceEntry)
+findRaceEntryByDepositTxId depositTxId = do
+  { races } <- ask
+  { entries, deposits } <- liftAff $ AVar.read races
+  pure $ flip Map.lookup entries =<< Map.lookup depositTxId deposits
+
+findRaceEntryByRaceCs :: ScriptHash -> AppM (Maybe RaceEntry)
+findRaceEntryByRaceCs raceCs = do
+  { races } <- ask
+  { entries } <- liftAff $ AVar.read races
+  pure $ Map.lookup raceCs entries
+
+removeRaceEntry :: TransactionHash -> AppM Unit
+removeRaceEntry depositTxId = do
+  { races } <- ask
+  void $ AVar.modify
+    ( \{ entries, deposits } ->
+        pure case Map.pop depositTxId deposits of
+          Just (raceCs /\ depositsUpdated) ->
+            { entries: Map.delete raceCs entries
+            , deposits: depositsUpdated
+            }
+          Nothing ->
+            { entries
+            , deposits
+            }
+    )
+    races
+
+--
 
 runApp :: forall (a :: Type). AppState -> AppLogger -> AppM a -> Aff a
 runApp state logger =
@@ -152,15 +250,13 @@ getAppLauncher =
       ask <#> \state ->
         launchApp state logger
 
-cleanupApp :: AppState -> Effect Unit
+cleanupApp :: AppState -> Aff Unit
 cleanupApp state = do
-  log "Finalizing CTL Contract environment."
-  runAff_
-    ( either
-        (log <<< append "cleanupApp failed with error: " <<< Error.message)
-        (const (log "Successfully cleaned up CTL Contract environment."))
-    )
-    (stopContractEnv state.contractEnv)
+  liftEffect $ log "Finalizing CTL Contract environment."
+  stopContractEnv state.contractEnv
+  liftEffect $ log "Cancelling all registered timers."
+  timers <- AVar.read state.timers
+  parTraverse_ (liftEffect <<< clearTimeout) timers
 
 liftContract :: forall (a :: Type). Contract a -> AppM a
 liftContract contract = do
@@ -187,86 +283,67 @@ setHeadStatus status =
   (void <<< AVar.modify (const (pure status)))
     =<< asks _.headStatus
 
-readRaceData :: AppM RaceData
-readRaceData = do
-  { raceDataRef } <- ask
-  raceData <- liftEffect $ Ref.read raceDataRef
-  liftMaybe (error "readRaceData: Nothing found") raceData
-
-setRaceData :: RaceData -> AppM Unit
-setRaceData rd = do
-  { raceDataRef } <- ask
-  liftEffect $ Ref.write (Just rd) raceDataRef
-
 readHydraSnapshot :: AppM HydraSnapshot
-readHydraSnapshot =
-  AVar.readNow (error "readHydraSnapshot: empty avar")
-    =<< asks _.snapshot
-
-getHydraUtxos :: AppM UtxoMap
-getHydraUtxos = do
-  snapshot <- readHydraSnapshot
-  pure $ toUtxoMap (unwrap snapshot).utxo
+readHydraSnapshot = liftAff <<< AVar.read =<< asks _.snapshot
 
 setHydraSnapshot :: HydraSnapshot -> AppM Unit
 setHydraSnapshot snapshot = (void <<< AVar.modify (const (pure snapshot))) =<< asks _.snapshot
 
 initApp :: AppConfig -> Aff AppState
-initApp config@{ hydraNodeStartupParams } = do
-  blockfrostApiKeyFile <-
-    case hydraNodeStartupParams.queryLayer of
-      Blockfrost { apiKeyFile } ->
-        pure apiKeyFile
-      CardanoNode _ ->
-        throwError $ error $
-          "initApp: Could not get Blockfrost API key. Unexpected query layer configuration: "
-            <> show hydraNodeStartupParams.queryLayer
+initApp config@{ hydraNodeStartupParams, isHeadLeader } = do
   contractEnv <-
-    initContractEnv blockfrostApiKeyFile hydraNodeStartupParams.cardanoSigningKey
+    initContractEnv config.queryBackend hydraNodeStartupParams.cardanoSigningKey
       config.logLevel
-  collateralUtxo <- runContractInEnv contractEnv getCollateralUtxo
+  collateralUtxo <-
+    if isHeadLeader then Just <$> runContractInEnv contractEnv getCollateralUtxo
+    else pure Nothing
   headStatus <- AVar.new HeadStatus_Unknown
   snapshot <- AVar.new emptySnapshot
-  raceDataRef <- liftEffect $ Ref.new Nothing
-  raceStatusRef <- liftEffect $ Ref.new Initializing
+  races <- AVar.new { entries: Map.empty, deposits: Map.empty }
+  timers <- AVar.new []
   pure
     { config
     , contractEnv
     , collateralUtxo
     , headStatus
     , snapshot
-    , raceDataRef
-    , raceStatusRef
+    , races
+    , timers
     }
 
-initContractEnv :: FilePath -> FilePath -> LogLevel -> Aff ContractEnv
-initContractEnv blockfrostApiKeyFile signingKey logLevel = do
-  blockfrostApiKey <- String.trim <$> readTextFile UTF8 blockfrostApiKeyFile
-  network /\ backendParams <-
-    liftMaybe
-      (error "initContractEnv: Could not build ProviderBackendParams. Unknown network prefix.")
-      (mkBackendParams blockfrostApiKey)
+initContractEnv :: AppQueryBackend -> FilePath -> LogLevel -> Aff ContractEnv
+initContractEnv queryBackend signingKey logLevel = do
+  network /\ backendParams <- liftEffect $ mkBackendParams queryBackend
   let contractParams = mkContractParams backendParams network logLevel signingKey
   mkContractEnv contractParams
 
-mkBackendParams :: String -> Maybe (NetworkId /\ ProviderBackendParams)
-mkBackendParams blockfrostApiKey = do
-  let networkPrefix = String.take 7 blockfrostApiKey
-  networkId /\ blockfrostConfig <-
-    case networkPrefix of
-      "mainnet" ->
-        Just $ MainnetId /\ blockfrostPublicMainnetServerConfig
-      "preprod" ->
-        Just $ TestnetId /\ blockfrostPublicPreprodServerConfig
-      "preview" ->
-        Just $ TestnetId /\ blockfrostPublicPreviewServerConfig
-      _ ->
-        Nothing
-  pure $ networkId /\ mkBlockfrostBackendParams
-    { blockfrostConfig
-    , blockfrostApiKey: Just blockfrostApiKey
-    , confirmTxDelay: defaultConfirmTxDelay
-    }
+mkBackendParams :: AppQueryBackend -> Effect (NetworkId /\ ProviderBackendParams)
+mkBackendParams queryBackend =
+  case queryBackend of
+    Blockfrost { apiKeyFile } -> do
+      blockfrostApiKey <- String.trim <$> readTextFile UTF8 apiKeyFile
+      let networkPrefix = String.take 7 blockfrostApiKey
+      networkId /\ blockfrostConfig <-
+        case networkPrefix of
+          "mainnet" ->
+            pure $ MainnetId /\ blockfrostPublicMainnetServerConfig
+          "preprod" ->
+            pure $ TestnetId /\ blockfrostPublicPreprodServerConfig
+          "preview" ->
+            pure $ TestnetId /\ blockfrostPublicPreviewServerConfig
+          _ ->
+            throw $ "mkBackendParams: unsupported network. Blockfrost API key prefix: "
+              <> networkPrefix
+      pure $ networkId /\ mkBlockfrostBackendParams
+        { blockfrostConfig
+        , blockfrostApiKey: Just blockfrostApiKey
+        , confirmTxDelay: defaultConfirmTxDelay
+        }
+    Kupmios { network, kupoConfig, ogmiosConfig } ->
+      pure $ network /\ mkCtlBackendParams
+        { ogmiosConfig
+        , kupoConfig
+        }
 
 mkContractParams
   :: ProviderBackendParams

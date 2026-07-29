@@ -8,29 +8,54 @@ import CardanoRacers.Hydra.Contracts.AnnounceDistr (announceRewardDistribution)
 import CardanoRacers.Hydra.Contracts.Commit (commitCollateralToHydra)
 import CardanoRacers.Hydra.Lib.Json (printJsonUsingCodec)
 import CardanoRacers.Hydra.Lib.Retry (RetryConfig, retryOnAnyError, retryOnNothing)
-import CardanoRacers.Hydra.Monad (AppM, getAppLauncher, readHeadStatus, setHydraSnapshot)
+import CardanoRacers.Hydra.Monad
+  ( AppM
+  , RaceEntry
+  , findRaceEntryByDepositTxId
+  , printRaceId
+  , readHeadStatus
+  , removeRaceEntry
+  , setHydraSnapshot
+  , setTimer
+  )
 import CardanoRacers.Hydra.RewardDistribution (distributeRewards)
 import CardanoRacers.Hydra.State.RaceStatus
   ( setRaceStatusAccepting
   , setRaceStatusDistributing
   , setRaceStatusFinalizing
   )
+import CardanoRaces.Hydra.Lib.Print (printHex)
 import Contract.Log (logError', logInfo', logWarn')
 import Control.Monad.Error.Class (catchError, liftMaybe, throwError, try)
 import Control.Monad.Reader.Class (ask)
+import Data.DateTime (diff) as DateTime
 import Data.Either (Either(Left, Right))
-import Data.Int (round) as Int
-import Data.Maybe (fromMaybe)
-import Data.Newtype (unwrap, wrap)
-import Data.Time.Duration (Minutes(Minutes), Seconds(Seconds), fromDuration)
+import Data.Int (toNumber) as Int
+import Data.Maybe (Maybe(Just, Nothing), fromMaybe)
+import Data.Newtype (wrap)
+import Data.Time.Duration (Milliseconds, Minutes(Minutes), Seconds(Seconds), fromDuration)
+import Effect.Aff (delay)
+import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (error)
-import Effect.Timer (setTimeout)
+import Effect.Exception (message) as Error
+import Effect.Now (nowDateTime)
 import HydraSdk.NodeApi (HydraNodeApiWebSocket)
 import HydraSdk.Types
-  ( HydraHeadStatus(HeadStatus_Idle, HeadStatus_Initializing, HeadStatus_Open)
-  , HydraNodeApi_InMessage(Greetings, Committed, HeadIsOpen, SnapshotConfirmed, ReadyToFanout)
+  ( HydraHeadStatus(HeadStatus_Unknown, HeadStatus_Idle, HeadStatus_Open, HeadStatus_Final)
+  , HydraNodeApi_InMessage
+      ( Greetings
+      , NodeSynced
+      , HeadIsOpen
+      , DepositExpired
+      , CommitRecorded
+      , CommitFinalized
+      , DecommitFinalized
+      , SnapshotConfirmed
+      , ReadyToFanout
+      )
   , HydraSnapshot
+  , SyncStatus(InSync)
   , hydraSnapshotCodec
   , printHeadStatus
   )
@@ -41,21 +66,28 @@ messageHandler
   -> AppM Unit
 messageHandler ws msg = do
   { config: { isHeadLeader } } <- ask
-  abortOrFanoutOnException ws case msg of
+  closeHeadOnException ws case msg of
     Left _rawMessage -> pure unit
     Right message ->
       case message of
-        Greetings { headStatus, snapshotUtxo } -> do
+        Greetings { headStatus, snapshotUtxo, chainSyncedStatus } -> do
           setHydraSnapshot $ wrap
-            { snapshotNumber: zero -- FIXME: Should `Greetings` message include snapshot number?
+            { number: zero
             , utxo: fromMaybe mempty snapshotUtxo
             , confirmed: mempty
+            , utxoToCommit: Nothing
+            , utxoToDecommit: Nothing
             }
+          when (isHeadLeader && headStatus == HeadStatus_Idle && chainSyncedStatus == InSync) $
+            liftEffect ws.initHead
+        NodeSynced -> do
+          headStatus <- readHeadStatus
           when (isHeadLeader && headStatus == HeadStatus_Idle) $
             liftEffect ws.initHead
-        Committed _ ->
-          -- TODO: prevent double-committing, introduce "committed" flag / barrier
-          unless isHeadLeader do
+        HeadIsOpen _ ->
+          -- Head leader commits ADA-only collateral UTxO to be reused when
+          -- constructing reward distribution txs
+          when isHeadLeader do
             try commitCollateralToHydra >>=
               case _ of
                 Left err ->
@@ -64,65 +96,87 @@ messageHandler ws msg = do
                 Right txHash ->
                   logInfo' $ "Successfully commited collateral: "
                     <> show txHash
-        HeadIsOpen { utxo } -> do
-          setAndLogHydraSnapshot $ wrap
-            { snapshotNumber: zero
-            , utxo
-            , confirmed: mempty
-            }
-          { raceData } <-
-            liftMaybe (error "Could not advance race status to AcceptingPlayerInputs") =<<
-              setRaceStatusAccepting
-          launchApp <- getAppLauncher
-          liftEffect $ void $ setTimeout playerInputSubmitWindow $ launchApp do
-            logInfo' "Finalizing race results..."
-            do
-              success <- setRaceStatusFinalizing
-              unless success do
-                throwError $ error "Could not advance race status to FinalizingResults"
-            { finalResults } <-
-              liftMaybe (error "Could not advance race status to DistributingRewards") =<<
-                retryOnNothing defaultRetryConfig
-                  setRaceStatusDistributing
-            when isHeadLeader do
-              let rewardDistr = distributeRewards finalResults raceData.raceParams
-              logInfo' $ "Reward distribution: " <> show rewardDistr
-              retryOnAnyError "announceRewardDistribution" defaultRetryConfig $
-                announceRewardDistribution ws rewardDistr
-        SnapshotConfirmed { snapshot } -> do
+        DepositExpired { depositTxId, deadline: _deadline } -> do
+          logWarn' $ "Deposit expired. Deposit TxId: " <> printHex depositTxId
+          removeRaceEntry depositTxId
+        CommitRecorded { pendingDeposit: depositTxId, deadline } -> do
+          logInfo' $ "Commit recorded. Deposit TxId: " <> printHex depositTxId
+          now <- liftEffect nowDateTime
+          setTimer ((deadline `DateTime.diff` now) :: Milliseconds) do
+            liftAff $ delay $ fromDuration $ Seconds 30.0 -- padding to account for possible inaccuracy 
+            liftEffect $ ws.recoverDeposit depositTxId
+        CommitFinalized { depositTxId } -> do
+          logInfo' $ "Commit finalized. Deposit TxId: " <> printHex depositTxId
+          findRaceEntryByDepositTxId depositTxId >>=
+            case _ of
+              Just race -> do
+                logInfo' $ "Deposit finalized for race: " <> printRaceId race.raceData
+                -- Errors for individual races are suppressed and logged to not
+                -- affect other races
+                processRace ws race `catchError` \err ->
+                  logError' $ "Could not process race " <> printRaceId race.raceData
+                    <> ", error: "
+                    <> Error.message err
+              Nothing ->
+                pure unit
+        DecommitFinalized { distributedUTxO: distributedUtxos } -> do
+          logInfo' $ "Decommit finalized. Distributed UTxOs: " <> show distributedUtxos
+        SnapshotConfirmed { snapshot } ->
           setAndLogHydraSnapshot snapshot
-          when ((unwrap snapshot).snapshotNumber == one) do
-            liftEffect ws.closeHead
         ReadyToFanout _ ->
-          liftEffect ws.fanout
+          when isHeadLeader do
+            liftEffect ws.fanout
         _ -> pure unit
 
-abortOrFanoutOnException :: HydraNodeApiWebSocket AppM -> AppM Unit -> AppM Unit
-abortOrFanoutOnException ws action = do
+-- TODO(low): revise error handling approach
+closeHeadOnException :: HydraNodeApiWebSocket AppM -> AppM Unit -> AppM Unit
+closeHeadOnException ws action = do
   action `catchError` \err -> do
     headStatus <- readHeadStatus
     logError' $ "Got unrecoverable exception. Head status: " <>
       printHeadStatus headStatus
     case headStatus of
-      HeadStatus_Initializing -> do
-        logError' "Aborting the Head to return all commited funds to mainchain..."
-        liftEffect ws.abortHead
-      HeadStatus_Open -> do
-        logError' "Closing the Head to \"fan out\" the current Hydra snapshot to mainchain..."
-        liftEffect ws.closeHead
-      _ ->
+      HeadStatus_Unknown ->
         throwError err
+      HeadStatus_Idle ->
+        throwError err
+      HeadStatus_Final ->
+        throwError err
+      HeadStatus_Open -> do
+        logError' "Closing the Head to apply the current Hydra snapshot to mainchain..."
+        liftEffect ws.closeHead
+      _ -> do
+        logError' "Ignoring exception..."
+
+processRace :: HydraNodeApiWebSocket AppM -> RaceEntry -> AppM Unit
+processRace ws race@{ raceData } = do
+  { config: { isHeadLeader, timeParams } } <- ask
+  do
+    success <- setRaceStatusAccepting race
+    unless success do
+      throwError $ error "Could not advance race status to AcceptingPlayerInputs"
+  setTimer (Seconds $ Int.toNumber timeParams.playerInputSubmitWindowSec) do
+    logInfo' "Finalizing race results..."
+    do
+      success <- setRaceStatusFinalizing race
+      unless success do
+        throwError $ error "Could not advance race status to FinalizingResults"
+    { finalResults } <-
+      liftMaybe (error "Could not advance race status to DistributingRewards")
+        =<<
+          retryOnNothing defaultRetryConfig
+            (setRaceStatusDistributing race)
+    when isHeadLeader do
+      let rewardDistr = distributeRewards finalResults raceData.raceParams
+      logInfo' $ "Reward distribution: " <> show rewardDistr
+      retryOnAnyError "announceRewardDistribution" defaultRetryConfig $
+        announceRewardDistribution ws raceData rewardDistr
 
 setAndLogHydraSnapshot :: HydraSnapshot -> AppM Unit
 setAndLogHydraSnapshot snapshot = do
   setHydraSnapshot snapshot
   logInfo' $ "New confirmed snapshot: " <> printJsonUsingCodec hydraSnapshotCodec
     snapshot
-
--- TODO: time params should be configurable
-
-playerInputSubmitWindow :: Int
-playerInputSubmitWindow = Int.round $ unwrap $ fromDuration $ Minutes 5.0
 
 defaultRetryConfig :: RetryConfig Minutes Seconds
 defaultRetryConfig =

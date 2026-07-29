@@ -1,4 +1,7 @@
-module CardanoRacers.Hydra.Handlers.SubmitPlayerInput where
+module CardanoRacers.Hydra.Handlers.SubmitPlayerInput
+  ( submitPlayerInputHandler
+  , submitPlayerInputHandlerReturningErrors
+  ) where
 
 import Prelude
 
@@ -9,31 +12,39 @@ import Cardano.Types (Ed25519KeyHash)
 import Cardano.Types.Address (getPaymentCredential)
 import Cardano.Types.Credential (asPubKeyHash)
 import Cardano.Types.PublicKey (hash, verify) as PublicKey
-import CardanoRacers.Hydra.Monad (AppM, getAppRunner, readRaceData)
-import CardanoRacers.Hydra.RaceSimulator
-  ( RaceSimulationError
-  , raceSimulationErrorCodec
-  , runSimulator
-  )
+import CardanoRacers.Hydra.Monad (AppM, findRaceEntryByRaceCs, getAppRunner)
+import CardanoRacers.Hydra.RaceSimulator (runSimulator, runSimulatorMock)
 import CardanoRacers.Hydra.Types.RaceStatus (RaceStatus(AcceptingPlayerInputs))
 import CardanoRacers.Race.Types (RaceParams(RaceParams))
-import CardanoRacers.Services.HydraDelegate (playerInputCodec)
+import CardanoRacers.Services.HydraDelegate
+  ( SubmitPlayerInputError
+      ( SubmitInput_CouldNotDecodeReqBody
+      , SubmitInput_RequestedRaceNotHosted
+      , SubmitInput_MustBeRaceParticipant
+      , SubmitInput_PlayerInputSubmitWindowNotActive
+      , SubmitInput_ResultSlotsMisconfigured
+      , SubmitInput_VkAddressMismatch
+      , SubmitInput_InvalidSignature
+      , SubmitInput_ConcurrentSimulationInProgress
+      , SubmitInput_SimResultAlreadyExistsForParticipant
+      , SubmitInput_RaceSimulationFailed
+      )
+  , playerInputCodec
+  , submitPlayerInputErrorCodec
+  )
 import CardanoRacers.Utils.Cose (mkSigStruct)
+import Control.Error.Util ((!?))
 import Control.Monad.Error.Class (liftEither, liftMaybe, throwError)
 import Control.Monad.Except (ExceptT(ExceptT), runExceptT)
 import Control.Monad.Reader (ask)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (find) as Array
 import Data.Bifunctor (lmap)
-import Data.Codec.Argonaut (JsonCodec, encode, printJsonDecodeError, string) as CA
-import Data.Codec.Argonaut.Record (record) as CAR
-import Data.Codec.Argonaut.Sum (sumFlat) as CAS
+import Data.Codec.Argonaut (encode, printJsonDecodeError) as CA
 import Data.Either (Either, either)
-import Data.Generic.Rep (class Generic)
 import Data.Map (lookup) as Map
 import Data.Maybe (Maybe(Just, Nothing), isJust)
 import Data.Newtype (unwrap, wrap)
-import Data.Show.Generic (genericShow)
 import Data.Traversable (traverse)
 import Effect.Aff (bracket)
 import Effect.Aff.AVar (put, tryPut, tryTake) as AVar
@@ -50,8 +61,7 @@ submitPlayerInputHandler :: String -> AppM HTTPure.Response
 submitPlayerInputHandler =
   either
     (\e -> response (errorStatus e) (stringifyAeson $ CA.encode submitPlayerInputErrorCodec e))
-    (const $ ok "null") -- FIXME: use `created`
-
+    (const $ ok "null")
     <=< submitPlayerInputHandlerReturningErrors
 
 -- Handler
@@ -61,27 +71,32 @@ submitPlayerInputHandlerReturningErrors bodyStr =
   runExceptT do
     reqBody <-
       liftEither $
-        lmap (CouldNotDecodeReqBody <<< { decodeError: _ } <<< CA.printJsonDecodeError)
+        lmap
+          ( SubmitInput_CouldNotDecodeReqBody <<< { decodeError: _ } <<<
+              CA.printJsonDecodeError
+          )
           (caDecodeString playerInputCodec bodyStr)
-    { raceStatusRef } <- ask
+    { raceData, raceStatusRef } <- findRaceEntryByRaceCs reqBody.raceCs !?
+      SubmitInput_RequestedRaceNotHosted
     resultSlots <-
       liftEffect (Ref.read raceStatusRef) >>=
         case _ of
           AcceptingPlayerInputs slots ->
             pure slots
           _ ->
-            throwError PlayerInputSubmitWindowNotActive
-    { raceParams: RaceParams { stateCurrencySymbol: raceId, participants } } <-
-      lift readRaceData
-    let pkh = PublicKey.hash reqBody.auth.vk
-    addr <- liftMaybe MustBeRaceParticipant $ getParticipantAddress pkh participants
-    slot <- liftMaybe ResultSlotsMisconfigured $ Map.lookup addr resultSlots
+            throwError SubmitInput_PlayerInputSubmitWindowNotActive
+    let
+      pkh = PublicKey.hash reqBody.auth.vk
+      { raceParams: RaceParams { stateCurrencySymbol: raceId, participants } } = raceData
+    addr <- liftMaybe SubmitInput_MustBeRaceParticipant $ getParticipantAddress pkh
+      participants
+    slot <- liftMaybe SubmitInput_ResultSlotsMisconfigured $ Map.lookup addr resultSlots
     unless
       (((asPubKeyHash <<< unwrap) =<< getPaymentCredential reqBody.auth.addr) == Just pkh)
-      (throwError VkAddressMismatch)
+      (throwError SubmitInput_VkAddressMismatch)
     sigStruct <- liftEffect $ mkSigStruct reqBody.auth.addr $ mkSigMessage reqBody.csv raceId
     unless (PublicKey.verify reqBody.auth.vk (wrap sigStruct) reqBody.auth.signature) $
-      throwError InvalidSignature
+      throwError SubmitInput_InvalidSignature
     appRunner <- lift getAppRunner
     ExceptT $ liftAff $ bracket
       (AVar.tryTake slot)
@@ -90,12 +105,18 @@ submitPlayerInputHandlerReturningErrors bodyStr =
           appRunner $ runExceptT do
             case slotValue of
               Nothing ->
-                throwError ConcurrentSimulationInProgress
+                throwError SubmitInput_ConcurrentSimulationInProgress
               Just currentResult -> do
                 when (isJust currentResult) do
-                  throwError SimResultAlreadyExistsForParticipant
-                simResult <- ExceptT $ lmap (RaceSimulationFailed <<< { simError: _ }) <$>
-                  runSimulator reqBody.csv
+                  throwError SubmitInput_SimResultAlreadyExistsForParticipant
+                { config: { devParams } } <- ask
+                let
+                  runSimulator'
+                    | (_.mockRaceSimulator <$> devParams) == Just true = runSimulator
+                    | otherwise = runSimulatorMock
+                simResult <- ExceptT $
+                  lmap (SubmitInput_RaceSimulationFailed <<< { simError: _ } <<< show) <$>
+                    runSimulator' reqBody.csv
                 liftAff $ AVar.put (Just simResult) slot
       )
 
@@ -113,61 +134,26 @@ getParticipantAddress player participants =
 
 -- Errors
 
-data SubmitPlayerInputError
-  = CouldNotDecodeReqBody { decodeError :: String }
-  | MustBeRaceParticipant
-  | PlayerInputSubmitWindowNotActive
-  | ResultSlotsMisconfigured
-  | VkAddressMismatch
-  | InvalidSignature
-  | ConcurrentSimulationInProgress
-  | SimResultAlreadyExistsForParticipant
-  | RaceSimulationFailed { simError :: RaceSimulationError }
-
-derive instance Generic SubmitPlayerInputError _
-derive instance Eq SubmitPlayerInputError
-
-instance Show SubmitPlayerInputError where
-  show = genericShow
-
-submitPlayerInputErrorCodec :: CA.JsonCodec SubmitPlayerInputError
-submitPlayerInputErrorCodec =
-  CAS.sumFlat "SubmitPlayerInputError"
-    { "CouldNotDecodeReqBody":
-        CAR.record
-          { decodeError: CA.string
-          }
-    , "MustBeRaceParticipant": unit
-    , "PlayerInputSubmitWindowNotActive": unit
-    , "ResultSlotsMisconfigured": unit
-    , "VkAddressMismatch": unit
-    , "InvalidSignature": unit
-    , "ConcurrentSimulationInProgress": unit
-    , "SimResultAlreadyExistsForParticipant": unit
-    , "RaceSimulationFailed":
-        CAR.record
-          { simError: raceSimulationErrorCodec
-          }
-    }
-
 errorStatus :: SubmitPlayerInputError -> Status
 errorStatus =
   case _ of
-    CouldNotDecodeReqBody _ ->
+    SubmitInput_CouldNotDecodeReqBody _ ->
       Status.badRequest
-    MustBeRaceParticipant ->
+    SubmitInput_RequestedRaceNotHosted ->
+      Status.conflict
+    SubmitInput_MustBeRaceParticipant ->
       Status.forbidden
-    PlayerInputSubmitWindowNotActive ->
+    SubmitInput_PlayerInputSubmitWindowNotActive ->
       Status.conflict
-    ResultSlotsMisconfigured ->
+    SubmitInput_ResultSlotsMisconfigured ->
       Status.internalServerError
-    VkAddressMismatch ->
+    SubmitInput_VkAddressMismatch ->
       Status.badRequest
-    InvalidSignature ->
+    SubmitInput_InvalidSignature ->
       Status.unauthorized
-    ConcurrentSimulationInProgress ->
+    SubmitInput_ConcurrentSimulationInProgress ->
       Status.conflict
-    SimResultAlreadyExistsForParticipant ->
+    SubmitInput_SimResultAlreadyExistsForParticipant ->
       Status.conflict
-    RaceSimulationFailed _ ->
+    SubmitInput_RaceSimulationFailed _ ->
       Status.badRequest

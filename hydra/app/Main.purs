@@ -1,4 +1,7 @@
-module CardanoRacers.Hydra.Main (main) where
+module CardanoRacers.Hydra.Main
+  ( main
+  , cleanupHandler
+  ) where
 
 import Prelude
 
@@ -40,4 +43,4 @@ cleanupHandler :: AppState -> HydraNodeHandle -> (Effect Unit -> Effect Unit) ->
 cleanupHandler appState hydraNodeHandle closeHttpServer = do
   cleanupHttpServer $ closeHttpServer $ pure unit
   cleanupHydraNode hydraNodeHandle
-  cleanupApp appState
+  launchAff_ $ cleanupApp appState

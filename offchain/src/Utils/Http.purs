@@ -55,17 +55,22 @@ postRequest { url, content, headers } =
     }
 
 handleResponse
-  :: forall (a :: Type)
-   . CA.JsonCodec a
+  :: forall (e :: Type) (a :: Type)
+   . { errorCodec :: CA.JsonCodec e
+     , resultCodec :: CA.JsonCodec a
+     }
   -> Either Affjax.Error (Affjax.Response String)
-  -> Either HttpError a
-handleResponse respCodec = case _ of
-  Left affjaxErr ->
-    Left $ HttpRequestError $ wrap affjaxErr
-  Right { status, body } ->
-    case status of
-      Affjax.StatusCode statusCode | statusCode >= 200 && statusCode <= 299 ->
-        lmap (DecodeJsonError body) $
-          caDecodeString respCodec body
-      _ ->
-        Left $ HttpResponseError status body
+  -> Either HttpError (Either e a)
+handleResponse { errorCodec, resultCodec } =
+  case _ of
+    Left affjaxErr ->
+      Left $ HttpRequestError $ wrap affjaxErr
+    Right { status, body } ->
+      case status of
+        Affjax.StatusCode statusCode | statusCode >= 200 && statusCode <= 299 ->
+          lmap (DecodeJsonError body) $ Right <$> caDecodeString resultCodec
+            body
+        _ | Right err <- caDecodeString errorCodec body ->
+          Right $ Left err
+        _ ->
+          Left $ HttpResponseError status body
