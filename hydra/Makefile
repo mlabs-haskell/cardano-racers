@@ -1,4 +1,4 @@
-.PHONY: build test format run-hydra-fst run-hydra-snd hydra-race-demo unity-simulator-demo gen-keys
+.PHONY: build test format run-hydra-fst run-hydra-snd hydra-race-demo unity-simulator-demo gen-keys delegate-pkhs
 
 ps-sources := $(shell fd --no-ignore-parent -epurs)
 purs-args := "--stash --censor-lib --censor-codes=ImplicitImport,ImplicitQualifiedImport,ImplicitQualifiedImportReExport,UserDefinedWarning"
@@ -39,12 +39,19 @@ gen-keys: requires-nix-shell
 		--verification-key-file ${keys-dir}/cardano-a.vk
 	@cardano-cli address build \
 		--payment-verification-key-file ${keys-dir}/cardano-a.vk \
-		--testnet-magic 1
+		--testnet-magic 1 \
+		--out-file ${keys-dir}/cardano-a.addr
+	@cat ${keys-dir}/cardano-a.addr
 	@echo
 	@cardano-cli address key-gen \
 		--signing-key-file ${keys-dir}/cardano-b.sk \
 		--verification-key-file ${keys-dir}/cardano-b.vk
 	@cardano-cli address build \
 		--payment-verification-key-file ${keys-dir}/cardano-b.vk \
-		--testnet-magic 1
-	@echo
+		--testnet-magic 1 \
+		--out-file ${keys-dir}/cardano-b.addr
+	@cat ${keys-dir}/cardano-b.addr
+
+delegate-pkhs: requires-nix-shell
+	@cardano-cli address key-hash --payment-verification-key-file ${keys-dir}/cardano-a.vk
+	@cardano-cli address key-hash --payment-verification-key-file ${keys-dir}/cardano-b.vk

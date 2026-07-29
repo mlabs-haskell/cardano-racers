@@ -213,6 +213,8 @@
                 nodePackages.prettier
                 nodePackages.purs-tidy
                 (pkgsUnstable.steam.override { privateTmp = false; }).run-free # steam-run
+                cardano-transaction-lib.inputs.cardano-node.packages.${system}."preprod/node"
+                cardano-transaction-lib.inputs.cardano-node.packages.${system}.cardano-cli
               ];
               shellHook =
                 ''
