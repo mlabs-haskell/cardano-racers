@@ -50,5 +50,8 @@
   "isHeadLeader": false,
   "timeParams": {
     "playerInputSubmitWindowSec": 600
+  },
+  "devParams": {
+    "mockRaceSimulator": false
   }
 }

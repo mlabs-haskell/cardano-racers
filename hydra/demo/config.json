@@ -1,4 +1,12 @@
 {
   "blockfrostApiKeyFile": "data/blockfrost.txt",
-  "signingKeyFile": "data/cardano.sk"
+  "signingKeyFile": "data/cardano.sk",
+  "hydraGroupHttpServers": [
+    "http://127.0.0.1:7010",
+    "http://127.0.0.1:7012"
+  ],
+  "delegatePkhs": [
+    "af3ff68d219853d08aba49901c584c62569488e306abdc3c9f26b29d",
+    "e63cb35538433e11065b73ca82b62d79e87c7b0ecdce59f37d4820fd"
+  ]
 }

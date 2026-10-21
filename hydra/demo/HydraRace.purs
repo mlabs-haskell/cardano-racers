@@ -4,7 +4,6 @@ module CardanoRacers.Hydra.Demo.HydraRace
 
 import Prelude
 
-import Cardano.AsCbor (decodeCbor)
 import Cardano.Plutus.Types.Address (Address) as Plutus
 import Cardano.Plutus.Types.Address (fromCardano) as Plutus.Address
 import Cardano.Types (Ed25519KeyHash, ScriptHash, TransactionHash, Value)
@@ -32,20 +31,24 @@ import CardanoRacers.RacersState.Contract (initRacersStateContract)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices), RacersState(RacersState))
 import CardanoRacers.Services.HydraDelegate
   ( HostRaceError
+      ( HostRace_CollateralUtxoNotAvailableOnL2
+      , HostRace_CollateralUtxoNotSpentOnL1
+      , HostRace_CommitContractFailed
+      , HostRace_InvalidHeadStatus
+      )
   , HostRaceRequest
   , SubmitPlayerInputError(SubmitInput_PlayerInputSubmitWindowNotActive)
   , hostRaceRequest
   )
 import CardanoRaces.Hydra.Lib.Print (printHex)
 import Contract.Address (getNetworkId)
-import Contract.CborBytes (hexToCborBytes)
 import Contract.Monad (Contract, liftContractM, liftedM, runContractInEnv)
 import Contract.Wallet (getWalletAddress, getWalletUtxos, ownPaymentPubKeyHash)
-import Control.Monad.Error.Class (liftMaybe)
+import Control.Monad.Error.Class (liftMaybe, throwError)
 import Ctl.Internal.Contract.AwaitTxConfirmed (awaitTxConfirmed)
 import Data.Array (head, singleton) as Array
 import Data.ByteArray (byteArrayFromAscii)
-import Data.Codec.Argonaut (JsonCodec, object, printJsonDecodeError, string) as CA
+import Data.Codec.Argonaut (JsonCodec, array, object, printJsonDecodeError, string) as CA
 import Data.Codec.Argonaut.Record (record) as CAR
 import Data.Either (Either(Left, Right))
 import Data.Log.Level (LogLevel(Trace))
@@ -60,7 +63,7 @@ import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
 import Effect.Exception (error, throw)
-import HydraSdk.Lib (caDecodeFile)
+import HydraSdk.Lib (caDecodeFile, ed25519KeyHashCodec)
 import HydraSdk.Types (HttpError)
 import JS.BigInt (fromInt) as BigInt
 import Lib.CardanoRacers.Client (submitPlayerInputToDelegates)
@@ -74,6 +77,8 @@ import Racers (runRacers)
 type Config =
   { blockfrostApiKeyFile :: FilePath
   , signingKeyFile :: FilePath
+  , hydraGroupHttpServers :: Array String
+  , delegatePkhs :: Array Ed25519KeyHash
   }
 
 configCodec :: CA.JsonCodec Config
@@ -81,6 +86,8 @@ configCodec =
   CA.object "Config" $ CAR.record
     { blockfrostApiKeyFile: CA.string
     , signingKeyFile: CA.string
+    , hydraGroupHttpServers: CA.array CA.string
+    , delegatePkhs: CA.array ed25519KeyHashCodec
     }
 
 main :: Effect Unit
@@ -98,7 +105,7 @@ main = do
                 Trace
               runContractInEnv contractEnv do
                 -- Register Hydra group
-                groupId <- registerHydraGroup
+                groupId <- registerHydraGroup cfg.hydraGroupHttpServers
                 logAndDelay $ "Registered new Hydra group with ID: " <> printHex groupId
 
                 -- Create RacersParams
@@ -141,7 +148,7 @@ main = do
                           , totalRewardValue: totalRewardValueFixture
                           , rewardWeights
                           , participants
-                          , delegates: delegatesFixture
+                          , delegates: cfg.delegatePkhs
                           , feePerDelegate: Just $ lovelaceValueOf $ BigNum.fromInt 3_000_000
                           }
                       )
@@ -157,14 +164,25 @@ main = do
                   <> show groupInfo
 
                 -- Host L2 race
-                resp <- hostRace groupInfo startRaceTxHash racersParams raceParams
-                liftEffect case resp of
-                  Left httpErr ->
-                    throw $ "hostRace request failed: " <> show httpErr
-                  Right (Left domainErr) ->
-                    throw $ "hostRace endpoint returned error: " <> show domainErr
-                  Right (Right txHash) ->
-                    log $ "hostRace success: " <> printHex txHash
+                hostRaceTxHash <-
+                  retryOnError
+                    "hostRace"
+                    ( \err -> pure $ case err of
+                        HostRace_CollateralUtxoNotAvailableOnL2 -> true
+                        HostRace_CollateralUtxoNotSpentOnL1 -> true
+                        HostRace_CommitContractFailed -> true
+                        HostRace_InvalidHeadStatus _ -> true
+                        _ -> false
+                    )
+                    { timeout: Minutes 10.0, delay: Seconds 30.0 }
+                    ( hostRace groupInfo startRaceTxHash racersParams raceParams >>=
+                        case _ of
+                          Left httpErr ->
+                            throwError $ error $ "hostRace request failed: "
+                              <> show httpErr
+                          Right x -> pure x
+                    )
+                liftEffect $ log $ "hostRace success: " <> printHex hostRaceTxHash
 
                 -- Submit player input
                 do
@@ -201,12 +219,11 @@ main = do
     _ ->
       throw "invalid command-line arguments"
 
-registerHydraGroup :: Contract ScriptHash
-registerHydraGroup = do
+registerHydraGroup :: Array String -> Contract ScriptHash
+registerHydraGroup httpServers = do
   ownPkh <- unwrap <$> liftedM "Could not get own pkh" ownPaymentPubKeyHash
   let
     masterKeys = Array.singleton ownPkh
-    httpServers = [ "http://127.0.0.1:7010", "http://127.0.0.1:7012" ]
     metadata = "Demo group"
   { txHash, groupId } <- HydraGroup.registerHydraGroup masterKeys httpServers metadata
   awaitTxConfirmed txHash
@@ -237,13 +254,6 @@ raceHashFixture = unsafePartial fromJust $ byteArrayFromAscii "TestRaceHash"
 totalRewardValueFixture :: Value
 totalRewardValueFixture = lovelaceValueOf $ BigNum.fromInt 7_000_000
 
-delegatesFixture :: Array Ed25519KeyHash
-delegatesFixture =
-  keyHashFromHex <$>
-    [ "0e0607203c2ab6f2f729e2317502277191c681283637d5ee6b2a9933"
-    , "35c92e61b4f915ce7615ea8b8ece661843e6bc5f591fe99036d388a9"
-    ]
-
 mkRaceParticipantFixture :: Plutus.Address -> RaceParticipant
 mkRaceParticipantFixture payoutAddress =
   wrap
@@ -251,9 +261,6 @@ mkRaceParticipantFixture payoutAddress =
     , driver: assetNameFromAsciiUnsafe "TestDriver"
     , payoutAddress
     }
-
-keyHashFromHex :: String -> Ed25519KeyHash
-keyHashFromHex str = unsafePartial fromJust $ decodeCbor =<< hexToCborBytes str
 
 logAndDelay :: forall (m :: Type -> Type). MonadAff m => String -> m Unit
 logAndDelay str = do
