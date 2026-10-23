@@ -77,7 +77,7 @@ import HydraSdk.Test (defaultHydraClusterTimeParamsForCardanoTestnet, withHydraC
 import HydraSdk.Types (HttpError, HydraHeadStatus(HeadStatus_Open))
 import JS.BigInt (fromInt) as BigInt
 import Lib.CardanoRacers.Client (submitPlayerInputToDelegates)
-import Mote (group, test, only)
+import Mote (group, test)
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (readTextFile)
 import Node.Path (FilePath)
@@ -112,7 +112,7 @@ defaultUtxoDistribution =
 suite :: Ref FilePath -> TestnetConfig -> TestPlanM ContractTest Unit
 suite nodeSocketPathRef testnetConfig =
   group "Integration" do
-    only $ test "1 race, 1 participant" do
+    test "1 race, 1 participant" do
       withWallets
         ( defaultUtxoDistribution /\ defaultUtxoDistribution /\ defaultUtxoDistribution /\
             Array.replicate tp.numHydraNodes defaultUtxoDistribution

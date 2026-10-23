@@ -1,4 +1,4 @@
-{
+{   
     "txFeeFixed": 0,
     "txFeePerByte": 0,
     "executionUnitPrices": {
@@ -1045,23 +1045,23 @@
         "treasuryWithdrawal": 0.67,
         "updateToConstitution": 0.75
     },
-    "govActionDeposit": 100000000000,
+    "govActionDeposit": 1000000000,
     "govActionLifetime": 6,
     "maxBlockBodySize": 90112,
     "maxBlockExecutionUnits": {
-        "memory": 72000000,
+        "memory": 77500000,
         "steps": 20000000000
     },
     "maxBlockHeaderSize": 1100,
     "maxCollateralInputs": 3,
     "maxTxExecutionUnits": {
-        "memory": 16500000,
+        "memory": 17500000,
         "steps": 10000000000
     },
     "maxTxSize": 16384,
     "maxValueSize": 5000,
     "minFeeRefScriptCostPerByte": 15,
-    "minPoolCost": 170000000,
+    "minPoolCost": 75000000,
     "monetaryExpansion": 3.0e-3,
     "poolPledgeInfluence": 0.3,
     "poolRetireMaxEpoch": 18,

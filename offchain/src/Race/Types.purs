@@ -65,6 +65,7 @@ import HydraSdk.Lib
   , scriptHashCodec
   , txHashCodec
   )
+import JS.BigInt (BigInt)
 
 newtype StartRaceParams = StartRaceParams
   { raceId :: RaceHash
@@ -227,7 +228,15 @@ instance FromData RaceDatum where
 
 -- RaceRedeemer
 
-data RaceRedeemer = MoveL2 | DistributeRewards | ClaimTTL | CleanupUsedTokens
+data RaceRedeemer
+  = MoveL2
+  | DistributeRewards
+      { treasuryOutputIx :: BigInt
+      , operatingOutputIx :: BigInt
+      , rewardOutputIxs :: Array BigInt
+      }
+  | ClaimTTL
+  | CleanupUsedTokens
 
 derive instance Generic RaceRedeemer _
 derive instance Eq RaceRedeemer
@@ -241,7 +250,15 @@ instance
         := PNil
         @@ Z
         :+ "DistributeRewards"
-        := PNil
+        :=
+          ( "treasuryOutputIx"
+              := I BigInt
+              :+ "operatingOutputIx"
+              := I BigInt
+              :+ "rewardOutputIxs"
+              := I (Array BigInt)
+              :+ PNil
+          )
         @@ (S Z)
         :+ "ClaimTTL"
         := PNil

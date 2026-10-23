@@ -124,6 +124,7 @@ runSimulator userInput = do
   args :: { inputCsvPath :: FilePath, simResultPath :: FilePath } -> Array String
   args { inputCsvPath, simResultPath } = Array.concat
     [ [ "-batchmode" ]
+    , [ "-nographics" ]
     , [ "-logFile", "-" ]
     , option "csv" inputCsvPath
     , option "result-file" simResultPath
