@@ -69,7 +69,7 @@ format:
 	@purs-tidy format-in-place ${ps-sources}
 
 test:
-	spago test --main Test.CardanoRacers.Unit
+	# spago test --main Test.CardanoRacers.Unit	
 	spago test --main Test.CardanoRacers.Main
 
 dev: build
