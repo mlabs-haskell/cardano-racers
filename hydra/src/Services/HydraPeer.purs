@@ -1,5 +1,6 @@
 module CardanoRacers.Hydra.Services.HydraPeer
-  ( signAnnounceDistrTxRequest
+  ( getRaceResultsRequest
+  , signAnnounceDistrTxRequest
   , signCommitTxRequest
   ) where
 
@@ -17,7 +18,8 @@ import CardanoRacers.Hydra.Handlers.SignCommitTx
   , signCommitTxRequestPayloadCodec
   , signCommitTxResponseCodec
   )
-import CardanoRacers.Hydra.Services.Utils (handleResponse, postRequest)
+import CardanoRacers.Hydra.Services.Utils (getRequest, handleResponse, postRequest)
+import CardanoRacers.Hydra.Types.RaceStatus (RaceResults, raceResultsCodec)
 import Ctl.Internal.Helpers ((<</>>))
 import Data.Codec.Argonaut (encode) as CA
 import Data.Either (Either)
@@ -48,3 +50,8 @@ signAnnounceDistrTxRequest httpServer reqBody =
       , content: Just $ CA.encode signAnnounceDistrTxRequestPayloadCodec reqBody
       , headers: mempty
       }
+
+getRaceResultsRequest :: String -> Aff (Either HttpError (RaceResults Maybe))
+getRaceResultsRequest httpServer =
+  handleResponse raceResultsCodec <$>
+    getRequest (httpServer <</>> "raceResults")

@@ -5,23 +5,33 @@ module CardanoRacers.Hydra.Handlers.SignAnnounceDistrTx
 
 import Prelude
 
-import Cardano.Plutus.Types.Map (empty) as Plutus.Map
 import Cardano.Types (Vkeywitness)
 import CardanoRacers.Hydra.Contracts.AnnounceDistr (mkAnnounceRewardDistributionTx)
 import CardanoRacers.Hydra.Handlers.SignAnnounceDistrTx.Types
-  ( SignAnnounceDistrTxError(CouldNotDecodeTx, TxValidationFailed, CouldNotSignTx)
+  ( SignAnnounceDistrTxError
+      ( CouldNotDecodeTx
+      , RaceDataNotAvailable
+      , UnexpectedRaceStatus
+      , TxValidationFailed
+      , CouldNotSignTx
+      )
   , signAnnounceDistrTxRequestPayloadCodec
   , signAnnounceDistrTxResponseCodec
   )
 import CardanoRacers.Hydra.Lib.Transaction (signTxReturnSignature)
 import CardanoRacers.Hydra.Monad (AppM, liftContract)
+import CardanoRacers.Hydra.RewardDistribution (distributeRewards)
+import CardanoRacers.Hydra.Types.RaceStatus (RaceStatus(DistributingRewards))
 import CardanoRacers.Hydra.Types.ServerResponse (fromEither, respCreatedOrBadRequest)
 import Control.Error.Util ((!?))
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Except (runExceptT)
+import Control.Monad.Reader (ask)
 import Control.Monad.Trans.Class (lift)
 import Data.Codec.Argonaut (printJsonDecodeError) as CA
 import Data.Either (Either(Left, Right))
+import Effect.Class (liftEffect)
+import Effect.Ref (read) as Ref
 import HTTPure (Response) as HTTPure
 import HydraSdk.Lib (caDecodeString)
 
@@ -37,8 +47,14 @@ signAnnounceDistrTxHandlerImpl bodyStr =
       Left decodeErr ->
         throwError $ CouldNotDecodeTx $ CA.printJsonDecodeError decodeErr
       Right { tx, collateralAddress } -> do
-        -- TODO: Reward distribution is currently hardcoded.
-        -- Pass actual (consensual) distribution.
-        expectedTx <- lift $ mkAnnounceRewardDistributionTx collateralAddress Plutus.Map.empty
-        when (tx /= expectedTx) $ throwError TxValidationFailed
-        liftContract (signTxReturnSignature tx) !? CouldNotSignTx
+        { raceDataRef, raceStatusRef } <- ask
+        { raceParams } <- liftEffect (Ref.read raceDataRef) !? RaceDataNotAvailable
+        raceStatus <- liftEffect $ Ref.read raceStatusRef
+        case raceStatus of
+          DistributingRewards { finalResults } -> do
+            let rewardDistr = distributeRewards finalResults raceParams
+            expectedTx <- lift $ mkAnnounceRewardDistributionTx collateralAddress rewardDistr
+            when (tx /= expectedTx) $ throwError TxValidationFailed
+            liftContract (signTxReturnSignature tx) !? CouldNotSignTx
+          _ ->
+            throwError UnexpectedRaceStatus

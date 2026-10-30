@@ -10,3 +10,5 @@
 /.spago
 /data/
 /.spago2nix/
+/simulator/*
+!/simulator/.gitkeep

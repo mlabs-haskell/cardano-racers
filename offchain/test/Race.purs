@@ -57,8 +57,12 @@ suite =
             withKeyWallet admin $ runRacers rp $
               startRace (Just $ mkRewardDistribution addrs) raceHash
                 totalRewardValue
+                ( [ 50_000, 30_000, 20_000 ] <#> wrap <<< { numerator: _ } <<<
+                    JSBigInt.fromInt
+                )
                 addrs
                 mempty
+
           txHash <- withKeyWallet anyone $ runRacers rp $
             distributeRewards raceParams
           logInfo' $ "Success: " <> show txHash

@@ -15,6 +15,7 @@ import Cardano.Plutus.Types.Map (Map) as Plutus
 import Cardano.Plutus.Types.Value (Value) as Plutus
 import Cardano.Types (AssetName, Ed25519KeyHash, ScriptHash)
 import CardanoRacers.Helpers (assetNameFromAsciiUnsafe)
+import CardanoRacers.Types.FixedDecimal (FixedDecimal, N5)
 import Contract.PlutusData
   ( class FromData
   , class HasPlutusSchema
@@ -41,6 +42,9 @@ newtype RaceParams = RaceParams
   , participants :: Array Plutus.Address
   , delegates :: Array Ed25519KeyHash
   , escrowTtl :: POSIXTime
+  -- TODO: update validator to ensure the final distribution is consistent
+  -- with reward weights
+  , rewardWeights :: Array (FixedDecimal N5)
   }
 
 derive instance Generic RaceParams _
@@ -64,6 +68,8 @@ instance
               := I (Array Ed25519KeyHash)
               :+ "escrowTtl"
               := I POSIXTime
+              :+ "rewardWeights"
+              := I (Array (FixedDecimal N5))
               :+ PNil
           )
         @@ Z
