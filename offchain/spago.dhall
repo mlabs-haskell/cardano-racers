@@ -22,6 +22,7 @@
   , "effect"
   , "either"
   , "encoding"
+  , "errors"
   , "exceptions"
   , "foldable-traversable"
   , "foreign"

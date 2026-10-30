@@ -1,45 +1,41 @@
 module CardanoRacers.Hydra.Handlers.SignCommitTx
   ( SignCommitTxError
-      ( CouldNotDecodeRequestBody
+      ( CouldNotDecodeReqBody
       , CouldNotDecodeRaceParams
       , CouldNotSignTx
       )
   , SignCommitTxRequestPayload
-  , SignCommitTxResponse
   , signCommitTxErrorCodec
   , signCommitTxHandler
   , signCommitTxHandlerImpl
   , signCommitTxRequestPayloadCodec
-  , signCommitTxResponseCodec
   ) where
 
 import Prelude
 
+import Aeson (stringifyAeson)
 import Cardano.AsCbor (decodeCbor)
 import Cardano.FromData (fromData)
 import Cardano.Types (CborBytes, Ed25519KeyHash, Transaction, Vkeywitness)
+import Cardano.Types.Transaction (hash) as Transaction
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Hydra.Codec (racersParamsCodec, vkeyWitnessCodec)
 import CardanoRacers.Hydra.Lib.Transaction (signTxReturnSignature)
-import CardanoRacers.Hydra.Monad (AppM, liftContract, setRaceData)
-import CardanoRacers.Hydra.Types.ServerResponse
-  ( ServerResponse
-  , fromEither
-  , respCreatedOrBadRequest
-  , serverResponseCodec
-  )
+import CardanoRacers.Hydra.Monad (AppM, initRace, liftContract)
 import CardanoRacers.Race.Contract (mkRaceValidator)
 import Control.Error.Util ((!?), (??))
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift)
-import Data.Codec.Argonaut (JsonCodec, object, printJsonDecodeError, string) as CA
+import Data.Codec.Argonaut (JsonCodec, encode, object, printJsonDecodeError, string) as CA
 import Data.Codec.Argonaut.Record (record) as CAR
-import Data.Codec.Argonaut.Sum (sum) as CAS
-import Data.Either (Either(Left, Right))
+import Data.Codec.Argonaut.Sum (sumFlat) as CAS
+import Data.Either (Either(Left, Right), either)
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
 import HTTPure (Response) as HTTPure
+import HTTPure (Status, response)
+import HTTPure.Status (badRequest, created, internalServerError) as Status
 import HydraSdk.Lib (caDecodeString, cborBytesCodec, ed25519KeyHashCodec, txCodec)
 import Racers (runRacers)
 
@@ -59,29 +55,29 @@ signCommitTxRequestPayloadCodec =
     , raceParams: cborBytesCodec
     }
 
-type SignCommitTxResponse = ServerResponse Vkeywitness SignCommitTxError
-
-signCommitTxResponseCodec :: CA.JsonCodec SignCommitTxResponse
-signCommitTxResponseCodec = serverResponseCodec vkeyWitnessCodec signCommitTxErrorCodec
-
 signCommitTxHandler :: String -> AppM HTTPure.Response
 signCommitTxHandler =
-  (respCreatedOrBadRequest signCommitTxResponseCodec <<< fromEither)
+  either
+    (\e -> response (errorStatus e) $ stringifyAeson $ CA.encode signCommitTxErrorCodec e)
+    (\wit -> response Status.created $ stringifyAeson $ CA.encode vkeyWitnessCodec wit)
     <=< signCommitTxHandlerImpl
 
 signCommitTxHandlerImpl :: String -> AppM (Either SignCommitTxError Vkeywitness)
 signCommitTxHandlerImpl bodyStr =
   runExceptT case caDecodeString signCommitTxRequestPayloadCodec bodyStr of
     Left decodeErr ->
-      throwError $ CouldNotDecodeRequestBody $ CA.printJsonDecodeError decodeErr
+      throwError $ CouldNotDecodeReqBody
+        { decodeError: CA.printJsonDecodeError decodeErr
+        }
     Right reqBody -> do
-      -- TODO: validation
+      -- TODO(high): validation
       raceParams <- (fromData =<< decodeCbor reqBody.raceParams) ?? CouldNotDecodeRaceParams
       raceValidator <-
         lift $ liftContract $ runRacers reqBody.racersParams $
           mkRaceValidator raceParams
       sig <- liftContract (signTxReturnSignature reqBody.commitTx) !? CouldNotSignTx
-      lift $ setRaceData
+      let depositTxId = Transaction.hash reqBody.commitTx
+      lift $ initRace depositTxId
         { racersParams: reqBody.racersParams
         , raceParams
         , raceValidator
@@ -92,7 +88,7 @@ signCommitTxHandlerImpl bodyStr =
 -- SignCommitTxError
 
 data SignCommitTxError
-  = CouldNotDecodeRequestBody String
+  = CouldNotDecodeReqBody { decodeError :: String }
   | CouldNotDecodeRaceParams
   | CouldNotSignTx
 
@@ -104,8 +100,21 @@ instance Show SignCommitTxError where
 
 signCommitTxErrorCodec :: CA.JsonCodec SignCommitTxError
 signCommitTxErrorCodec =
-  CAS.sum "SignCommitTxError"
-    { "CouldNotDecodeRequestBody": CA.string
+  CAS.sumFlat "SignCommitTxError"
+    { "CouldNotDecodeReqBody":
+        CAR.record
+          { decodeError: CA.string
+          }
     , "CouldNotDecodeRaceParams": unit
     , "CouldNotSignTx": unit
     }
+
+errorStatus :: SignCommitTxError -> Status
+errorStatus =
+  case _ of
+    CouldNotDecodeReqBody _ ->
+      Status.badRequest
+    CouldNotDecodeRaceParams ->
+      Status.badRequest
+    CouldNotSignTx ->
+      Status.internalServerError

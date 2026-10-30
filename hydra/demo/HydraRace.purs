@@ -1,10 +1,10 @@
-module CardanoRacers.Hydra.Demo.StartRace
+module CardanoRacers.Hydra.Demo.HydraRace
   ( main
   ) where
 
 import Prelude
 
-import Cardano.AsCbor (class AsCbor, decodeCbor, encodeCbor)
+import Cardano.AsCbor (decodeCbor)
 import Cardano.Plutus.Types.Address (Address) as Plutus
 import Cardano.Plutus.Types.Address (fromCardano) as Plutus.Address
 import Cardano.Types (Ed25519KeyHash, ScriptHash, TransactionHash, Value)
@@ -12,23 +12,33 @@ import Cardano.Types.BigNum (fromInt) as BigNum
 import Cardano.Types.Value (lovelaceValueOf)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.Helpers (assetNameFromAsciiUnsafe)
-import CardanoRacers.Hydra.Lib.Retry (retryOnAnyError)
+import CardanoRacers.Hydra.Config (AppQueryBackend(Blockfrost))
+import CardanoRacers.Hydra.Lib.Retry (retryOnError)
 import CardanoRacers.Hydra.Monad (initContractEnv)
-import CardanoRacers.HydraGroup.Contract (findHydraGroupById)
+import CardanoRacers.HydraGroup.Contract (disbandHydraGroup, findHydraGroupById)
 import CardanoRacers.HydraGroup.Contract (registerHydraGroup) as HydraGroup
 import CardanoRacers.HydraGroup.Types (HydraGroupInfo)
 import CardanoRacers.Nitro.Helpers (createRacersParams)
-import CardanoRacers.Race.Contract (distributeRewards, startRace)
+import CardanoRacers.Race.Contract (distributeRewardsReturningErrors, startRace)
 import CardanoRacers.Race.Types
-  ( RaceParams
+  ( DistributeRewardsContractError(CouldNotFindRaceStateUtxo)
+  , RaceParams
   , StartRaceParams(StartRaceParams)
   , StartRaceResult(StartRaceResult)
   )
 import CardanoRacers.RaceRegistry.Types (RaceParticipant)
 import CardanoRacers.RaceSlot.Types (RaceHash)
-import CardanoRacers.Services.HydraDelegate (HostRaceRequest, hostRaceRequest)
+import CardanoRacers.RacersState.Contract (initRacersStateContract)
+import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices), RacersState(RacersState))
+import CardanoRacers.Services.HydraDelegate
+  ( HostRaceError
+  , HostRaceRequest
+  , SubmitPlayerInputError(SubmitInput_PlayerInputSubmitWindowNotActive)
+  , hostRaceRequest
+  )
+import CardanoRaces.Hydra.Lib.Print (printHex)
 import Contract.Address (getNetworkId)
-import Contract.CborBytes (cborBytesToHex, hexToCborBytes)
+import Contract.CborBytes (hexToCborBytes)
 import Contract.Monad (Contract, liftContractM, liftedM, runContractInEnv)
 import Contract.Wallet (getWalletAddress, getWalletUtxos, ownPaymentPubKeyHash)
 import Control.Monad.Error.Class (liftMaybe)
@@ -82,11 +92,14 @@ main = do
         case _ of
           Right cfg ->
             launchAff_ do
-              contractEnv <- initContractEnv cfg.blockfrostApiKeyFile cfg.signingKeyFile Trace
+              contractEnv <- initContractEnv
+                (Blockfrost { apiKeyFile: cfg.blockfrostApiKeyFile })
+                cfg.signingKeyFile
+                Trace
               runContractInEnv contractEnv do
                 -- Register Hydra group
                 groupId <- registerHydraGroup
-                logAndDelay $ "Registered new Hydra group with ID: " <> toHex groupId
+                logAndDelay $ "Registered new Hydra group with ID: " <> printHex groupId
 
                 -- Create RacersParams
                 utxos <- liftedM "Could not get wallet utxos" getWalletUtxos
@@ -95,10 +108,26 @@ main = do
                     Map.toUnfoldable utxos
                 racersParams <- createRacersParams nonceOref
 
+                -- Init Racers state
+                plutusAddr <- do
+                  addr <- liftedM "Could not get wallet address" getWalletAddress
+                  liftMaybe (error "Could not convert wallet address") $
+                    Plutus.Address.fromCardano addr
+                let
+                  racersState = RacersState
+                    { nitroPrice: BigInt.fromInt 1000000
+                    , treasuryAddress: plutusAddr
+                    , operatingAddress: plutusAddr
+                    , assetPrices:
+                        AssetPrices
+                          { common: BigInt.fromInt 1_000_000
+                          , rare: BigInt.fromInt 2_000_000
+                          , epic: BigInt.fromInt 3_000_000
+                          }
+                    }
+                void $ runRacers racersParams $ initRacersStateContract racersState
+
                 -- Start race
-                addr <- liftedM "Could not get wallet address" getWalletAddress
-                plutusAddr <- liftMaybe (error "Could not convert wallet address") $
-                  Plutus.Address.fromCardano addr
                 let
                   -- one participant
                   participants = Array.singleton $ mkRaceParticipantFixture plutusAddr
@@ -117,28 +146,32 @@ main = do
                           }
                       )
                 logAndDelay $ "startRace success: "
-                  <> toHex startRaceTxHash
+                  <> printHex startRaceTxHash
 
                 -- Discover Hydra group
-                _groupEntry@{ groupInfo } <- liftedM "Could not find Hydra group by ID" $
+                groupEntry@{ groupInfo } <- liftedM "Could not find Hydra group by ID" $
                   findHydraGroupById groupId
                 logAndDelay $ "Found valid Hydra group with ID: "
-                  <> toHex groupId
+                  <> printHex groupId
                   <> ", group info: "
                   <> show groupInfo
 
                 -- Host L2 race
                 resp <- hostRace groupInfo startRaceTxHash racersParams raceParams
                 liftEffect case resp of
-                  Left httpError ->
-                    throw $ "host request failed: " <> show httpError
-                  Right txHash ->
-                    log $ "hostRace success: " <> toHex txHash
+                  Left httpErr ->
+                    throw $ "hostRace request failed: " <> show httpErr
+                  Right (Left domainErr) ->
+                    throw $ "hostRace endpoint returned error: " <> show domainErr
+                  Right (Right txHash) ->
+                    log $ "hostRace success: " <> printHex txHash
 
                 -- Submit player input
                 do
-                  csv <- liftAff $ readTextFile UTF8 "simulator/input.csv"
-                  retryOnAnyError "submitPlayerInput"
+                  csv <- liftAff $ readTextFile UTF8 "simulator/test-input.csv"
+                  retryOnError
+                    "submitPlayerInput"
+                    (pure <<< eq SubmitInput_PlayerInputSubmitWindowNotActive)
                     { timeout: Minutes 10.0, delay: Seconds 30.0 } $
                     submitPlayerInputToDelegates (unwrap raceParams).stateCurrencySymbol
                       (unwrap groupInfo).hydraGroupHttpServers
@@ -147,19 +180,20 @@ main = do
                 -- Distribute rewards
                 do
                   txHash <-
-                    retryOnAnyError
+                    retryOnError
                       "distributeRewards"
-                      { timeout: Minutes 15.0, delay: Seconds 30.0 }
-                      (runRacers racersParams $ distributeRewards raceParams)
+                      (pure <<< eq CouldNotFindRaceStateUtxo)
+                      { timeout: Minutes 20.0, delay: Seconds 30.0 }
+                      (runRacers racersParams $ distributeRewardsReturningErrors raceParams)
                   logAndDelay $ "distributeRewards success: "
-                    <> toHex txHash
+                    <> printHex txHash
 
                 -- Disband Hydra group
-                -- disbandTxHash <- disbandHydraGroup groupEntry.oref
-                -- logAndDelay $ "Successfully disbanded Hydra group with ID: "
-                -- <> toHex groupId
-                -- <> ", TX hash: "
-                -- <> toHex disbandTxHash
+                disbandTxHash <- disbandHydraGroup groupEntry.oref
+                logAndDelay $ "Successfully disbanded Hydra group with ID: "
+                  <> printHex groupId
+                  <> ", TX hash: "
+                  <> printHex disbandTxHash
                 pure unit
           Left decodeErr ->
             throw $ "could not decode config: " <>
@@ -183,7 +217,7 @@ hostRace
   -> TransactionHash
   -> RacersParams
   -> RaceParams
-  -> Contract (Either HttpError TransactionHash)
+  -> Contract (Either HttpError (Either HostRaceError TransactionHash))
 hostRace groupInfo startRaceTxHash racersParams raceParams = do
   network <- getNetworkId
   httpServer <- liftMaybe (error "Could not get httpServer") $ Array.head
@@ -225,6 +259,3 @@ logAndDelay :: forall (m :: Type -> Type). MonadAff m => String -> m Unit
 logAndDelay str = do
   liftEffect $ log str
   liftAff $ delay $ convertDuration $ Seconds 2.0
-
-toHex :: forall (a :: Type). AsCbor a => a -> String
-toHex = cborBytesToHex <<< encodeCbor

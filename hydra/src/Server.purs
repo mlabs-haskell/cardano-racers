@@ -66,8 +66,8 @@ routerCors { body, method: Post, path: [ "playerInput" ] } = do
   bodyStr <- liftAff $ HTTPure.toString body
   submitPlayerInputHandler bodyStr
 
-routerCors { method: Get, path: [ "raceResults" ] } =
-  getRaceResultsHandler
+routerCors { method: Get, path: [ "raceResults", raceCs ] } =
+  getRaceResultsHandler raceCs
 
 routerCors _ = HTTPure.notFound
 

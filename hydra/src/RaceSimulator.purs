@@ -6,6 +6,7 @@ module CardanoRacers.Hydra.RaceSimulator
       )
   , raceSimulationErrorCodec
   , runSimulator
+  , runSimulatorMock
   ) where
 
 import Prelude
@@ -32,7 +33,7 @@ import Data.String (Pattern(Pattern))
 import Data.String (stripPrefix, trim) as String
 import Data.Time.Duration (Seconds(Seconds))
 import Effect.Aff.Class (class MonadAff, liftAff)
-import Effect.Class (liftEffect)
+import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Console (log)
 import Effect.Exception (Error)
 import Node.ChildProcess (defaultSpawnOptions, kill, spawn, stdout)
@@ -41,6 +42,7 @@ import Node.FS.Aff (readTextFile, writeTextFile)
 import Node.FS.Sync (exists)
 import Node.Path (FilePath)
 import Node.Stream (onDataString)
+import Test.QuickCheck.Gen (choose, randomSampleOne)
 
 data RaceSimulationError
   = NoResultFileAvailableAfterTimeout
@@ -55,6 +57,15 @@ instance Show RaceSimulationError where
 
 raceSimulationErrorCodec :: CA.JsonCodec RaceSimulationError
 raceSimulationErrorCodec = CAG.nullarySum "RaceSimulationError"
+
+runSimulatorMock
+  :: forall (m :: Type -> Type) (a :: Type)
+   . MonadEffect m
+  => a
+  -> m (Either RaceSimulationError (Finite Number))
+runSimulatorMock _ = do
+  time <- liftEffect $ randomSampleOne $ choose 10.0 60.0
+  pure $ note CouldNotConvertResultToNumber $ finiteNumber time
 
 runSimulator
   :: forall (m :: Type -> Type)

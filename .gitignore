@@ -18,3 +18,6 @@ node_modules
 /onchain/.direnv/
 /onchain/.envrc
 /onchain/.vscode/
+
+/hydra/state-node-preprod/
+/hydra/cardano-node.stats

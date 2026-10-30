@@ -13,6 +13,7 @@ import Data.Newtype (modify, wrap)
 import Data.UInt (UInt)
 import Effect.Aff (Aff)
 
+-- TODO(medium): inherit values from pparams.json
 runContractNullCosts :: forall (a :: Type). ContractEnv -> Contract a -> Aff a
 runContractNullCosts contractEnv contract =
   runContractInEnv contractEnv do
@@ -24,6 +25,13 @@ runContractNullCosts contractEnv contract =
             { memPrice: wrap { numerator: BigNum.zero, denominator: BigNum.one }
             , stepPrice: wrap { numerator: BigNum.zero, denominator: BigNum.one }
             }
+        {-
+        , maxTxExUnits =
+            ExUnits
+              { mem: BigNum.fromInt 16500000 
+              , steps: BigNum.fromStringUnsafe "10000000000"
+              }
+        -}
         }
     contract # local _
       { ledgerConstants =

@@ -11,4 +11,4 @@
 /data/
 /.spago2nix/
 /simulator/*
-!/simulator/.gitkeep
+!/simulator/test-input.csv

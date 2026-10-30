@@ -1,5 +1,6 @@
 module CardanoRacers.Race.Types
-  ( RaceDatum(ValueEscrow, RaceState, TokenBin)
+  ( DistributeRewardsContractError(..)
+  , RaceDatum(ValueEscrow, RaceState, TokenBin)
   , RaceParams(RaceParams)
   , RaceRedeemer(MoveL2, DistributeRewards, ClaimTTL, CleanupUsedTokens)
   , RewardDistribution
@@ -262,3 +263,21 @@ raceStateTokenName = assetNameFromAsciiUnsafe "RACE_STATE"
 
 valueEscrowTokenName :: AssetName
 valueEscrowTokenName = assetNameFromAsciiUnsafe "VALUE_ESCROW"
+
+-- DistributeRewardsContractError
+
+data DistributeRewardsContractError
+  = CouldNotFindRaceStateUtxo
+  | CouldNotFindValueEscrowUtxo
+  | CouldNotDecodeRaceDatum
+  | CouldNotConvertDistribution
+  | RewardDistributionNotAnnounced
+  | UnexpectedRaceDatumVariant
+  | CouldNotConvertRewardValue
+  | CouldNotConvertFeePerDelegateValue
+
+derive instance Generic DistributeRewardsContractError _
+derive instance Eq DistributeRewardsContractError
+
+instance Show DistributeRewardsContractError where
+  show = genericShow

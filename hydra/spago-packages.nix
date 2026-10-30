@@ -235,11 +235,11 @@ let
 
     "cardano-blockfrost-provider" = pkgs.stdenv.mkDerivation {
         name = "cardano-blockfrost-provider";
-        version = "v2.1.0";
+        version = "v2.2.0";
         src = pkgs.fetchgit {
           url = "https://github.com/mlabs-haskell/purescript-cardano-blockfrost-provider";
-          rev = "f501638cdf4a7a1f1c5d30dafd7369ac31d31024";
-          sha256 = "1msdagzdlalq31ph0gmkl2fm5sngw4d8s6i6vp5fj4grwmxzbz8m";
+          rev = "e8252b45adb34b3d805e5a2b9a8193db40246dea";
+          sha256 = "0wmrjx15hxmqyxaiczmiwnwldy0k87mvpyfxap191r5c66b13w45";
         };
         phases = "installPhase";
         installPhase = "ln -s $src $out";
@@ -381,11 +381,11 @@ let
 
     "cardano-transaction-lib" = pkgs.stdenv.mkDerivation {
         name = "cardano-transaction-lib";
-        version = "2f7751724f703f4c480df3d50204020932f64b83";
+        version = "723052ce847c0fd9625243cd188af035b8a91b87";
         src = pkgs.fetchgit {
           url = "https://github.com/Plutonomicon/cardano-transaction-lib.git";
-          rev = "2f7751724f703f4c480df3d50204020932f64b83";
-          sha256 = "1hhsr42dz5q79la1g1l2s3pbha5i3hfzfr8pfckrgr7czv5xyah3";
+          rev = "723052ce847c0fd9625243cd188af035b8a91b87";
+          sha256 = "0d0wa837ybk4k4zdw5li4xs4ksabmjxk31wkgqyvraram77dssal";
         };
         phases = "installPhase";
         installPhase = "ln -s $src $out";
@@ -859,18 +859,6 @@ let
         installPhase = "ln -s $src $out";
       };
 
-    "heterogeneous" = pkgs.stdenv.mkDerivation {
-        name = "heterogeneous";
-        version = "v0.6.0";
-        src = pkgs.fetchgit {
-          url = "https://github.com/natefaubion/purescript-heterogeneous.git";
-          rev = "5b7542bdd9547c5aef95b8878f103f0ce4ee1383";
-          sha256 = "0ff1wjq2ayhy67ydggbb2qlzbhvmv1m1z8dcp48p9zhxiq9fpfsz";
-        };
-        phases = "installPhase";
-        installPhase = "ln -s $src $out";
-      };
-
     "http-methods" = pkgs.stdenv.mkDerivation {
         name = "http-methods";
         version = "v6.0.0";
@@ -897,11 +885,11 @@ let
 
     "hydra-sdk" = pkgs.stdenv.mkDerivation {
         name = "hydra-sdk";
-        version = "18b8390370e1f4fd39a826cbce81dcedf3dd0992";
+        version = "14d0f4fc8824509bae6df3d9b63488f01d1110d4";
         src = pkgs.fetchgit {
           url = "https://github.com/mlabs-haskell/purescript-hydra-sdk";
-          rev = "18b8390370e1f4fd39a826cbce81dcedf3dd0992";
-          sha256 = "0j27rr6xfslmwkrv88ypbx64874bdc4qsbci64daf8p6hzy1rycc";
+          rev = "14d0f4fc8824509bae6df3d9b63488f01d1110d4";
+          sha256 = "07pm18ldzn0c5xzq1vdchbh1kalmx60wniygl8lcr8waw3mwjdvk";
         };
         phases = "installPhase";
         installPhase = "ln -s $src $out";

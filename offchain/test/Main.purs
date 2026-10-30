@@ -7,7 +7,7 @@ import Contract.Prelude
 import Contract.Config (emptyHooks)
 import Contract.Test (ContractTest)
 import Contract.Test.Mote (TestPlanM, interpretWithConfig)
-import Contract.Test.Testnet (Era(Conway), TestnetConfig, testTestnetContracts)
+import Contract.Test.Testnet (TestnetConfig, testTestnetContracts)
 import Contract.Test.Utils (exitCode, interruptOnSignal)
 import Data.Posix.Signal (Signal(SIGINT))
 import Data.Time.Duration (Seconds(Seconds))
@@ -69,7 +69,6 @@ config =
   , clusterConfig:
       { slotLength: Seconds 0.05
       , epochSize: Nothing
-      , era: Conway
       , testnetMagic: 2
       }
   }

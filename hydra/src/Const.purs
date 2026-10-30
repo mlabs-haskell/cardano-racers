@@ -11,5 +11,5 @@ type AppConst =
 
 appConst :: AppConst
 appConst =
-  { collateralLovelace: BigNum.fromInt 10_000_000
+  { collateralLovelace: BigNum.fromInt 5_000_001
   }

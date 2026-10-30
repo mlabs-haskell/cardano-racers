@@ -1,6 +1,7 @@
 module CardanoRacers.Hydra.Lib.Retry
   ( RetryConfig
   , retryOnAnyError
+  , retryOnError
   , retryOnFalse
   , retryOnNothing
   ) where
@@ -8,14 +9,14 @@ module CardanoRacers.Hydra.Lib.Retry
 import Prelude
 
 import Contract.Log (logWarn')
-import Control.Monad.Error.Class (class MonadError, throwError, try)
+import Control.Monad.Error.Class (class MonadError, class MonadThrow, throwError, try)
 import Control.Monad.Logger.Class (class MonadLogger)
-import Data.Either (Either(Left, Right))
+import Data.Either (Either(Left, Right), either)
 import Data.Maybe (Maybe, isNothing)
 import Data.Time.Duration (class Duration)
 import Effect.Aff.Class (class MonadAff)
 import Effect.Aff.Retry (constantDelay, limitRetriesByCumulativeDelay, recovering, retrying)
-import Effect.Exception (Error)
+import Effect.Exception (Error, error)
 import Effect.Exception (message) as Error
 
 type RetryConfig (d0 :: Type) (d1 :: Type) =
@@ -50,6 +51,37 @@ retryOnNothing { timeout, delay } action =
     (limitRetriesByCumulativeDelay timeout $ constantDelay delay)
     (\_ res -> pure $ isNothing res)
     (\_ -> action)
+
+retryOnError
+  :: forall (m :: Type -> Type) (d0 :: Type) (d1 :: Type) (e :: Type) (a :: Type)
+   . MonadAff m
+  => MonadThrow Error m
+  => MonadLogger m
+  => Duration d0
+  => Duration d1
+  => Show e
+  => String
+  -> (e -> m Boolean)
+  -> RetryConfig d0 d1
+  -> m (Either e a)
+  -> m a
+retryOnError label predicate { timeout, delay } action =
+  either (throwError <<< error <<< show) pure =<<
+    retrying
+      (limitRetriesByCumulativeDelay timeout $ constantDelay delay)
+      (\_ -> either predicate (const (pure false)))
+      ( \_ ->
+          action >>=
+            case _ of
+              Left err -> do
+                logWarn' $
+                  "retryOnError: action with label "
+                    <> label
+                    <> " has failed with error: "
+                    <> show err
+                pure $ Left err
+              x -> pure x
+      )
 
 retryOnAnyError
   :: forall (m :: Type -> Type) (d0 :: Type) (d1 :: Type) (a :: Type)

@@ -11,8 +11,6 @@ import Cardano.Provider.ServerConfig (mkHttpUrl)
 import Cardano.ToData (toData)
 import Cardano.Types
   ( Address
-  , Credential(ScriptHashCredential)
-  , NetworkId
   , PlutusData
   , RedeemerDatum
   , ScriptHash
@@ -20,31 +18,29 @@ import Cardano.Types
   , UtxoMap
   , Value
   )
-import Cardano.Types.Address (mkPaymentAddress)
 import Cardano.Types.PlutusScript (hash) as PlutusScript
 import Cardano.Types.Transaction (hash) as Transaction
-import CardanoRacers.Hydra.Contracts.Collateral (isCollateralTxOut)
-import CardanoRacers.Hydra.Lib.Transaction (appendTxSignatures, setExUnitsToMax, setTxValid)
+import CardanoRacers.Hydra.Contracts.Common (findCollateralUtxo, findRaceStateUtxo)
+import CardanoRacers.Hydra.Lib.Transaction
+  ( appendTxSignatures
+  , removeTxOutputsWithEmptyValues
+  , setExUnitsToMax
+  , setTxValid
+  )
 import CardanoRacers.Hydra.Monad
   ( AppM
   , RaceData
-  , getHydraUtxos
   , liftContract
   , liftContractNullCosts
-  , readRaceData
+  , readHydraSnapshot
   )
 import CardanoRacers.Hydra.Services.HydraPeer (signAnnounceDistrTxRequest)
-import CardanoRacers.Hydra.Types.Common (Utxo)
 import CardanoRacers.Hydra.Types.ContractResult (buildTx, emptySubmitTxData)
-import CardanoRacers.Hydra.Types.ServerResponse
-  ( ServerResponse(ServerResponseError, ServerResponseSuccess)
-  )
 import CardanoRacers.Race.Types
   ( RaceDatum(RaceState)
   , RaceRedeemer(MoveL2)
   , RewardDistribution
   )
-import Contract.Address (getNetworkId)
 import Contract.BalanceTxConstraints (BalancerConstraints)
 import Contract.BalanceTxConstraints
   ( mustSendChangeToAddress
@@ -70,67 +66,74 @@ import Contract.Wallet (getWalletAddress)
 import Control.Monad.Error.Class (liftMaybe, throwError)
 import Control.Monad.Reader.Class (ask)
 import Control.Parallel (parTraverse)
-import Data.Array (find) as Array
-import Data.Either (either)
+import Data.Either (Either(Left, Right))
 import Data.Foldable (foldMap)
-import Data.Map (fromFoldable, toUnfoldable) as Map
-import Data.Maybe (Maybe(Just, Nothing))
+import Data.Map (fromFoldable, union) as Map
+import Data.Maybe (Maybe(Just), isNothing, maybe)
 import Data.Newtype (unwrap, wrap)
 import Data.Tuple.Nested ((/\))
+import Debug (traceM)
 import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (error)
 import HydraSdk.NodeApi (HydraNodeApiWebSocket)
+import HydraSdk.Types (toUtxoMap)
 
-announceRewardDistribution :: HydraNodeApiWebSocket AppM -> RewardDistribution -> AppM Unit
-announceRewardDistribution ws distr = do
+announceRewardDistribution
+  :: HydraNodeApiWebSocket AppM
+  -> RaceData
+  -> RewardDistribution
+  -> AppM Unit
+announceRewardDistribution ws raceData distr = do
   ownAddress <- liftContract $ liftedM "Could not get wallet address" getWalletAddress
-  tx <- mkAnnounceRewardDistributionTx ownAddress distr
+  tx <- mkAnnounceRewardDistributionTx raceData ownAddress distr
   { config: { hydraNodeStartupParams: { peers } } } <- ask
-  peerSignedTx <- liftAff $ multiSignAnnounceDistrTx peers tx ownAddress
+  let raceCs = (unwrap raceData.raceParams).stateCurrencySymbol
+  peerSignedTx <- liftAff $ multiSignAnnounceDistrTx peers raceCs tx ownAddress
   signedTx <- liftContract $ signTransaction peerSignedTx
-  liftEffect $ ws.submitTxL2 signedTx
+  liftEffect $ ws.decommit signedTx
   logInfo' "Successfully signed and submitted AnnounceRewardDistribution Tx"
 
 multiSignAnnounceDistrTx
   :: forall (r :: Row Type)
    . Array { httpServer :: ServerConfig | r }
+  -> ScriptHash
   -> Transaction
   -> Address
   -> Aff Transaction
-multiSignAnnounceDistrTx peers tx collateralAddress = do
+multiSignAnnounceDistrTx peers raceCs tx changeAddress = do
   signatures <- parTraverse
     ( \{ httpServer } -> do
-        eiResp <-
-          signAnnounceDistrTxRequest (mkHttpUrl httpServer)
-            { tx
-            , collateralAddress
-            }
         resp <-
-          either
-            ( throwError <<< error
-                <<< append "multiSignAnnounceDistrTx: signAnnounceDistrTxRequest failed: "
-                <<< show
-            )
-            pure
-            eiResp
+          signAnnounceDistrTxRequest (mkHttpUrl httpServer)
+            { raceCs
+            , tx
+            , changeAddress
+            }
         case resp of
-          ServerResponseSuccess signature ->
-            pure signature
-          ServerResponseError err ->
+          Left httpErr ->
             throwError $ error $
-              "multiSignAnnounceDistrTx: failed to get signature from peer: " <>
-                show err
+              "multiSignAnnounceDistrTx: signAnnounceDistrTx request failed with error: "
+                <> show httpErr
+          Right (Left domainErr) ->
+            throwError $ error $
+              "multiSignAnnounceDistrTx: signAnnounceDistrTx endpoint returned error: "
+                <> show domainErr
+          Right (Right sig) ->
+            pure sig
     )
     peers
   pure $ appendTxSignatures signatures tx
 
-mkAnnounceRewardDistributionTx :: Address -> RewardDistribution -> AppM Transaction
-mkAnnounceRewardDistributionTx collateralAddr distr = do
-  snapshotUtxos <- getHydraUtxos
-  raceData <- readRaceData
-  tx <- liftContractNullCosts $ announceRewardDistributionContract snapshotUtxos collateralAddr
+mkAnnounceRewardDistributionTx :: RaceData -> Address -> RewardDistribution -> AppM Transaction
+mkAnnounceRewardDistributionTx raceData changeAddress distr = do
+  snapshotUtxos <- do
+    snapshot <- readHydraSnapshot
+    let utxos = toUtxoMap (unwrap snapshot).utxo
+    pure $ maybe utxos (Map.union utxos <<< toUtxoMap)
+      (unwrap snapshot).utxoToCommit
+  tx <- liftContractNullCosts $ announceRewardDistributionContract snapshotUtxos changeAddress
     raceData
     distr
   logInfo' $ "Successfully built AnnounceRewardDistribution Tx with hash: " <>
@@ -143,16 +146,19 @@ announceRewardDistributionContract
   -> RaceData
   -> RewardDistribution
   -> Contract Transaction
-announceRewardDistributionContract snapshotUtxos collateralAddr raceData distr = do
+announceRewardDistributionContract snapshotUtxos changeAddress raceData distr = do
   let raceValidatorHash = PlutusScript.hash raceData.raceValidator
-  network <- getNetworkId
+  traceM $ "Snapshot utxos: " <> show snapshotUtxos
 
   collateralUtxo <- liftMaybe (error "Could not find collateral utxo") $
-    findCollateralUtxo snapshotUtxos collateralAddr
+    findCollateralUtxo snapshotUtxos
 
-  raceStateUtxo@(raceStateOref /\ raceStateOut) <-
+  { utxo: raceStateUtxo@(raceStateOref /\ raceStateOut), distr: oldDistr } <-
     liftMaybe (error "Could not find RaceState utxo") $
-      findRaceStateUtxo network snapshotUtxos raceValidatorHash
+      findRaceStateUtxo raceValidatorHash snapshotUtxos
+
+  unless (isNothing oldDistr) do
+    throwError $ error "Reward distribution already provided"
 
   let
     utxos :: UtxoMap
@@ -172,7 +178,7 @@ announceRewardDistributionContract snapshotUtxos collateralAddr raceData distr =
       [ BalancerConstraints.mustUseUtxosAtAddresses mempty
       , BalancerConstraints.mustUseCollateralUtxos $ Map.fromFoldable [ collateralUtxo ]
       , BalancerConstraints.mustUseAdditionalUtxos utxos
-      , BalancerConstraints.mustSendChangeToAddress collateralAddr
+      , BalancerConstraints.mustSendChangeToAddress changeAddress
       ]
 
     constraints :: TxConstraints
@@ -194,21 +200,6 @@ announceRewardDistributionContract snapshotUtxos collateralAddr raceData distr =
     , constraints = constraints
     , balancerConstraints = balancerConstraints
     }
-  let validTx = setTxValid tx
+  let validTx = setTxValid $ removeTxOutputsWithEmptyValues tx
   evaluatedTx <- setExUnitsToMax validTx
   pure evaluatedTx
-
-findCollateralUtxo :: UtxoMap -> Address -> Maybe Utxo
-findCollateralUtxo utxos addr =
-  Array.find
-    (\(_ /\ txOut) -> isCollateralTxOut txOut && (unwrap txOut).address == addr)
-    (Map.toUnfoldable utxos)
-
-findRaceStateUtxo :: NetworkId -> UtxoMap -> ScriptHash -> Maybe Utxo
-findRaceStateUtxo network utxos sh =
-  Array.find
-    ( \(_ /\ txOut) -> (unwrap txOut).address == mkPaymentAddress network
-        (wrap $ ScriptHashCredential sh)
-        Nothing
-    )
-    (Map.toUnfoldable utxos)
