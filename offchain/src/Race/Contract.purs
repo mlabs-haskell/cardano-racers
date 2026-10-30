@@ -17,7 +17,6 @@ import Cardano.FromData (fromData)
 import Cardano.Plutus.ApplyArgs (applyArgs)
 import Cardano.Plutus.Types.Address (Address) as Plutus
 import Cardano.Plutus.Types.Credential (Credential(PubKeyCredential)) as Plutus
-import Cardano.Plutus.Types.Map (toCardano) as Plutus.Map
 import Cardano.Plutus.Types.Value (fromCardano, toCardano) as Plutus.Value
 import Cardano.ToData (toData)
 import Cardano.Types
@@ -68,7 +67,6 @@ import CardanoRacers.Race.Types
       ( CouldNotFindRaceStateUtxo
       , CouldNotFindValueEscrowUtxo
       , CouldNotDecodeRaceDatum
-      , CouldNotConvertDistribution
       , RewardDistributionNotAnnounced
       , UnexpectedRaceDatumVariant
       , CouldNotConvertRewardValue
