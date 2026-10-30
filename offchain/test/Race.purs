@@ -13,7 +13,8 @@ import Cardano.Types.Value (lovelaceValueOf)
 import Cardano.Wallet.Key (getPrivatePaymentKey, privateKeyToPkh)
 import CardanoRacers.Helpers (assetNameFromAsciiUnsafe)
 import CardanoRacers.Race.Contract
-  ( distributeRewards
+  ( distributeRewardsWithDiagnostics
+  , logDistributeRewardsDiagnostics
   , startRaceWithHardcodedRewardDistribution
   )
 import CardanoRacers.Race.Types
@@ -24,18 +25,20 @@ import CardanoRacers.Race.Types
 import CardanoRacers.RaceRegistry.Types (RaceParticipant)
 import CardanoRacers.RaceSlot.Types (RaceHash)
 import CardanoRacers.RacersState.Types (AssetPrices(AssetPrices))
-import Contract.Log (logInfo')
 import Contract.Test (ContractTest, InitialUTxOs, withKeyWallet, withWallets)
 import Contract.Test.Mote (TestPlanM)
+import Control.Monad.Error.Class (throwError)
 import Data.Array (replicate)
 import Data.BigInt (fromInt) as BigInt
 import Data.ByteArray (byteArrayFromAscii)
+import Data.Either (Either(Left, Right))
 import Data.Foldable (foldMap)
 import Data.Maybe (Maybe(Just, Nothing), fromJust)
 import Data.Newtype (wrap)
 import Data.Traversable (traverse)
 import Data.Tuple.Nested ((/\))
 import Effect.Aff.Class (liftAff)
+import Effect.Exception (error)
 import Mote (group, test)
 import Partial.Unsafe (unsafePartial)
 import Racers (runRacers)
@@ -77,7 +80,7 @@ suite =
                     { raceId: raceHash
                     , totalRewardValue
                     , rewardWeights:
-                        [ 50_000, 30_000, 20_000 ] <#> wrap <<< { numerator: _ }
+                        [ 50_000, 30_000, 10_000 ] <#> wrap <<< { numerator: _ }
                           <<<
                             JSBigInt.fromInt
                     , participants: mkRaceParticipantFixture <$>
@@ -87,9 +90,13 @@ suite =
                         BigNum.fromInt 3_000_000
                     }
                 )
-          txHash <- withKeyWallet anyone $ runRacers rp $
-            distributeRewards raceParams
-          logInfo' $ "Success: " <> show txHash
+          diagnosticsE <- withKeyWallet anyone $ runRacers rp $
+            distributeRewardsWithDiagnostics raceParams
+          case diagnosticsE of
+            Left err ->
+              throwError $ error $ "distributeRewards failed: " <> show err
+            Right diagnostics ->
+              logDistributeRewardsDiagnostics diagnostics
   where
   distr :: InitialUTxOs
   distr =
@@ -123,7 +130,7 @@ singleRewardLovelace :: Int
 singleRewardLovelace = 1_000_000
 
 numParticipants :: Int
-numParticipants = 5
+numParticipants = 10
 
 numDelegates :: Int
 numDelegates = 3

@@ -19,7 +19,7 @@ import CardanoRacers.RaceRegistry.Contract
   )
 import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
 import CardanoRacers.Services.HydraDelegate
-  ( SubmitPlayerInputError
+  ( SubmitPlayerInputError(SubmitInput_SimResultAlreadyExistsForParticipant)
   , submitPlayerInputRequest
   )
 import CardanoRacers.Utils.Cose
@@ -231,6 +231,14 @@ submitPlayerInputToDelegates raceCs hydraGroupHttpServers csv = do
               <> show httpError
               <> ", delegate server: "
               <> httpServer
+          -- Delegates can open their submit windows a few seconds apart, so a
+          -- partial failure can leave one delegate holding the result while
+          -- another still rejects with `PlayerInputSubmitWindowNotActive`. On
+          -- retry, the delegate that already accepted the input returns
+          -- `SimResultAlreadyExistsForParticipant` — treat that as idempotent
+          -- success so we can progress to the remaining delegates.
+          Right (Left SubmitInput_SimResultAlreadyExistsForParticipant) ->
+            pure unit
           Right x ->
             except x
     )

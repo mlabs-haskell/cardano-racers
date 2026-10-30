@@ -112,8 +112,8 @@ submitPlayerInputHandlerReturningErrors bodyStr =
                 { config: { devParams } } <- ask
                 let
                   runSimulator'
-                    | (_.mockRaceSimulator <$> devParams) == Just true = runSimulator
-                    | otherwise = runSimulatorMock
+                    | (_.mockRaceSimulator <$> devParams) == Just true = runSimulatorMock
+                    | otherwise = runSimulator
                 simResult <- ExceptT $
                   lmap (SubmitInput_RaceSimulationFailed <<< { simError: _ } <<< show) <$>
                     runSimulator' reqBody.csv

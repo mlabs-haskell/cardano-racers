@@ -5,7 +5,10 @@
 
 module RaceScript (script) where
 
-import CommonTypes (RacersParams (adminToken, botToken, stateToken), RacersState)
+import CommonTypes
+  ( RacersParams (adminToken, botToken, stateToken)
+  , RacersState (operatingAddress, treasuryAddress)
+  )
 import Constants (raceStateTokenName, valueEscrowTokenName)
 import GHC.Generics (Generic)
 import GHC.Show (Show)
@@ -44,6 +47,7 @@ import Plutus.V2.Ledger.Contexts (findOwnInput, txSignedBy, valueSpent)
 import PlutusTx qualified (compile, unsafeFromBuiltinData, unstableMakeIsData)
 import PlutusTx.AssocMap (elems, keys, lookup, toList)
 import PlutusTx.Prelude hiding (toList)
+import PlutusTx.Ratio (truncate)
 import Utils (distributesToAddrs, findCurrentGameStateFromRefInputs, getInlineDatumFromTxOut)
 import Plutus.V1.Ledger.Address (toPubKeyHash)
 
@@ -70,6 +74,12 @@ PlutusTx.unstableMakeIsData ''RaceDatum
 data RaceRedeemer
   = MoveL2
   | DistributeRewards
+      { treasuryOutputIx :: Integer
+      , operatingOutputIx :: Integer
+      , rewardOutputIxs :: [Integer]
+        -- ^ Indices of the reward outputs, aligned with the distribution
+        -- map's keys in insertion order.
+      }
   | ClaimTTL
   | CleanupUsedTokens
   deriving (Generic, Show)
@@ -101,7 +111,7 @@ mkRaceScript rp params dat red ctx =
         -- to avoid race conditions.
         --
         -- We don't actually care where the distributed Value comes from.
-        DistributeRewards ->
+        DistributeRewards {treasuryOutputIx, operatingOutputIx, rewardOutputIxs} ->
           case mDistr of
             Nothing ->
               traceError "missing distribution"
@@ -110,10 +120,12 @@ mkRaceScript rp params dat red ctx =
                 [ traceIfFalse "state token missing in validated input" ownInputContainsRaceStateToken
                 , traceIfFalse "invalid combined distributed value" $ totalRewardValueDistributed distr
                 , traceIfFalse "unexpected addresses in distribution" $ rewardsDistributedToRaceParticipants distr
-                , traceIfFalse "rewards not sent to race participants" $ rewardsSentToRaceParticipants distr
-                , traceIfFalse "hosting fees not sent to delegates" feesSentToDelegates 
-                , traceIfFalse "locked ada not returned to admin" lockedAdaReturnedToAdmin
-                , traceIfFalse "state token not disposed correctly" raceStateTokenSentToTokenBin 
+                , traceIfFalse "rewards not sent to race participants"
+                    (rewardsSentToRaceParticipantsIndexed distr rewardOutputIxs)
+                , traceIfFalse "hosting fees not sent to delegates" feesSentToDelegates
+                , traceIfFalse "locked ada not returned to admin"
+                    (lockedAdaReturnedToAdminIndexed treasuryOutputIx operatingOutputIx)
+                , traceIfFalse "state token not disposed correctly" raceStateTokenSentToTokenBin
                 ]
 
         ClaimTTL ->
@@ -125,22 +137,23 @@ mkRaceScript rp params dat red ctx =
           traceError "incompatible redeemer"
 
     ValueEscrow ->
-      case red of 
+      case red of
         -- Delegate validation to the DistributeRewards sub-validator of the
-        -- corresponding input with RaceState datum.
-        DistributeRewards ->
+        -- corresponding input with RaceState datum. The RaceState input must
+        -- be spent with the *same* DistributeRewards redeemer (same output
+        -- indices) that is spending this ValueEscrow, so the two sub-validators
+        -- stay in agreement about where treasury/operating payouts land.
+        DistributeRewards {} ->
           case findUniqueRaceStateInput of
             Nothing ->
               traceError "race state input missing or not unique"
             Just raceStateInput ->
-              -- This check is not strictly necessary beyond improving on-chain
-              -- discoverability.
               traceIfFalse "state token missing in validated input" ownInputContainsValueEscrowToken
-                && traceIfFalse "state token not disposed correctly" valueEscrowTokenSentToTokenBin 
+                && traceIfFalse "state token not disposed correctly" valueEscrowTokenSentToTokenBin
                 && traceIfFalse "race state input missing state token"
                      (containsRaceStateToken $ txOutValue $ txInInfoResolved raceStateInput)
-                && traceIfFalse "race state input not spent using DistributeRewards redeemer"
-                     (inputSpentUsingRaceRedeemer txInfo (txInInfoOutRef raceStateInput) DistributeRewards)
+                && traceIfFalse "race state input not spent using matching DistributeRewards redeemer"
+                     (inputSpentUsingRaceRedeemer txInfo (txInInfoOutRef raceStateInput) red)
                     
         ClaimTTL ->
           traceIfFalse "escrow ttl not expired" afterEscrowTtl
@@ -219,15 +232,32 @@ mkRaceScript rp params dat red ctx =
     rewardsDistributedToRaceParticipants :: Map Address Value -> Bool
     rewardsDistributedToRaceParticipants distr = all (`elem` participants params) $ keys distr 
 
-    rewardsSentToRaceParticipants :: Map Address Value -> Bool
-    rewardsSentToRaceParticipants distr =
-      all
-        ( \(recipientAddr, reward) ->
-            isJust $ find
-              (\out -> txOutAddress out == recipientAddr && txOutValue out `geq` reward)
-              (txInfoOutputs txInfo)
-        )
-        (toList distr)
+    -- Indexed variant used by DistributeRewards: O(k) index lookups instead of
+    -- O(k * outputs) full scans with `txOutAddress ==` + `geq` per iteration.
+    -- `rewardOutputIxs` must have the same length as, and be aligned with,
+    -- the keys of the distribution map in insertion order.
+    rewardsSentToRaceParticipantsIndexed
+      :: Map Address Value -> [Integer] -> Bool
+    rewardsSentToRaceParticipantsIndexed distr ixs =
+      let
+        distrPairs = toList distr
+        outs = txInfoOutputs txInfo
+      in
+        if length distrPairs /= length ixs
+          then traceError "reward distribution/indexes length mismatch"
+          else
+            all
+              ( \((recipientAddr, reward), ix) ->
+                  case nthOutput ix outs of
+                    Nothing ->
+                      traceError "reward output index out of bounds"
+                    Just out ->
+                      traceIfFalse "wrong reward output address"
+                        (txOutAddress out == recipientAddr)
+                        && traceIfFalse "insufficient reward value"
+                             (txOutValue out `geq` reward)
+              )
+              (zip distrPairs ixs)
 
     feesSentToDelegates :: Bool
     feesSentToDelegates =
@@ -250,6 +280,74 @@ mkRaceScript rp params dat red ctx =
     lockedAdaReturnedToAdmin =
       maybe False (\s -> distributesToAddrs txInfo s ownInputLovelace)
         racersStateFromRefInput
+
+    -- Indexed variant used by DistributeRewards: avoids 4 full output folds +
+    -- 2 Value merges in `distributesToAddrs` by looking up the treasury and
+    -- operating payouts directly by index. Checks lovelace counts only (no
+    -- `Value geq`) so cost is independent of native-asset bloat in outputs.
+    lockedAdaReturnedToAdminIndexed :: Integer -> Integer -> Bool
+    lockedAdaReturnedToAdminIndexed treasuryIx operatingIx =
+      case racersStateFromRefInput of
+        Nothing ->
+          traceError "racers state ref input missing"
+        Just state ->
+          let
+            total = fromInteger ownInputLovelace
+            treasuryLovelace = ceiling $ threeForths * total
+            operatingLovelace = ceiling $ oneForth * total
+            outs = txInfoOutputs txInfo
+          in
+            if treasuryIx == operatingIx
+              then case nthOutput treasuryIx outs of
+                Nothing ->
+                  traceError "treasury/operating output index out of bounds"
+                Just out ->
+                  traceIfFalse "treasury and operating addresses must match for shared output"
+                    (treasuryAddress state == operatingAddress state)
+                    && traceIfFalse "wrong address paid at shared output"
+                         (txOutAddress out == treasuryAddress state)
+                    && traceIfFalse "insufficient lovelace paid to shared output"
+                         ( valueOf (txOutValue out) adaSymbol adaToken
+                             >= treasuryLovelace + operatingLovelace
+                         )
+              else case nthOutput treasuryIx outs of
+                Nothing ->
+                  traceError "treasury output index out of bounds"
+                Just tOut ->
+                  case nthOutput operatingIx outs of
+                    Nothing ->
+                      traceError "operating output index out of bounds"
+                    Just oOut ->
+                      traceIfFalse "wrong address paid at treasury output"
+                        (txOutAddress tOut == treasuryAddress state)
+                        && traceIfFalse "insufficient lovelace paid to treasury"
+                             ( valueOf (txOutValue tOut) adaSymbol adaToken
+                                 >= treasuryLovelace
+                             )
+                        && traceIfFalse "wrong address paid at operating output"
+                             (txOutAddress oOut == operatingAddress state)
+                        && traceIfFalse "insufficient lovelace paid to operating"
+                             ( valueOf (txOutValue oOut) adaSymbol adaToken
+                                 >= operatingLovelace
+                             )
+      where
+        threeForths, oneForth :: Rational
+        threeForths = unsafeRatio 3 4
+        oneForth = unsafeRatio 1 4
+
+        ceiling :: Rational -> Integer
+        ceiling x =
+          let floor = truncate x
+           in if fromInteger floor == x then floor else floor + 1
+
+    -- Safe list-indexing for `txInfoOutputs`. Shared by the indexed
+    -- sub-validators (DistributeRewards variants).
+    nthOutput :: Integer -> [TxOut] -> Maybe TxOut
+    nthOutput n xs =
+      if n < 0 then Nothing
+      else case xs of
+        [] -> Nothing
+        (h : rest) -> if n == 0 then Just h else nthOutput (n - 1) rest
 
     racersStateFromRefInput :: Maybe RacersState
     racersStateFromRefInput = findCurrentGameStateFromRefInputs txInfo $ stateToken rp

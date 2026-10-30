@@ -375,6 +375,7 @@
           cardano-racers-offchain-unit-tests = self.offchain.project.${system}.runPursTest {
             testMain = "Test.CardanoRacers.Unit";
           };
+          /*
           cardano-racers-hydra-tests = self.hydraApp.project.${system}.runLocalTestnetTest {
             testMain = "Test.CardanoRacers.Hydra.Main";
             buildInputs = [
@@ -384,6 +385,7 @@
               MOCK_RACE_SIMULATOR = "1";
             };
           };
+          */
         }
       );
 

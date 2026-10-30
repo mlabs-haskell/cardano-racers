@@ -41,8 +41,8 @@ gen-keys: requires-nix-shell
 		--payment-verification-key-file ${keys-dir}/cardano-a.vk \
 		--testnet-magic 1 \
 		--out-file ${keys-dir}/cardano-a.addr
-	@cat ${keys-dir}/cardano-a.addr
-	@echo
+	@echo "cardano-a addr: $$(cat ${keys-dir}/cardano-a.addr)"
+	@echo "cardano-a pkh:  $$(cardano-cli address key-hash --payment-verification-key-file ${keys-dir}/cardano-a.vk)"
 	@cardano-cli address key-gen \
 		--signing-key-file ${keys-dir}/cardano-b.sk \
 		--verification-key-file ${keys-dir}/cardano-b.vk
@@ -50,7 +50,8 @@ gen-keys: requires-nix-shell
 		--payment-verification-key-file ${keys-dir}/cardano-b.vk \
 		--testnet-magic 1 \
 		--out-file ${keys-dir}/cardano-b.addr
-	@cat ${keys-dir}/cardano-b.addr
+	@echo "cardano-b addr: $$(cat ${keys-dir}/cardano-b.addr)"
+	@echo "cardano-b pkh:  $$(cardano-cli address key-hash --payment-verification-key-file ${keys-dir}/cardano-b.vk)"
 
 delegate-pkhs: requires-nix-shell
 	@cardano-cli address key-hash --payment-verification-key-file ${keys-dir}/cardano-a.vk

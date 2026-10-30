@@ -36,6 +36,7 @@
   , "lists"
   , "literals"
   , "maybe"
+  , "monad-logger"
   , "mote"
   , "newtype"
   , "numbers"
