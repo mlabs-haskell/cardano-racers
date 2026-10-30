@@ -5,7 +5,10 @@ import Contract.Prelude
 import Cardano.AsCbor (decodeCbor, encodeCbor)
 import Cardano.Data.Lite (toBytes)
 import Cardano.Plutus.Types.Address as PlutusAddress
+import Cardano.Types (ScriptHash)
 import Cardano.Types.AssetName (mkAssetName)
+import Cardano.Types.PlutusScript (hash) as PlutusScript
+import Cardano.Types.PublicKey (fromRawBytes) as PublicKey
 import CardanoRacers.AssetRequest.Contract (requestAssetByRarity)
 import CardanoRacers.Common.Types (RacersParams)
 import CardanoRacers.GameAsset.Types (Rarity(Common, Rare, Epic))
@@ -14,19 +17,39 @@ import CardanoRacers.RaceRegistry.Contract
   ( confirmAssetSelection
   , registerPositionInRace
   )
+import CardanoRacers.RaceSlot.Contract (mkRaceSlotPolicy)
+import CardanoRacers.Services.HydraDelegate (submitPlayerInputRequest)
+import CardanoRacers.Utils.Cose
+  ( fromBytesCoseKey
+  , getCoseKeyHeaderX
+  , getCoseSign1Signature
+  )
+import CardanoRacers.Utils.Hash (blake2b256Hash)
 import Contract.CborBytes (cborBytesToHex, hexToCborBytes)
 import Contract.Config (ContractParams, WalletSpec)
-import Contract.Monad (liftContractM, liftedM, runContract, throwContractError)
+import Contract.Log (logInfo')
+import Contract.Monad
+  ( Contract
+  , liftContractM
+  , liftedM
+  , runContract
+  , throwContractError
+  )
 import Contract.Prim.ByteArray (byteArrayFromAscii, byteArrayToHex)
-import Contract.Transaction (TransactionInput(..))
-import Contract.Wallet (getWalletAddresses)
+import Contract.Transaction (TransactionInput(TransactionInput))
+import Contract.Wallet (getWalletAddress, getWalletAddresses, signData)
+import Control.Monad.Error.Class (liftMaybe, throwError)
+import Control.Monad.Except (ExceptT(ExceptT), runExceptT)
 import Control.Monad.Trans.Class (lift)
 import Control.Promise (Promise, fromAff)
 import Ctl.Internal.Contract.Wallet (ownPubKeyHashes)
+import Ctl.Internal.FfiHelpers (maybeFfiHelper)
 import Data.Array (head) as Array
+import Data.ByteArray (ByteArray)
 import Data.Int (fromString) as Int
-import Data.String (Pattern(..))
+import Data.String (Pattern(Pattern))
 import Data.String as String
+import Data.Traversable (traverse_)
 import Data.UInt (fromInt) as UInt
 import Effect.Aff.Compat
   ( EffectFn1
@@ -36,6 +59,7 @@ import Effect.Aff.Compat
   , mkEffectFn2
   , mkEffectFn3
   )
+import Effect.Exception (error)
 import Lib.CardanoRacers.Common
   ( Nitro
   , Race
@@ -53,6 +77,7 @@ type Client r =
   , requestAsset :: EffectFn1 String (Promise TransactionHashFFI)
   , registerInRace :: EffectFn2 Race String (Promise TransactionHashFFI)
   , joinRace :: EffectFn3 Race String String (Promise TransactionHashFFI)
+  , completeRace :: EffectFn3 Race (Array String) String (Promise Unit)
   | r
   )
 
@@ -76,6 +101,9 @@ mkClient cp walletSpec rp =
     , joinRace: mkEffectFn3 $ \race car driver -> fromAff $ runC $ joinRace race
         car
         driver
+    , completeRace: mkEffectFn3 $ \race hydraGroupHttpServers csvInput ->
+        fromAff $ runC $ completeRace race hydraGroupHttpServers
+          csvInput
     } `merge` queries
 
 buyNitro :: Nitro -> Racers TransactionHashFFI
@@ -149,3 +177,53 @@ joinRace race carTokenStr driverTokenStr = do
 
   txh <- confirmAssetSelection rgp (wrap firstPkh) participant
   pure $ cborBytesToHex $ encodeCbor txh
+
+completeRace :: Race -> Array String -> String -> Racers Unit
+completeRace race hydraGroupHttpServers csvInput = do
+  raceCs <- do
+    slotPolicy <- mkRaceSlotPolicy $ wrap race.raceId
+    lift $ liftContractM "Could not get race slot token script hash"
+      ( PlutusScript.hash <$>
+          Array.head (unwrap slotPolicy).plutusMintingPolicies
+      )
+  lift $ submitPlayerInputToDelegates raceCs hydraGroupHttpServers csvInput
+
+submitPlayerInputToDelegates
+  :: ScriptHash
+  -> Array String
+  -> String
+  -> Contract Unit
+submitPlayerInputToDelegates raceCs hydraGroupHttpServers csv = do
+  addr <- liftedM "Could not get wallet address" getWalletAddress
+  { signature: coseSign1, key } <- signData addr $ wrap $ mkSigMessage csv
+    raceCs
+  sigBytes <- liftEffect $ getCoseSign1Signature $ unwrap coseSign1
+  signature <- liftMaybe (error "Could not decode signature") $
+    decodeCbor (wrap sigBytes)
+  coseKey <- liftEffect $ fromBytesCoseKey key
+  vk <-
+    liftMaybe (error "Could not get verification key")
+      (PublicKey.fromRawBytes =<< getCoseKeyHeaderX maybeFfiHelper coseKey)
+  submitResult <- runExceptT $
+    traverse_
+      ( \httpServer ->
+          ExceptT $ liftAff $ submitPlayerInputRequest httpServer
+            { csv
+            , auth:
+                { vk
+                , addr
+                , signature
+                }
+            }
+      )
+      hydraGroupHttpServers
+  case submitResult of
+    Left httpError ->
+      throwError $ error $ "Could not submit player input to delegates. Error: "
+        <> show httpError
+    Right _ ->
+      logInfo' "submitPlayerInputToDelegates: success"
+
+mkSigMessage :: String -> ScriptHash -> ByteArray
+mkSigMessage userInput raceCs = unwrap (encodeCbor raceCs) <> blake2b256Hash
+  userInput

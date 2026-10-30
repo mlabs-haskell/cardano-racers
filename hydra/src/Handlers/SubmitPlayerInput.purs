@@ -3,16 +3,12 @@ module CardanoRacers.Hydra.Handlers.SubmitPlayerInput where
 import Prelude
 
 import Aeson (stringifyAeson)
-import Cardano.AsCbor (encodeCbor)
 import Cardano.Plutus.Types.Address (Address) as Plutus
 import Cardano.Plutus.Types.Credential (Credential(PubKeyCredential)) as Plutus
-import Cardano.Types (Address, Ed25519KeyHash, Ed25519Signature, PublicKey, ScriptHash)
+import Cardano.Types (Ed25519KeyHash)
 import Cardano.Types.Address (getPaymentCredential)
 import Cardano.Types.Credential (asPubKeyHash)
 import Cardano.Types.PublicKey (hash, verify) as PublicKey
-import CardanoRacers.Hydra.Codec (ed25519SignatureCodec)
-import CardanoRacers.Hydra.Lib.Cose (mkSigStruct)
-import CardanoRacers.Hydra.Lib.Hash (blake2b256Hash)
 import CardanoRacers.Hydra.Monad (AppM, getAppRunner, readRaceData)
 import CardanoRacers.Hydra.RaceSimulator
   ( RaceSimulationError
@@ -21,14 +17,15 @@ import CardanoRacers.Hydra.RaceSimulator
   )
 import CardanoRacers.Hydra.Types.RaceStatus (RaceStatus(AcceptingPlayerInputs))
 import CardanoRacers.Race.Types (RaceParams(RaceParams))
+import CardanoRacers.Services.HydraDelegate (playerInputCodec)
+import CardanoRacers.Utils.Cose (mkSigStruct)
 import Control.Monad.Error.Class (liftEither, liftMaybe, throwError)
 import Control.Monad.Except (ExceptT(ExceptT), runExceptT)
 import Control.Monad.Reader (ask)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (find) as Array
 import Data.Bifunctor (lmap)
-import Data.ByteArray (ByteArray)
-import Data.Codec.Argonaut (JsonCodec, encode, object, printJsonDecodeError, string) as CA
+import Data.Codec.Argonaut (JsonCodec, encode, printJsonDecodeError, string) as CA
 import Data.Codec.Argonaut.Record (record) as CAR
 import Data.Codec.Argonaut.Sum (sumFlat) as CAS
 import Data.Either (Either, either)
@@ -46,36 +43,8 @@ import Effect.Ref (read) as Ref
 import HTTPure (Response) as HTTPure
 import HTTPure (Status, ok, response)
 import HTTPure.Status (badRequest, conflict, forbidden, internalServerError, unauthorized) as Status
-import HydraSdk.Lib (addressCodec, caDecodeString, publicKeyCodec)
-
--- 1. TODO - Parse and validate CSV
--- 2. DONE - Verify that the user is a race participant
--- 3. DONE - Ensure this participant has not already submitted input
--- 4. DONE - Verify the signature
--- 5. DONE - Run the simulation
--- 6. NOT PLANNED - Forward player input to peer delegates
--- 7. DONE - Store the simulation result for the player if delegate consensus is achieved
--- 8. DONE - Pass provided CSV to the simulator
-type PlayerInput =
-  { csv :: String
-  , auth ::
-      { vk :: PublicKey
-      , addr :: Address
-      , signature :: Ed25519Signature
-      }
-  }
-
-playerInputCodec :: CA.JsonCodec PlayerInput
-playerInputCodec =
-  CA.object "PlayerInput" $ CAR.record
-    { csv: CA.string
-    , auth:
-        CA.object "PlayerInput:auth" $ CAR.record
-          { vk: publicKeyCodec
-          , addr: addressCodec
-          , signature: ed25519SignatureCodec
-          }
-    }
+import HydraSdk.Lib (caDecodeString)
+import Lib.CardanoRacers.Client (mkSigMessage)
 
 submitPlayerInputHandler :: String -> AppM HTTPure.Response
 submitPlayerInputHandler =
@@ -131,9 +100,6 @@ submitPlayerInputHandlerReturningErrors bodyStr =
       )
 
 -- Helpers
-
-mkSigMessage :: String -> ScriptHash -> ByteArray
-mkSigMessage userInput raceId = unwrap (encodeCbor raceId) <> blake2b256Hash userInput
 
 getParticipantAddress :: Ed25519KeyHash -> Array Plutus.Address -> Maybe Plutus.Address
 getParticipantAddress player participants =

@@ -4,6 +4,7 @@ module CardanoRacers.RaceRegistry.Types
   , RegistryEntry(PendingSelection, AssetSelection)
   , RegistryDatum(RegistryDatum)
   , RegistryRedeemer(Enroll, SelectAssets, Collect)
+  , raceParticipantCodec
   ) where
 
 import Contract.Prelude
@@ -13,12 +14,13 @@ import Cardano.Plutus.DataSchema (S, Z)
 import Cardano.Plutus.Types.Address (Address)
 import Cardano.Plutus.Types.MintingPolicyHash (MintingPolicyHash)
 import Cardano.Plutus.Types.PubKeyHash (PubKeyHash)
-import Cardano.Types (BigInt)
+import Cardano.Types (BigInt, NetworkId)
 import CardanoRacers.Helpers
   ( decodeAesonString
   , decodeWrappedAeson
   , wrapEncodeAeson
   )
+import CardanoRacers.Utils.Codec (assetNameCodec, plutusAddressBech32Codec)
 import Contract.PlutusData
   ( class FromData
   , class HasPlutusSchema
@@ -33,6 +35,9 @@ import Contract.PlutusData
   )
 import Contract.Value (CurrencySymbol, TokenName)
 import Control.Alt ((<|>))
+import Data.Codec.Argonaut (JsonCodec, object) as CA
+import Data.Codec.Argonaut.Record (record) as CAR
+import Data.Profunctor (wrapIso)
 
 newtype RegistryParams = RegistryParams
   { slotAssetClass :: (CurrencySymbol /\ TokenName)
@@ -139,6 +144,14 @@ instance DecodeAeson RaceParticipant where
     driver <- obj .: "driver"
     payoutAddress <- obj .: "payoutAddress"
     pure $ RaceParticipant { car, driver, payoutAddress }
+
+raceParticipantCodec :: NetworkId -> CA.JsonCodec RaceParticipant
+raceParticipantCodec network =
+  wrapIso RaceParticipant $ CA.object "RaceParticipant" $ CAR.record
+    { car: assetNameCodec
+    , driver: assetNameCodec
+    , payoutAddress: plutusAddressBech32Codec network
+    }
 
 -- RegistryEntry type
 data RegistryEntry

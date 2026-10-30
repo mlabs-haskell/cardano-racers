@@ -1,4 +1,8 @@
-module CardanoRacers.Common.Types (RacersParams(RacersParams), nitroToken) where
+module CardanoRacers.Common.Types
+  ( RacersParams(RacersParams)
+  , nitroToken
+  , racersParamsCodec
+  ) where
 
 import Contract.Prelude
 
@@ -20,6 +24,8 @@ import Contract.PlutusData
   , genericToData
   )
 import Contract.Prim.ByteArray (byteArrayFromAscii)
+import Data.Codec.Argonaut (JsonCodec) as CA
+import HydraSdk.Lib (aesonCodec)
 import Partial.Unsafe (unsafePartial)
 
 -- | Game parameters that uniquely identify an instance of the game.
@@ -66,6 +72,9 @@ instance DecodeAeson RacersParams where
     botToken <- obj .: "botToken"
     stateToken <- obj .: "stateToken"
     pure $ RacersParams { adminToken, botToken, stateToken }
+
+racersParamsCodec :: CA.JsonCodec RacersParams
+racersParamsCodec = aesonCodec "RacersParams"
 
 nitroToken :: TokenName
 nitroToken = unsafePartial $ fromJust $ mkTokenName <=< byteArrayFromAscii $

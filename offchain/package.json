@@ -24,12 +24,12 @@
   "license": "MIT",
   "dependencies": {
     "@mlabs-haskell/ctl-npm-meta": "2.0.0",
-    "big-integer": "1.6.51"
+    "big-integer": "1.6.51",
+    "blakejs": "1.2.1"
   },
   "devDependencies": {
     "html-webpack-plugin": "5.5.0",
     "@eslint/js": "^9.7.0",
-    "blakejs": "1.2.1",
     "buffer": "6.0.3",
     "doctoc": "^2.2.1",
     "esbuild": "0.18.11",

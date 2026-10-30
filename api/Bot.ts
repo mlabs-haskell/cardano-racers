@@ -18,6 +18,12 @@ import {
   WalletSpec,
 } from "./Common";
 
+import type {
+  RaceParams,
+  StartRaceParams,
+  StartRaceResult,
+} from "./Types";
+
 export interface MkBot extends RacersUtils {
   /**
    * Initializes a Contract environment for the given contract parameters and
@@ -107,4 +113,12 @@ export interface Bot extends RacersQueries {
     race: Race,
     rewardDistribution: { [key: Address]: Lovelace }
   ): Promise<TransactionHash[]>;
+
+  /** TODO: docs
+   */
+  startRace(params: StartRaceParams): Promise<StartRaceResult>;
+
+  /** TODO: docs
+   */
+  distributeRewards(params: RaceParams): Promise<TransactionHash>;
 }
